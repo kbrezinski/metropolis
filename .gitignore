@@ -16,8 +16,8 @@ models/
 artifacts/
 
 # Generated packet captures can be large; keep dataset definitions and metadata tracked.
-datasets/*/captures/**
-!datasets/*/captures/.gitkeep
+testbeds/*/datasets/*/captures/**
+!testbeds/*/datasets/*/captures/.gitkeep
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

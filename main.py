@@ -1,5 +1,5 @@
 def main():
-    print("Hello from provenance-detection-systems!")
+    print("Hello from metropolis-ot-detection-systems!")
 
 
 if __name__ == "__main__":

@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "provenance-detection-systems"
+name = "metropolis-ot-detection-systems"
 version = "0.1.1"
 description = "To be added..."
 readme = "README.md"
@@ -21,7 +21,7 @@ testpaths = ["tests"]
 addopts = ["--import-mode=importlib", "-q"]
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/provdetect"]
+packages = ["src/metropolis"]
 
 [dependency-groups]
 dev = [

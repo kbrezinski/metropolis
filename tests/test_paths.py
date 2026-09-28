@@ -1,4 +1,4 @@
-from provdetect import paths
+from metropolis import paths
 
 
 def test_base_dir_is_repository_root():

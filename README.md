@@ -1,19 +1,20 @@
-# Metropolis OT Detection Systems
+# OT Detection Systems
 
 [![CI](https://github.com/kbrezinski/ot-detection-systems/actions/workflows/ci.yml/badge.svg)](https://github.com/kbrezinski/ot-detection-systems/actions/workflows/ci.yml)
 
-Metropolis is an early-stage, GNS3-based water-treatment OT/ICS testbed and a research codebase for studying network traffic and provenance-based detection. Its architecture is an adaptation inspired by the [Gotham IoT Testbed](https://github.com/xsaga/gotham-iot-testbed): Metropolis keeps the reusable-device, router/switch, scenario, and data-generation ideas, while replacing Gotham's city-scale IoT layout with a Purdue-informed water-treatment network.
+This repository supports research on OT/ICS network traffic and provenance-based detection, with testbeds organized as independent, named environments. [Metropolis](testbeds/metropolis/) is the first testbed: a GNS3 water-treatment network inspired by the reusable-device, router/switch, scenario, and data-generation ideas of the [Gotham IoT Testbed](https://github.com/xsaga/gotham-iot-testbed), with a Purdue-informed architecture.
 
-Metropolis is its own architecture. Gotham scripts and tooling may be reused where their assumptions fit, but Gotham's topology, IPs, node names, device models, and attack targets do not automatically match Metropolis. This repository is under active development; the sections below distinguish current artifacts from work still needed for an end-to-end run.
+Each testbed owns its topology, IP assignments, node names, device deployments, and attack targets. Shared schemas define reusable document formats; they do not force testbeds to use the same CIDRs. Gotham scripts and tooling may be reused where their assumptions fit. This repository is under active development; the sections below distinguish current artifacts from work still needed for an end-to-end run.
 
 The reference implementation is the [Gotham repository](https://github.com/xsaga/gotham-iot-testbed), described in [“Gotham Testbed: A Reproducible IoT Testbed for Security Experiments and Dataset Generation”](https://doi.org/10.1109/TDSC.2023.3247166). If you build on Gotham's work, follow its license and cite the paper as appropriate.
 
 ## What is in the repository
 
-- **Metropolis network drafts:** VyOS router scripts under `router/` and GNS3 switch/VLAN specifications under `switch/`.
-- **Reusable emulated devices:** Dockerfiles and Python applications under `devices/`, including Modbus TCP PLC/RTU models, MQTT telemetry and broker components, SCADA/HMI simulators, a historian collector, and an engineering workstation image.
-- **Dataset organization:** `datasets/water_treatment_v1/` holds the planned topology, device instances, protocol profiles, scenarios, metadata, and capture locations. `device_instances/initial_devices.yaml` is an initial inventory proposal.
-- **Research package:** `src/provdetect/` currently provides Python runtime and reproducibility scaffolding. It is not yet connected to traffic capture, dataset labeling, or model training for Metropolis.
+- **Testbed definitions:** `testbeds/` contains one folder per network environment. Metropolis router scripts, switch/VLAN specifications, device models, and its versioned dataset are under `testbeds/metropolis/`.
+- **Reusable schemas:** `schemas/` defines shared data formats, including a network address-plan schema. Each testbed stores its own concrete network plan and IP allocations.
+- **Reusable emulated devices:** Dockerfiles and Python applications under `testbeds/metropolis/devices/`, including Modbus TCP PLC/RTU models, MQTT telemetry and broker components, SCADA/HMI simulators, a historian collector, and an engineering workstation image.
+- **Dataset organization:** `testbeds/metropolis/datasets/water_treatment_v1/` holds the planned topology, device instances, protocol profiles, scenarios, metadata, and capture locations. `device_instances/initial_devices.yaml` is an initial inventory proposal.
+- **Research package:** `src/metropolis/` currently provides Python runtime and reproducibility scaffolding. It is not yet connected to traffic capture, dataset labeling, or model training for Metropolis.
 - **Existing Gotham data pipeline:** `scripts/run_gotham_pipeline.py` is for processing the separately downloaded Gotham dataset in `data/`; it does not build or run the Metropolis GNS3 network.
 
 ## Network design
@@ -30,7 +31,9 @@ The plan uses separate sites and routed zones, following Purdue concepts as a gu
 | Lab-only test zone | Attack-generation hosts for controlled experiments | `10.99.10.0/24` |
 | Inter-site transport | Simulated WAN underlay; remote sites have reserved IPsec overlay ranges | `172.31.255.0/24`; overlays reserved under `10.20.254.0/24` |
 
-The topology has a treatment plant, a raw-water lift station, and a reservoir/booster station. Routers and switches are organized by backbone and location, similar to Gotham's site-oriented network organization. See the [router scripts](router/), [switch specifications](switch/README.md), and [v1 dataset notes](datasets/water_treatment_v1/README.md) for details.
+These ranges belong to Metropolis. Future testbeds can use the shared address-plan schema with different CIDRs, or intentionally reuse an allocation pattern when the environments need to be comparable.
+
+The Metropolis topology has a treatment plant, a raw-water lift station, and a reservoir/booster station. Routers and switches are organized by backbone and location, similar to Gotham's site-oriented network organization. See the [router scripts](testbeds/metropolis/router/), [switch specifications](testbeds/metropolis/switch/README.md), and [v1 dataset notes](testbeds/metropolis/datasets/water_treatment_v1/README.md) for details.
 
 The current router scripts provide draft routing and VLAN interfaces. Firewall rules are not configured, the simulated WAN is not encrypted with IPsec, and the attack-test network is not yet restricted from OT networks. The scripts contain TODO reminders for that work. Do not treat the current routing draft as a secured network.
 
@@ -48,7 +51,7 @@ The initial emulated device set focuses on Modbus TCP and MQTT:
 | Historian | Subscribes to MQTT topics and logs received messages to its console |
 | Engineering workstation | Container with Python Modbus/MQTT libraries for lab interaction |
 
-These are lightweight protocol simulators, not vendor device firmware. The sample process values are not connected by a hydraulic model, the HMI setpoint is not yet wired to PLC control logic, and the MQTT broker currently permits anonymous connections. See [devices/README.md](devices/README.md) for image build commands, environment settings, topics, and register definitions. Authentication, MQTT ACLs/TLS, realistic process behavior, and complete cell-by-cell register maps are future work.
+These are lightweight protocol simulators, not vendor device firmware. The sample process values are not connected by a hydraulic model, the HMI setpoint is not yet wired to PLC control logic, and the MQTT broker currently permits anonymous connections. See [testbeds/metropolis/devices/README.md](testbeds/metropolis/devices/README.md) for image build commands, environment settings, topics, and register definitions. Authentication, MQTT ACLs/TLS, realistic process behavior, and complete cell-by-cell register maps are future work.
 
 ## Running Metropolis on an Ubuntu GNS3 server
 
@@ -67,31 +70,31 @@ Confirm Docker can build and run containers on the GNS3 compute host. For a remo
 
 ### 2. Build the device images
 
-From the repository root, run the image build commands in [devices/README.md](devices/README.md). For example:
+From the repository root, run the image build commands in [testbeds/metropolis/devices/README.md](testbeds/metropolis/devices/README.md). For example:
 
 ```bash
-docker build -f devices/controllers/plc/Dockerfile -t metropolis/controller:dev .
-docker build -f devices/services/mqtt_broker/Dockerfile -t metropolis/mqtt-broker:dev .
-docker build -f devices/field/sensors/Dockerfile -t metropolis/mqtt-sensor:dev .
-docker build -f devices/operations/scada/Dockerfile -t metropolis/scada:dev .
-docker build -f devices/operations/hmi/Dockerfile -t metropolis/hmi:dev .
-docker build -f devices/operations/historian/Dockerfile -t metropolis/historian:dev .
-docker build -f devices/operations/engineering_workstation/Dockerfile -t metropolis/engineering:dev .
+docker build -f testbeds/metropolis/devices/controllers/plc/Dockerfile -t metropolis/controller:dev .
+docker build -f testbeds/metropolis/devices/services/mqtt_broker/Dockerfile -t metropolis/mqtt-broker:dev .
+docker build -f testbeds/metropolis/devices/field/sensors/Dockerfile -t metropolis/mqtt-sensor:dev .
+docker build -f testbeds/metropolis/devices/operations/scada/Dockerfile -t metropolis/scada:dev .
+docker build -f testbeds/metropolis/devices/operations/hmi/Dockerfile -t metropolis/hmi:dev .
+docker build -f testbeds/metropolis/devices/operations/historian/Dockerfile -t metropolis/historian:dev .
+docker build -f testbeds/metropolis/devices/operations/engineering_workstation/Dockerfile -t metropolis/engineering:dev .
 ```
 
 These create local Docker images. They do not create GNS3 templates or place nodes in a project.
 
 ### 3. Create the GNS3 templates and topology
 
-In GNS3, create Docker templates that reference the built images, import/configure the VyOS appliance, then add the router, switch, and device nodes to a project. Configure the switch VLAN membership and trunk ports according to `switch/`; apply the router scripts to the matching VyOS nodes after checking interface numbering.
+In GNS3, create Docker templates that reference the built images, import/configure the VyOS appliance, then add the router, switch, and device nodes to a project. Configure the switch VLAN membership and trunk ports according to `testbeds/metropolis/switch/`; apply the router scripts to the matching VyOS nodes after checking interface numbering.
 
-Use `datasets/water_treatment_v1/device_instances/initial_devices.yaml` as a proposed node inventory. It is documentation for now: **GNS3 does not read this YAML, set the listed IP addresses, or apply its environment variables.** Static addressing, per-node environment configuration, GNS3 templates, topology creation, router startup, and switch setup still need to be connected through manual configuration or future automation. In particular, the container models do not yet include a common network-initialization entrypoint that applies the inventory's IP/gateway fields.
+Use `testbeds/metropolis/datasets/water_treatment_v1/device_instances/initial_devices.yaml` as the initial node inventory. GNS3 does not read this YAML automatically; copy each node's `NODE_HOSTNAME`, `NODE_IP`, and `NODE_GATEWAY` values into its Docker environment settings. The device images now include a shared startup script that applies those values to `eth0` (or `NODE_INTERFACE`) before launching the application. Leave `NODE_IP` empty to skip address setup. GNS3 templates and topology creation, router startup, and switch setup are still manual; a future topology builder can read the inventory and populate node settings automatically.
 
 ### 4. Start and check the lab
 
-Once node network settings and links have been configured, start the broker and controller before the MQTT clients and SCADA node. Check each node's console for startup or connection messages, confirm routing between the intended subnets, then capture traffic on selected GNS3 links. Record the topology, IPs, image versions, scenarios, capture points, and timestamps under the matching `datasets/<name>_v<n>/` directory.
+Once node network settings and links have been configured, start the broker and controller before the MQTT clients and SCADA node. Check each node's console for startup or connection messages, confirm routing between the intended subnets, then capture traffic on selected GNS3 links. Record the topology, IPs, image versions, scenarios, capture points, and timestamps under the matching `testbeds/<testbed_id>/datasets/<name>_v<n>/` directory.
 
-This sequence is a deployment plan, not a verified one-command runbook. Container image builds have not yet been validated on an Ubuntu GNS3 server, and the repository does not yet contain a Metropolis template/topology builder or capture/scenario orchestrator.
+This sequence is a deployment plan, not a verified one-command runbook. Container image builds have not yet been validated on an Ubuntu GNS3 server, and the repository does not yet contain a Metropolis template/topology builder or capture/scenario orchestrator. GNS3 Docker node interfaces must be connected before the containers start so the entrypoint can find and configure them.
 
 ## Reusing Gotham scripts and tools
 
@@ -103,11 +106,11 @@ The current `scripts/run_gotham_pipeline.py` serves a different purpose: it runs
 
 ## Dataset layout
 
-Each experiment should have a versioned dataset folder, for example `datasets/water_treatment_v1/`:
+Each experiment should have a versioned dataset folder, for example `testbeds/metropolis/datasets/water_treatment_v1/`:
 
 ```text
-datasets/water_treatment_v1/
-├── topology/          # Sites, subnets, routers, switches, and links
+testbeds/metropolis/datasets/water_treatment_v1/
+├── topology/          # Sites, address plan, routers, switches, and links
 ├── device_instances/  # Named nodes, addresses, roles, and image settings
 ├── protocol_profiles/ # Modbus maps, MQTT topics, and security settings
 ├── scenarios/         # Normal operation and individual experiments
@@ -115,29 +118,34 @@ datasets/water_treatment_v1/
 └── captures/           # PCAPs; generated capture files are Git-ignored
 ```
 
-Keep reusable device behavior under `devices/` and per-run assignments under the versioned dataset directory. Create a new dataset version rather than silently changing the configuration associated with an existing capture set.
+Keep reusable device behavior under `testbeds/metropolis/devices/` and per-run assignments under the versioned dataset directory. Create a new dataset version rather than silently changing the configuration associated with an existing capture set.
 
 ## Python research package
 
-The `provdetect` package is managed with Python 3.12+ and [uv](https://docs.astral.sh/uv/):
+The `metropolis` package is managed with Python 3.12+ and [uv](https://docs.astral.sh/uv/):
 
 ```bash
 uv sync --group dev
+uv run python -c "import metropolis; print(metropolis.__file__)"
 uv run pytest
 ```
 
-The package currently contains reproducibility/runtime setup and project path helpers; data ingestion, feature extraction for Metropolis traffic, provenance modeling, and evaluation workflows remain under development.
+The import package is `metropolis` (the installable project distribution is `metropolis-ot-detection-systems`). It currently contains reproducibility/runtime setup and project path helpers; data ingestion, feature extraction for Metropolis traffic, provenance modeling, and evaluation workflows remain under development.
+
+For a runnable example that imports the package and loads the v1 address plan into a pandas table, open [`examples/test_metropolis_import.ipynb`](examples/test_metropolis_import.ipynb) after syncing the development environment.
 
 ## Project layout
 
 ```text
-router/                 VyOS router configuration drafts
-switch/                 GNS3 switch/VLAN configuration specifications
-devices/                Dockerfiles and Python-based device simulators
-datasets/               Versioned topology, instances, scenarios, and captures
-scripts/                Dataset processing utilities (currently Gotham data)
-src/provdetect/         Python research package
-tests/                  Tests for the current Python package
+schemas/                                  Reusable testbed configuration schemas
+testbeds/metropolis/                      Metropolis testbed assets
+  router/                                 VyOS router configuration drafts
+  switch/                                 GNS3 switch/VLAN specifications
+  devices/                                Dockerfiles and Python device simulators
+  datasets/                               Versioned topology, instances, scenarios, and captures
+scripts/                                  Dataset processing utilities (currently Gotham data)
+src/metropolis/                           Python research package
+tests/                                     Tests for the current Python package
 ```
 
 ## Development

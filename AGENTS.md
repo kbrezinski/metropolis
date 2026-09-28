@@ -1,6 +1,6 @@
-# CLAUDE.md
+# AGENTS.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to Codex (Codex.ai/code) when working with code in this repository.
 
 ## Project
 
@@ -46,7 +46,7 @@ Tests that touch device selection monkeypatch `config_mod.torch.cuda.is_availabl
 
 - `testbeds/metropolis/router/backbone/` and `testbeds/metropolis/router/locations/` — VyOS 1.3 `vbash` scripts (`set interfaces ...`, `commit`, `save`) for each GNS3 router, one per network zone (plant, OT core, OT/DMZ boundary, WAN hub, reservoir, raw-water). Each script's header comment documents its GNS3 interface map and which VLANs/subnets it must carry; routing between zones is via static routes only, and several scripts carry `TODO(Metropolis)` notes that inter-zone firewall policy is not yet applied — static routes provide reachability, not restriction.
 - `testbeds/metropolis/switch/` — Markdown specs (not executable), read together with `testbeds/metropolis/switch/README.md`'s port-mapping table, describing the VLAN plan for each GNS3 switch appliance. Port labels like `router-uplink` are roles, not literal GNS3 port numbers, filled in after cabling.
-- `testbeds/metropolis/devices/` — reusable Docker-based device models. The initial runnable set includes a Modbus TCP PLC/RTU simulator, MQTT sensor publisher, Mosquitto broker, SCADA Modbus poller/MQTT publisher, HMI command publisher, MQTT historian subscriber, and engineering toolbox image. `testbeds/metropolis/devices/runtime/network-entrypoint.sh` applies per-node `NODE_HOSTNAME`, `NODE_IP`, `NODE_GATEWAY`, and optional `NODE_INTERFACE` settings before the app starts; GNS3 must provide the variables and the node's NIC must be linked. Model code and image build instructions are documented in `testbeds/metropolis/devices/README.md`; other device folders remain planned scaffolding.
-- `testbeds/metropolis/datasets/water_treatment_v1/` is Metropolis versioned data; future testbeds keep datasets under their own `testbeds/<testbed_id>/datasets/` directory. Its `topology/address-plan.yaml` records concrete CIDRs using `schemas/address-plan.schema.json`; the shared schema does not prescribe ranges. Other dataset folders contain `device_instances/` (addresses/roles assigned from `testbeds/metropolis/devices/`), `protocol_profiles/`, `scenarios/`, `metadata/`, and `captures/`. Captures are git-ignored (`testbeds/*/datasets/*/captures/**`); use a new versioned directory for each distinct dataset.
+- `testbeds/metropolis/devices/` — reusable Docker-based device models. The initial runnable set includes a Modbus TCP PLC/RTU simulator, MQTT sensor publisher, Mosquitto broker, SCADA Modbus poller/MQTT publisher, HMI command publisher, MQTT historian subscriber, and engineering toolbox image. Model code and image build instructions are documented in `testbeds/metropolis/devices/README.md`; other device folders remain planned scaffolding.
+- `testbeds/metropolis/datasets/water_treatment_v1/` is Metropolis versioned data; future testbeds keep datasets under their own `testbeds/<testbed_id>/datasets/` directory. Its `topology/address-plan.yaml` records concrete CIDRs using `schemas/address-plan.schema.json`; the shared schema does not prescribe ranges. Dataset folders also contain `device_instances/` (addresses/roles assigned from `testbeds/metropolis/devices/`), `protocol_profiles/`, `scenarios/`, `metadata/`, and `captures/`. Captures are git-ignored (`testbeds/*/datasets/*/captures/**`); use a new versioned directory for each distinct dataset.
 
 None of this is wired into `metropolis` yet; these directories currently hold specs/scaffolding (many `.gitkeep` placeholders) rather than generated data.

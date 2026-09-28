@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/kbrezinski/ot-detection-systems/blob/main/schemas/address-plan.schema.json",
+  "title": "OT testbed address plan",
+  "description": "Reusable structure for documenting addresses within one testbed. CIDRs are assigned by each testbed.",
+  "type": "object",
+  "required": ["schema_version", "testbed_id", "networks"],
+  "properties": {
+    "schema_version": { "const": "1.0" },
+    "testbed_id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_-]*$"
+    },
+    "description": { "type": "string" },
+    "networks": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/network" },
+      "uniqueItems": true
+    }
+  },
+  "$defs": {
+    "network": {
+      "type": "object",
+      "required": ["id", "name", "site", "zone", "kind", "cidr", "purpose"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z][a-z0-9_-]*$" },
+        "name": { "type": "string", "minLength": 1 },
+        "site": { "type": "string", "minLength": 1 },
+        "zone": { "type": "string", "minLength": 1 },
+        "kind": { "enum": ["lan", "transit", "underlay", "overlay"] },
+        "cidr": {
+          "type": "string",
+          "pattern": "^(?:[0-9]{1,3}\\.){3}[0-9]{1,3}/(?:[0-9]|[12][0-9]|3[0-2])$"
+        },
+        "gateway": { "type": "string", "format": "ipv4" },
+        "vlan_id": { "type": "integer", "minimum": 1, "maximum": 4094 },
+        "purpose": { "type": "string", "minLength": 1 },
+        "notes": { "type": "string" }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

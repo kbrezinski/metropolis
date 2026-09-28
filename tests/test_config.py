@@ -3,8 +3,8 @@ import random
 import numpy as np
 import torch
 
-from provdetect import config as config_mod
-from provdetect.config import (
+from metropolis import config as config_mod
+from metropolis.config import (
     RuntimeConfig,
     apply_runtime_config,
     resolve_device,

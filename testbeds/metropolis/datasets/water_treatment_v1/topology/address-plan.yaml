@@ -1,0 +1,197 @@
+# Metropolis v1 allocations. This plan is scoped to this testbed; the shared
+# schema defines the document format and does not prescribe these CIDRs.
+schema_version: "1.0"
+testbed_id: metropolis
+description: Purdue-informed water-treatment network address plan.
+networks:
+  - id: plant-intake
+    name: Plant intake process cell
+    site: treatment_plant
+    zone: levels_0_1
+    kind: lan
+    cidr: 10.20.10.0/24
+    gateway: 10.20.10.1
+    vlan_id: 10
+    purpose: Intake PLC, sensors, and actuators.
+  - id: plant-dosing
+    name: Plant chemical dosing cell
+    site: treatment_plant
+    zone: levels_0_1
+    kind: lan
+    cidr: 10.20.11.0/24
+    gateway: 10.20.11.1
+    vlan_id: 11
+    purpose: Dosing PLC, sensors, and actuators.
+  - id: plant-filtration
+    name: Plant filtration cell
+    site: treatment_plant
+    zone: levels_0_1
+    kind: lan
+    cidr: 10.20.12.0/24
+    gateway: 10.20.12.1
+    vlan_id: 12
+    purpose: Filtration PLC, sensors, and actuators.
+  - id: plant-disinfection
+    name: Plant disinfection cell
+    site: treatment_plant
+    zone: levels_0_1
+    kind: lan
+    cidr: 10.20.13.0/24
+    gateway: 10.20.13.1
+    vlan_id: 13
+    purpose: Disinfection PLC, sensors, and actuators.
+  - id: reservoir
+    name: Reservoir and booster site
+    site: reservoir_booster
+    zone: levels_0_1
+    kind: lan
+    cidr: 10.20.14.0/24
+    gateway: 10.20.14.1
+    purpose: Remote RTU, sensors, and actuators.
+  - id: raw-water
+    name: Raw-water lift site
+    site: raw_water_lift
+    zone: levels_0_1
+    kind: lan
+    cidr: 10.20.15.0/24
+    gateway: 10.20.15.1
+    purpose: Remote RTU, sensors, and actuators.
+  - id: scada
+    name: SCADA operations
+    site: treatment_plant
+    zone: level_3
+    kind: lan
+    cidr: 10.20.20.0/24
+    gateway: 10.20.20.1
+    vlan_id: 20
+    purpose: SCADA servers and collectors.
+  - id: engineering
+    name: Engineering workstation network
+    site: treatment_plant
+    zone: level_3
+    kind: lan
+    cidr: 10.20.21.0/24
+    gateway: 10.20.21.1
+    vlan_id: 21
+    purpose: Engineering workstation access.
+  - id: historian
+    name: Historian network
+    site: treatment_plant
+    zone: level_3
+    kind: lan
+    cidr: 10.20.22.0/24
+    gateway: 10.20.22.1
+    vlan_id: 22
+    purpose: Historian collection and storage.
+  - id: mqtt
+    name: MQTT services network
+    site: treatment_plant
+    zone: level_3
+    kind: lan
+    cidr: 10.20.23.0/24
+    gateway: 10.20.23.1
+    vlan_id: 23
+    purpose: MQTT broker and telemetry services.
+  - id: ot-services
+    name: OT infrastructure services
+    site: treatment_plant
+    zone: level_3
+    kind: lan
+    cidr: 10.20.30.0/24
+    gateway: 10.20.30.1
+    purpose: Supporting OT services.
+  - id: ot-dmz
+    name: OT demilitarized zone
+    site: treatment_plant
+    zone: level_3_5
+    kind: lan
+    cidr: 10.20.40.0/24
+    gateway: 10.20.40.1
+    purpose: Controlled services between OT and enterprise zones.
+  - id: plant-hmi
+    name: Plant HMI network
+    site: treatment_plant
+    zone: level_2
+    kind: lan
+    cidr: 10.20.50.0/24
+    gateway: 10.20.50.1
+    vlan_id: 50
+    purpose: Intake and plant operator HMIs.
+  - id: dosing-hmi
+    name: Dosing HMI network
+    site: treatment_plant
+    zone: level_2
+    kind: lan
+    cidr: 10.20.51.0/24
+    gateway: 10.20.51.1
+    vlan_id: 51
+    purpose: Dosing operator HMI.
+  - id: filtration-hmi
+    name: Filtration HMI network
+    site: treatment_plant
+    zone: level_2
+    kind: lan
+    cidr: 10.20.52.0/24
+    gateway: 10.20.52.1
+    vlan_id: 52
+    purpose: Filtration operator HMI.
+  - id: disinfection-hmi
+    name: Disinfection HMI network
+    site: treatment_plant
+    zone: level_2
+    kind: lan
+    cidr: 10.20.53.0/24
+    gateway: 10.20.53.1
+    vlan_id: 53
+    purpose: Disinfection operator HMI.
+  - id: enterprise
+    name: Simulated enterprise network
+    site: treatment_plant
+    zone: level_4
+    kind: lan
+    cidr: 10.30.10.0/24
+    gateway: 10.30.10.1
+    purpose: Enterprise-side hosts.
+  - id: attack-lab
+    name: Controlled attack-generation network
+    site: treatment_plant
+    zone: lab_test
+    kind: lan
+    cidr: 10.99.10.0/24
+    gateway: 10.99.10.1
+    purpose: Isolated experiment hosts; filtering remains to be configured.
+  - id: wan-underlay
+    name: Simulated WAN underlay
+    site: inter_site
+    zone: transport
+    kind: underlay
+    cidr: 172.31.255.0/24
+    purpose: Routed links between the plant and remote sites.
+  - id: plant-core-transit
+    name: Plant to OT core transit
+    site: treatment_plant
+    zone: routing_transit
+    kind: transit
+    cidr: 10.20.254.0/30
+    purpose: Point-to-point router link.
+  - id: core-dmz-transit
+    name: OT core to DMZ transit
+    site: treatment_plant
+    zone: routing_transit
+    kind: transit
+    cidr: 10.20.254.4/30
+    purpose: Point-to-point router link.
+  - id: core-wan-transit
+    name: OT core to WAN transit
+    site: treatment_plant
+    zone: routing_transit
+    kind: transit
+    cidr: 10.20.254.8/30
+    purpose: Point-to-point router link.
+  - id: ipsec-reserved
+    name: Reserved remote-site IPsec overlay range
+    site: inter_site
+    zone: transport
+    kind: overlay
+    cidr: 10.20.254.12/30
+    purpose: Reserved for future encrypted remote-site tunnels; not configured.

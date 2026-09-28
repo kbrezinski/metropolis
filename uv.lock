@@ -576,7 +576,7 @@ wheels = [
 ]
 
 [[package]]
-name = "provenance-detection-systems"
+name = "metropolis-ot-detection-systems"
 version = "0.1.1"
 source = { editable = "." }
 dependencies = [

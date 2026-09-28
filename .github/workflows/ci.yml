@@ -46,4 +46,4 @@ jobs:
         run: uv build
 
       - name: Import smoke test
-        run: uv run python -c "import importlib; importlib.import_module(r'provdetect'); print('Import smoke test OK')"
+        run: uv run python -c "import importlib; importlib.import_module(r'metropolis'); print('Import smoke test OK')"
