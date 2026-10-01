@@ -5,10 +5,13 @@ from __future__ import annotations
 import json
 import logging
 import os
+import threading
 import time
 from datetime import datetime, timezone
 
 import paho.mqtt.client as mqtt
+
+from coap_sensor import serve as serve_coap
 
 
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
@@ -24,7 +27,23 @@ def main() -> None:
     sensor_type = os.getenv("SENSOR_TYPE", "level")
     value = float(os.getenv("SENSOR_VALUE", "65.0"))
 
+    if os.getenv("COAP_ENABLED", "true").lower() in {"1", "true", "yes"}:
+        threading.Thread(
+            target=serve_coap,
+            args=(
+                os.getenv("COAP_HOST", "0.0.0.0"),
+                int(os.getenv("COAP_PORT", "5683")),
+                name,
+                sensor_type,
+                value,
+            ),
+            daemon=True,
+        ).start()
+
     client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id=name)
+    username = os.getenv("MQTT_USERNAME", "lab_device")
+    password = os.getenv("MQTT_PASSWORD", "LabOnly_Device_2026")
+    client.username_pw_set(username, password)
     client.reconnect_delay_set(min_delay=1, max_delay=30)
     while True:
         try:
@@ -41,7 +60,9 @@ def main() -> None:
                 "device": name,
                 "sensor": sensor_type,
                 "value": value,
-                "unit": "percent" if sensor_type in {"level", "quality"} else "unit_per_second",
+                "unit": "percent"
+                if sensor_type in {"level", "quality"}
+                else "unit_per_second",
                 "timestamp": datetime.now(timezone.utc).isoformat(),
             }
             result = client.publish(topic, json.dumps(payload), qos=0, retain=False)

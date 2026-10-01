@@ -27,6 +27,10 @@ def main() -> None:
     interval = max(1.0, float(os.getenv("POLL_INTERVAL", "5")))
 
     publisher = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id=f"{name}-mqtt")
+    publisher.username_pw_set(
+        os.getenv("MQTT_USERNAME", "lab_device"),
+        os.getenv("MQTT_PASSWORD", "LabOnly_Device_2026"),
+    )
     publisher.reconnect_delay_set(min_delay=1, max_delay=30)
     while True:
         try:
@@ -36,15 +40,21 @@ def main() -> None:
             log.warning("MQTT broker not ready (%s); retrying in 5 seconds", exc)
             time.sleep(5)
     publisher.loop_start()
-    log.info("%s polling %s:%s and publishing to %s", name, plc_host, modbus_port, topic)
+    log.info(
+        "%s polling %s:%s and publishing to %s", name, plc_host, modbus_port, topic
+    )
 
     try:
         while True:
             client = ModbusTcpClient(plc_host, port=modbus_port, timeout=3, retries=0)
             try:
                 if not client.connect():
-                    raise ConnectionError(f"Unable to connect to controller {plc_host}:{modbus_port}")
-                response = client.read_holding_registers(address=0, count=4, slave=unit_id)
+                    raise ConnectionError(
+                        f"Unable to connect to controller {plc_host}:{modbus_port}"
+                    )
+                response = client.read_holding_registers(
+                    address=0, count=4, slave=unit_id
+                )
                 if response.isError():
                     raise RuntimeError(f"Controller returned Modbus error: {response}")
                 registers = response.registers
@@ -59,7 +69,9 @@ def main() -> None:
                 }
                 publisher.publish(topic, json.dumps(payload), qos=0, retain=False)
                 log.info("Polled controller heartbeat=%s", registers[3])
-            except Exception as exc:  # Keep the emulated SCADA node alive during outages.
+            except (
+                Exception
+            ) as exc:  # Keep the emulated SCADA node alive during outages.
                 log.warning("Poll failed: %s", exc)
             finally:
                 client.close()

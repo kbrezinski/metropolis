@@ -5,7 +5,7 @@ and metadata for one version of the water-treatment testbed dataset.
 
 - `topology/` describes sites, subnets, links, routers, and switches.
 - `topology/address-plan.yaml` records Metropolis v1's concrete network allocations using the repository-level `schemas/address-plan.schema.json` format.
-- `device_instances/` assigns addresses and roles to reusable models from `testbeds/metropolis/devices/`; `initial_devices.yaml` contains the first proposed PLC/RTUs, sensor, MQTT broker, SCADA, historian, and HMI nodes.
+- `device_instances/` assigns addresses and roles to reusable models from `testbeds/metropolis/devices/`; `initial_devices.yaml` contains the PLC/RTUs, sensor, MQTT broker, SCADA, historian, HMI, engineering host, routine Modbus client, legacy Telnet gateway, DNS, and NTP nodes.
 - `protocol_profiles/` records protocol versions, endpoints, topics/register maps,
   and security settings.
 - `scenarios/` describes normal operations and each experiment or attack run.

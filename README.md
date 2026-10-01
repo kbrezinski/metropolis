@@ -13,6 +13,7 @@ The reference implementation is the [Gotham repository](https://github.com/xsaga
 - **Testbed definitions:** `testbeds/` contains one folder per network environment. Metropolis router scripts, switch/VLAN specifications, device models, and its versioned dataset are under `testbeds/metropolis/`.
 - **Reusable schemas:** `schemas/` defines shared data formats, including a network address-plan schema. Each testbed stores its own concrete network plan and IP allocations.
 - **Reusable emulated devices:** Dockerfiles and Python applications under `testbeds/metropolis/devices/`, including Modbus TCP PLC/RTU models, MQTT telemetry and broker components, SCADA/HMI simulators, a historian collector, and an engineering workstation image.
+- **Baseline network traffic:** A routine Modbus client, local DNS and NTP services, and a separate legacy Telnet host expand normal operations and experiment targets.
 - **Dataset organization:** `testbeds/metropolis/datasets/water_treatment_v1/` holds the planned topology, device instances, protocol profiles, scenarios, metadata, and capture locations. `device_instances/initial_devices.yaml` is an initial inventory proposal.
 - **Research package:** `src/metropolis/` currently provides Python runtime and reproducibility scaffolding. It is not yet connected to traffic capture, dataset labeling, or model training for Metropolis.
 - **Existing Gotham data pipeline:** `scripts/run_gotham_pipeline.py` is for processing the separately downloaded Gotham dataset in `data/`; it does not build or run the Metropolis GNS3 network.
@@ -47,11 +48,14 @@ The initial emulated device set focuses on Modbus TCP and MQTT:
 | Field sensor | Publishes periodic JSON MQTT telemetry |
 | MQTT broker | Mosquitto broker listening on TCP 1883 |
 | SCADA | Polls a Modbus TCP controller and publishes a status snapshot over MQTT |
-| HMI | Publishes a periodic example setpoint over MQTT |
+| HMI | Authenticated HTTP operator panel on TCP 8080; displays MQTT telemetry and publishes setpoint requests |
 | Historian | Subscribes to MQTT topics and logs received messages to its console |
-| Engineering workstation | Container with Python Modbus/MQTT libraries for lab interaction |
+| Engineering workstation | OpenSSH shell and SFTP on TCP 22, plus Python Modbus/MQTT libraries |
+| Routine control client | Resolves the PLC via DNS, samples NTP, and makes bounded periodic Modbus reads and writes |
+| Legacy gateway | Telnet login and shell on a dedicated lab node |
+| DNS and NTP | Local name resolution and time replies for routine network traffic |
 
-These are lightweight protocol simulators, not vendor device firmware. The sample process values are not connected by a hydraulic model, the HMI setpoint is not yet wired to PLC control logic, and the MQTT broker currently permits anonymous connections. See [testbeds/metropolis/devices/README.md](testbeds/metropolis/devices/README.md) for image build commands, environment settings, topics, and register definitions. Authentication, MQTT ACLs/TLS, realistic process behavior, and complete cell-by-cell register maps are future work.
+These are lightweight protocol simulators, not vendor device firmware. The sample process values are not connected by a hydraulic model, and the HMI setpoint is not yet wired to PLC control logic. The broker now requires synthetic lab-only MQTT credentials; per-role ACLs/TLS, realistic process behavior, and complete cell-by-cell register maps remain future work. See [testbeds/metropolis/devices/README.md](testbeds/metropolis/devices/README.md) for image build commands, environment settings, topics, and register definitions.
 
 ## Running Metropolis on an Ubuntu GNS3 server
 
@@ -103,6 +107,8 @@ Gotham's reusable patterns include Docker-based device templates, GNS3 API helpe
 Gotham scripts that automate attacks or scenarios are usually tied to assumptions such as a Gotham project name, node-name patterns, target addresses, service ports, credentials, and installed GNS3 helper functions. Before using one with Metropolis, update those values to the Metropolis project and node inventory, verify that the target service exists in the selected subnet, and make sure the required route and lab firewall policy are in place. A Gotham MQTT attack script, for example, can only target a Metropolis MQTT broker if its configured address, port, and test credentials match that broker and the attack host can reach it. Attack scripts are not plug-and-play across the two topologies.
 
 The current `scripts/run_gotham_pipeline.py` serves a different purpose: it runs feature cleaning, labeling, and preparation on the existing Gotham CSV files. It is separate from GNS3 scenario scripts and does not yet process Metropolis captures.
+
+Attack-execution scripts are not included. [`scripts/attacks/README.md`](scripts/attacks/README.md) is organized by attack type, with target addresses, credentials/resources, normal service behavior, capture guidance, and remaining infrastructure requirements. It covers MQTT, discovery, availability, CoAP, botnet prerequisites, and Modbus experiments. The sensor provides CoAP resource discovery at `/.well-known/core` and JSON status at `/status`; the guide distinguishes service support from a validated attack scenario. Experiment execution and packet capture must be configured separately.
 
 ## Dataset layout
 

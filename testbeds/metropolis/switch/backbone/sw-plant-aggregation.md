@@ -5,7 +5,7 @@ GNS3 switch role: Layer 2 aggregation between `MET-PLANT` and plant/HMI access s
 | Port role | Mode | VLANs | Notes |
 |---|---|---|---|
 | `router-uplink` | Trunk | 10-13, 50-53 | Connect to `MET-PLANT` eth1; router uses matching 802.1Q subinterfaces |
-| `cell-intake-uplink` | Trunk | 10 | Plant cell access switch uplink |
+| `cell-intake-uplink` | Trunk | 10 | Plant cell access switch uplink; PLC, sensor, and legacy Telnet gateway |
 | `cell-dosing-uplink` | Trunk | 11 | Plant cell access switch uplink |
 | `cell-filtration-uplink` | Trunk | 12 | Plant cell access switch uplink |
 | `cell-disinfection-uplink` | Trunk | 13 | Plant cell access switch uplink |

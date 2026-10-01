@@ -1,0 +1,24 @@
+# Explicit configuration for the Metropolis engineering host.
+Port 22
+AddressFamily inet
+ListenAddress 0.0.0.0
+HostKey /var/lib/metropolis/ssh/ssh_host_ed25519_key
+PermitRootLogin no
+AllowUsers engineer
+PasswordAuthentication yes
+PermitEmptyPasswords no
+KbdInteractiveAuthentication no
+PubkeyAuthentication yes
+AuthorizedKeysFile .ssh/authorized_keys
+UsePAM no
+X11Forwarding no
+AllowTcpForwarding no
+AllowStreamLocalForwarding no
+AllowAgentForwarding no
+PermitTunnel no
+PermitUserEnvironment no
+LoginGraceTime 30
+MaxAuthTries 3
+LogLevel VERBOSE
+PrintMotd no
+Subsystem sftp internal-sftp

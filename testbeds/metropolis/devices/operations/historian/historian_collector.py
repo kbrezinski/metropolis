@@ -20,11 +20,17 @@ def main() -> None:
     port = int(os.getenv("MQTT_PORT", "1883"))
     topic = os.getenv("MQTT_TOPIC", "metropolis/#")
     client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id=name)
+    client.username_pw_set(
+        os.getenv("MQTT_USERNAME", "lab_device"),
+        os.getenv("MQTT_PASSWORD", "LabOnly_Device_2026"),
+    )
 
     def on_connect(client, userdata, flags, reason_code, properties) -> None:
         if reason_code == 0:
             client.subscribe(topic, qos=0)
-            log.info('{"event":"connected","device":"%s","subscription":"%s"}', name, topic)
+            log.info(
+                '{"event":"connected","device":"%s","subscription":"%s"}', name, topic
+            )
         else:
             log.warning("MQTT connection rejected: %s", reason_code)
 

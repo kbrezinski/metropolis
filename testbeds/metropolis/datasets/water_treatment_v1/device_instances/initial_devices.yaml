@@ -53,7 +53,7 @@ devices:
     subnet: 10.20.10.0/24
     address: 10.20.10.20/24
     gateway: 10.20.10.1
-    protocols: [mqtt]
+    protocols: [mqtt, coap]
     environment:
       NODE_HOSTNAME: MET-SENSOR-INTAKE-01
       NODE_IP: 10.20.10.20/24
@@ -61,6 +61,10 @@ devices:
       SENSOR_TYPE: level
       SENSOR_VALUE: "65.0"
       MQTT_TOPIC: metropolis/plant/intake/telemetry
+      MQTT_USERNAME: lab_device
+      MQTT_PASSWORD: LabOnly_Device_2026
+      COAP_ENABLED: "true"
+      COAP_PORT: "5683"
 
   - name: MET-MQTT-BROKER-01
     model: testbeds/metropolis/devices/services/mqtt_broker
@@ -74,6 +78,10 @@ devices:
       NODE_HOSTNAME: MET-MQTT-BROKER-01
       NODE_IP: 10.20.23.10/24
       NODE_GATEWAY: 10.20.23.1
+      MQTT_DEVICE_USERNAME: lab_device
+      MQTT_DEVICE_PASSWORD: LabOnly_Device_2026
+      MQTT_OPERATOR_USERNAME: lab_operator
+      MQTT_OPERATOR_PASSWORD: LabOnly_MQTT_2026
 
   - name: MET-SCADA-01
     model: testbeds/metropolis/devices/operations/scada
@@ -89,6 +97,8 @@ devices:
       NODE_GATEWAY: 10.20.20.1
       PLC_HOST: 10.20.10.10
       MQTT_HOST: 10.20.23.10
+      MQTT_USERNAME: lab_device
+      MQTT_PASSWORD: LabOnly_Device_2026
 
   - name: MET-HISTORIAN-01
     model: testbeds/metropolis/devices/operations/historian
@@ -103,6 +113,8 @@ devices:
       NODE_IP: 10.20.22.10/24
       NODE_GATEWAY: 10.20.22.1
       MQTT_HOST: 10.20.23.10
+      MQTT_USERNAME: lab_device
+      MQTT_PASSWORD: LabOnly_Device_2026
 
   - name: MET-HMI-INTAKE-01
     model: testbeds/metropolis/devices/operations/hmi
@@ -111,10 +123,87 @@ devices:
     subnet: 10.20.50.0/24
     address: 10.20.50.10/24
     gateway: 10.20.50.1
-    protocols: [mqtt]
+    protocols: [mqtt, http]
     environment:
       NODE_HOSTNAME: MET-HMI-INTAKE-01
       NODE_IP: 10.20.50.10/24
       NODE_GATEWAY: 10.20.50.1
+      HMI_USERNAME: operator
+      HMI_PASSWORD: LabOnly_HMI_2026
+      HMI_HTTP_PORT: "8080"
+      MQTT_TELEMETRY_TOPIC: metropolis/scada/intake/status
       MQTT_HOST: 10.20.23.10
       MQTT_TOPIC: metropolis/plant/intake/command
+      MQTT_USERNAME: lab_device
+      MQTT_PASSWORD: LabOnly_Device_2026
+
+  - name: MET-ENGINEERING-01
+    model: testbeds/metropolis/devices/operations/engineering_workstation
+    image: metropolis/engineering:dev
+    site: treatment_plant
+    subnet: 10.20.21.0/24
+    address: 10.20.21.10/24
+    gateway: 10.20.21.1
+    protocols: [ssh, sftp]
+    environment:
+      NODE_HOSTNAME: MET-ENGINEERING-01
+      NODE_IP: 10.20.21.10/24
+      NODE_GATEWAY: 10.20.21.1
+      ENGINEER_PASSWORD: LabOnly_Engineering_2026
+
+  - name: MET-CONTROL-CLIENT-01
+    model: testbeds/metropolis/devices/operations/control_client
+    image: metropolis/control-client:dev
+    site: treatment_plant
+    subnet: 10.20.21.0/24
+    address: 10.20.21.20/24
+    gateway: 10.20.21.1
+    protocols: [modbus-tcp, dns, ntp]
+    environment:
+      NODE_HOSTNAME: MET-CONTROL-CLIENT-01
+      NODE_IP: 10.20.21.20/24
+      NODE_GATEWAY: 10.20.21.1
+      PLC_DNS_NAME: plc-intake.metropolis.test
+      DNS_SERVER: 10.20.30.10
+      NTP_SERVER: 10.20.30.11
+      CONTROL_INTERVAL: "30"
+
+  - name: MET-LEGACY-GATEWAY-01
+    model: testbeds/metropolis/devices/field/legacy_gateway
+    image: metropolis/legacy-gateway:dev
+    site: treatment_plant
+    subnet: 10.20.10.0/24
+    address: 10.20.10.30/24
+    gateway: 10.20.10.1
+    protocols: [telnet]
+    environment:
+      NODE_HOSTNAME: MET-LEGACY-GATEWAY-01
+      NODE_IP: 10.20.10.30/24
+      NODE_GATEWAY: 10.20.10.1
+      LEGACY_ROOT_PASSWORD: LabOnly_Legacy_2026
+
+  - name: MET-DNS-01
+    model: testbeds/metropolis/devices/services/dns
+    image: metropolis/dns:dev
+    site: treatment_plant
+    subnet: 10.20.30.0/24
+    address: 10.20.30.10/24
+    gateway: 10.20.30.1
+    protocols: [dns]
+    environment:
+      NODE_HOSTNAME: MET-DNS-01
+      NODE_IP: 10.20.30.10/24
+      NODE_GATEWAY: 10.20.30.1
+
+  - name: MET-NTP-01
+    model: testbeds/metropolis/devices/services/ntp
+    image: metropolis/ntp:dev
+    site: treatment_plant
+    subnet: 10.20.30.0/24
+    address: 10.20.30.11/24
+    gateway: 10.20.30.1
+    protocols: [ntp]
+    environment:
+      NODE_HOSTNAME: MET-NTP-01
+      NODE_IP: 10.20.30.11/24
+      NODE_GATEWAY: 10.20.30.1

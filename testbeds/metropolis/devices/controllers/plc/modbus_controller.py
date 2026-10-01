@@ -7,7 +7,11 @@ import os
 import threading
 import time
 
-from pymodbus.datastore import ModbusSequentialDataBlock, ModbusServerContext, ModbusSlaveContext
+from pymodbus.datastore import (
+    ModbusSequentialDataBlock,
+    ModbusServerContext,
+    ModbusSlaveContext,
+)
 from pymodbus.server import StartTcpServer
 
 
