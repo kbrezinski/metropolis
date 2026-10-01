@@ -12,6 +12,7 @@ dependencies = [
     "numpy>=2.4.4",
     "pandas>=2.2.3,<3",
     "pytest>=9.0.3",
+    "pyyaml>=6.0.3",
     "scikit-learn>=1.5.2",
     "torch>=2.11.0",
 ]
@@ -22,6 +23,12 @@ addopts = ["--import-mode=importlib", "-q"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/metropolis"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"testbeds/metropolis/datasets/water_treatment_v1/topology/address-plan.yaml" = "metropolis/data/testbeds/metropolis/water_treatment_v1/topology/address-plan.yaml"
+
+[tool.hatch.build.targets.sdist.force-include]
+"testbeds/metropolis/datasets/water_treatment_v1/topology/address-plan.yaml" = "testbeds/metropolis/datasets/water_treatment_v1/topology/address-plan.yaml"
 
 [dependency-groups]
 dev = [

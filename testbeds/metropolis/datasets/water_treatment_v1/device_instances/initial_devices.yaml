@@ -21,7 +21,7 @@ devices:
   - name: MET-RTU-RESERVOIR-01
     model: testbeds/metropolis/devices/controllers/plc
     image: metropolis/controller:dev
-    site: reservoir_station
+    site: reservoir_booster
     subnet: 10.20.14.0/24
     address: 10.20.14.10/24
     gateway: 10.20.14.1
@@ -35,7 +35,7 @@ devices:
   - name: MET-RTU-RAW-WATER-01
     model: testbeds/metropolis/devices/controllers/plc
     image: metropolis/controller:dev
-    site: raw_water_station
+    site: raw_water_lift
     subnet: 10.20.15.0/24
     address: 10.20.15.10/24
     gateway: 10.20.15.1

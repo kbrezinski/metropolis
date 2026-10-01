@@ -11,7 +11,7 @@ Port labels such as `router-uplink` and `device-1` are roles, not literal GNS3 p
 | `backbone/sw-plant-aggregation.md` | `MET-PLANT` trunk | 10-13, 50-53 | Plant cell access switches and HMI access switches |
 | `backbone/sw-operations-aggregation.md` | `MET-OT-CORE` trunk | 20-23, 30 | SCADA, engineering, historian, MQTT, OT services access switches |
 | `backbone/sw-wan-underlay.md` | `MET-OT-WAN` and remote routers | Shared underlay `172.31.255.0/24` (untagged) | Simulated routed WAN links |
-| `backbone/sw-dmz.md` | `MET-OT-DMZ` eth1 (untagged) | 40 / `10.20.40.0/24` | DMZ hosts |
+| `backbone/sw-dmz.md` | `MET-OT-DMZ` eth1 (untagged) | Untagged / `10.20.40.0/24` | DMZ hosts |
 | `backbone/sw-enterprise.md` | `MET-OT-DMZ` eth2 (untagged) | `10.30.10.0/24` | Enterprise-side hosts |
 | `backbone/sw-attack-test.md` | `MET-OT-DMZ` eth3 (untagged) | `10.99.10.0/24` | Isolated attack-generation hosts |
 | `locations/sw-reservoir-access.md` | `MET-RESERVOIR` eth0 (untagged) | 14 / `10.20.14.0/24` | Reservoir/booster RTU, sensors, actuators |

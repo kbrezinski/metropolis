@@ -15,3 +15,12 @@ The concrete address allocations belong to Metropolis and are recorded in its
 dataset topology. Their document format follows the shared
 [`address-plan.schema.json`](../../schemas/address-plan.schema.json); other
 testbeds can use that format with independently selected ranges.
+
+The Python package includes this plan in its distributions. Developers can load
+it with `from metropolis.testbeds import load_address_plan`; the function returns
+a mapping with a `networks` list that can be converted to a pandas DataFrame.
+
+Run `uv run python scripts/validate_metropolis_topology.py` from the repository
+root to cross-check the address plan, device inventory, router scripts, and
+switch specs. Pass `--report testbeds/metropolis/datasets/water_treatment_v1/topology/validation-report.md`
+to write the address cross-reference and check results to a Markdown file.

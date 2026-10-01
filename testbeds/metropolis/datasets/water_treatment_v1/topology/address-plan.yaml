@@ -99,6 +99,7 @@ networks:
     kind: lan
     cidr: 10.20.30.0/24
     gateway: 10.20.30.1
+    vlan_id: 30
     purpose: Supporting OT services.
   - id: ot-dmz
     name: OT demilitarized zone
@@ -195,3 +196,10 @@ networks:
     kind: overlay
     cidr: 10.20.254.12/30
     purpose: Reserved for future encrypted remote-site tunnels; not configured.
+  - id: ipsec-reservoir-reserved
+    name: Reserved reservoir IPsec overlay range
+    site: inter_site
+    zone: transport
+    kind: overlay
+    cidr: 10.20.254.16/30
+    purpose: Reserved for a future encrypted reservoir tunnel; not configured.

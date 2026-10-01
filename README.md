@@ -130,9 +130,20 @@ uv run python -c "import metropolis; print(metropolis.__file__)"
 uv run pytest
 ```
 
-The import package is `metropolis` (the installable project distribution is `metropolis-ot-detection-systems`). It currently contains reproducibility/runtime setup and project path helpers; data ingestion, feature extraction for Metropolis traffic, provenance modeling, and evaluation workflows remain under development.
+The import package is `metropolis` (the installable project distribution is `metropolis-ot-detection-systems`). It includes runtime configuration helpers and `metropolis.testbeds.load_address_plan()` for loading a bundled address plan as a Python mapping:
 
-For a runnable example that imports the package and loads the v1 address plan into a pandas table, open [`examples/test_metropolis_import.ipynb`](examples/test_metropolis_import.ipynb) after syncing the development environment.
+```python
+from metropolis.testbeds import load_address_plan
+
+plan = load_address_plan()
+print(plan["testbed_id"], len(plan["networks"]))
+```
+
+The loader accepts `testbed_id` and `dataset_version` arguments for future testbeds and versions. Data ingestion, feature extraction for Metropolis traffic, provenance modeling, and evaluation workflows remain under development.
+
+For a runnable example that imports the package and loads the v1 address plan into a pandas table, open [`examples/test_metropolis_import.ipynb`](examples/test_metropolis_import.ipynb) after syncing the development environment. The address plan is included in built distributions, so the loader works without a repository checkout.
+
+To check the Metropolis address plan, device inventory, router interfaces/static routes, and switch VLAN specs against each other, run `uv run python scripts/validate_metropolis_topology.py`. Add `--report testbeds/metropolis/datasets/water_treatment_v1/topology/validation-report.md` to save a readable cross-reference.
 
 ## Project layout
 
