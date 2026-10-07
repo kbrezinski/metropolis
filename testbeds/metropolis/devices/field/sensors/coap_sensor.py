@@ -47,8 +47,17 @@ def _options(data: bytes, offset: int) -> list[tuple[int, bytes]]:
     return options
 
 
+def current_value(value) -> float:
+    """Resolve a sensor value that may be a fixed number or a live callable.
+
+    A callable lets the status resource report the process reading rather than a
+    value captured at startup.
+    """
+    return value() if callable(value) else value
+
+
 def handle_get(
-    request: bytes, device_name: str, sensor_type: str, value: float
+    request: bytes, device_name: str, sensor_type: str, value
 ) -> bytes | None:
     if len(request) < 4:
         return None
@@ -98,7 +107,11 @@ def handle_get(
         body, content_format = DISCOVERY, 40  # application/link-format
     elif path in (b"", b"status"):
         body = json.dumps(
-            {"device": device_name, "sensor": sensor_type, "value": value},
+            {
+                "device": device_name,
+                "sensor": sensor_type,
+                "value": current_value(value),
+            },
             separators=(",", ":"),
         ).encode()
         content_format = 50  # application/json
@@ -109,9 +122,7 @@ def handle_get(
     return respond(69, body, content_format)  # 2.05 Content
 
 
-def serve(
-    host: str, port: int, device_name: str, sensor_type: str, value: float
-) -> None:
+def serve(host: str, port: int, device_name: str, sensor_type: str, value) -> None:
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
         sock.bind((host, port))
         log.info("CoAP status endpoint listening on %s:%s", host, port)

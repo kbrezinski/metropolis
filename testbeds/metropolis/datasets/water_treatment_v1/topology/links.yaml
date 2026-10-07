@@ -1,0 +1,430 @@
+# Metropolis v1 cabling. Addresses and VLANs come from the address plan; the
+# router interface names match the GNS3 interface maps in testbeds/metropolis/router/,
+# and the switch port roles match the tables in testbeds/metropolis/switch/.
+#
+# Switch port roles are logical labels, not GNS3 port numbers. Literal port
+# numbers only become known once the project is cabled, so they are not
+# asserted here. Every link is "planned" until someone cables and checks it.
+schema_version: "1.0"
+testbed_id: metropolis
+description: >-
+  Point-to-point links between Metropolis routers and the managed switches,
+  plus node attachments to the access segments. Process-cell and management
+  access switches are unmanaged segments in this version, so their cabling is
+  not modelled.
+
+links:
+  # Routed links between the routers. Each end names the interface its
+  # configuration script assigns, and the transit subnets are /30s.
+  - id: link-core-plant
+    kind: transit
+    description: OT core to plant router
+    network_id: plant-core-transit
+    cidr: 10.20.254.0/30
+    endpoints:
+      - node: MET-OT-CORE
+        interface: eth0
+      - node: MET-PLANT
+        interface: eth0
+
+  - id: link-core-dmz
+    kind: transit
+    description: OT core to OT/DMZ boundary router
+    network_id: core-dmz-transit
+    cidr: 10.20.254.4/30
+    endpoints:
+      - node: MET-OT-CORE
+        interface: eth1
+      - node: MET-OT-DMZ
+        interface: eth0
+
+  - id: link-core-wan
+    kind: transit
+    description: OT core to WAN hub router
+    network_id: core-wan-transit
+    cidr: 10.20.254.8/30
+    endpoints:
+      - node: MET-OT-CORE
+        interface: eth2
+      - node: MET-OT-WAN
+        interface: eth0
+
+  # Trunks from a router into a managed aggregation switch. The switch port
+  # roles are the names used in the switch specifications.
+  - id: link-plant-switch
+    kind: trunk
+    description: Plant router trunk to the plant aggregation switch
+    vlans: [10, 11, 12, 13, 50, 51, 52, 53]
+    endpoints:
+      - node: MET-PLANT
+        interface: eth1
+      - node: sw-plant-aggregation
+        port_role: router-uplink
+
+  - id: link-ops-switch
+    kind: trunk
+    description: OT core trunk to the operations aggregation switch
+    vlans: [20, 21, 22, 23, 30]
+    endpoints:
+      - node: MET-OT-CORE
+        interface: eth3
+      - node: sw-operations-aggregation
+        port_role: router-uplink
+
+  # Single-subnet segments handed off untagged to their own switch.
+  - id: link-wan-switch
+    kind: underlay
+    description: WAN hub router to the simulated WAN switch
+    network_id: wan-underlay
+    cidr: 172.31.255.0/24
+    endpoints:
+      - node: MET-OT-WAN
+        interface: eth1
+      - node: sw-wan-underlay
+        port_role: wan-hub
+
+  - id: link-dmz-switch
+    kind: access
+    description: OT/DMZ router to the DMZ switch
+    network_id: ot-dmz
+    cidr: 10.20.40.0/24
+    endpoints:
+      - node: MET-OT-DMZ
+        interface: eth1
+      - node: sw-dmz
+        port_role: router-uplink
+
+  - id: link-enterprise-switch
+    kind: access
+    description: OT/DMZ router to the enterprise switch
+    network_id: enterprise
+    cidr: 10.30.10.0/24
+    endpoints:
+      - node: MET-OT-DMZ
+        interface: eth2
+      - node: sw-enterprise
+        port_role: router-uplink
+
+  - id: link-attack-test-switch
+    kind: access
+    description: OT/DMZ router to the isolated attack-test switch
+    network_id: attack-lab
+    cidr: 10.99.10.0/24
+    endpoints:
+      - node: MET-OT-DMZ
+        interface: eth3
+      - node: sw-attack-test
+        port_role: router-uplink
+
+  # Remote sites: the station router serves its LAN directly, and reaches the
+  # shared WAN underlay on its second interface.
+  - id: link-reservoir-switch
+    kind: access
+    description: Reservoir router to the reservoir station switch
+    network_id: reservoir
+    cidr: 10.20.14.0/24
+    endpoints:
+      - node: MET-RESERVOIR
+        interface: eth0
+      - node: sw-reservoir-access
+        port_role: router-uplink
+
+  - id: link-raw-water-switch
+    kind: access
+    description: Raw-water router to the raw-water station switch
+    network_id: raw-water
+    cidr: 10.20.15.0/24
+    endpoints:
+      - node: MET-RAW-WATER
+        interface: eth0
+      - node: sw-raw-water-access
+        port_role: router-uplink
+
+  - id: link-reservoir-wan
+    kind: underlay
+    description: Reservoir router to the simulated WAN switch
+    network_id: wan-underlay
+    cidr: 172.31.255.0/24
+    endpoints:
+      - node: MET-RESERVOIR
+        interface: eth1
+      - node: sw-wan-underlay
+        port_role: reservoir-site
+
+  - id: link-raw-water-wan
+    kind: underlay
+    description: Raw-water router to the simulated WAN switch
+    network_id: wan-underlay
+    cidr: 172.31.255.0/24
+    endpoints:
+      - node: MET-RAW-WATER
+        interface: eth1
+      - node: sw-wan-underlay
+        port_role: raw-water-site
+
+  # Trunks from an aggregation switch to the access switches it serves. These
+  # are the uplinks named in the switch specifications.
+  - id: link-plant-cell-intake-uplink
+    kind: trunk
+    description: Plant aggregation to the intake cell access switch
+    vlans: [10]
+    endpoints:
+      - node: sw-plant-aggregation
+        port_role: cell-intake-uplink
+      - node: sw-plant-cell-intake
+        port_role: aggregation-uplink
+
+  - id: link-plant-cell-dosing-uplink
+    kind: trunk
+    description: Plant aggregation to the dosing cell access switch
+    vlans: [11]
+    endpoints:
+      - node: sw-plant-aggregation
+        port_role: cell-dosing-uplink
+      - node: sw-plant-cell-dosing
+        port_role: aggregation-uplink
+
+  - id: link-plant-cell-filtration-uplink
+    kind: trunk
+    description: Plant aggregation to the filtration cell access switch
+    vlans: [12]
+    endpoints:
+      - node: sw-plant-aggregation
+        port_role: cell-filtration-uplink
+      - node: sw-plant-cell-filtration
+        port_role: aggregation-uplink
+
+  - id: link-plant-cell-disinfection-uplink
+    kind: trunk
+    description: Plant aggregation to the disinfection cell access switch
+    vlans: [13]
+    endpoints:
+      - node: sw-plant-aggregation
+        port_role: cell-disinfection-uplink
+      - node: sw-plant-cell-disinfection
+        port_role: aggregation-uplink
+
+  - id: link-plant-hmi-intake-uplink
+    kind: trunk
+    description: Plant aggregation to the intake HMI access switch
+    vlans: [50]
+    endpoints:
+      - node: sw-plant-aggregation
+        port_role: hmi-intake-uplink
+      - node: sw-plant-hmi
+        port_role: aggregation-uplink
+
+  - id: link-plant-hmi-dosing-uplink
+    kind: trunk
+    description: Plant aggregation to the dosing HMI access switch
+    vlans: [51]
+    endpoints:
+      - node: sw-plant-aggregation
+        port_role: hmi-dosing-uplink
+      - node: sw-plant-dosing-hmi
+        port_role: aggregation-uplink
+
+  - id: link-plant-hmi-filtration-uplink
+    kind: trunk
+    description: Plant aggregation to the filtration HMI access switch
+    vlans: [52]
+    endpoints:
+      - node: sw-plant-aggregation
+        port_role: hmi-filtration-uplink
+      - node: sw-plant-filtration-hmi
+        port_role: aggregation-uplink
+
+  - id: link-plant-hmi-disinfection-uplink
+    kind: trunk
+    description: Plant aggregation to the disinfection HMI access switch
+    vlans: [53]
+    endpoints:
+      - node: sw-plant-aggregation
+        port_role: hmi-disinfection-uplink
+      - node: sw-plant-disinfection-hmi
+        port_role: aggregation-uplink
+
+  - id: link-ops-scada-uplink
+    kind: trunk
+    description: Operations aggregation to the SCADA access switch
+    vlans: [20]
+    endpoints:
+      - node: sw-operations-aggregation
+        port_role: scada-uplink
+      - node: sw-operations-scada
+        port_role: aggregation-uplink
+
+  - id: link-ops-engineering-uplink
+    kind: trunk
+    description: Operations aggregation to the engineering access switch
+    vlans: [21]
+    endpoints:
+      - node: sw-operations-aggregation
+        port_role: engineering-uplink
+      - node: sw-operations-engineering
+        port_role: aggregation-uplink
+
+  - id: link-ops-historian-uplink
+    kind: trunk
+    description: Operations aggregation to the historian access switch
+    vlans: [22]
+    endpoints:
+      - node: sw-operations-aggregation
+        port_role: historian-uplink
+      - node: sw-operations-historian
+        port_role: aggregation-uplink
+
+  - id: link-ops-mqtt-uplink
+    kind: trunk
+    description: Operations aggregation to the MQTT access switch
+    vlans: [23]
+    endpoints:
+      - node: sw-operations-aggregation
+        port_role: mqtt-uplink
+      - node: sw-operations-mqtt
+        port_role: aggregation-uplink
+
+  - id: link-ops-services-uplink
+    kind: trunk
+    description: Operations aggregation to the OT services access switch
+    vlans: [30]
+    endpoints:
+      - node: sw-operations-aggregation
+        port_role: ot-services-uplink
+      - node: sw-operations-services
+        port_role: aggregation-uplink
+
+  # Host attachments to the access segments the lab actually populates. The
+  # process cells without modelled devices (11-13, 51-53) keep their trunk
+  # capacity at the aggregation switch but have no attachment entries yet.
+  - id: attach-intake-plc
+    kind: access
+    description: Intake PLC on the plant intake segment
+    network_id: plant-intake
+    cidr: 10.20.10.0/24
+    endpoints:
+      - node: MET-PLC-INTAKE-01
+      - node: sw-plant-cell-intake
+
+  - id: attach-intake-sensor
+    kind: access
+    description: Intake sensor on the plant intake segment
+    network_id: plant-intake
+    cidr: 10.20.10.0/24
+    endpoints:
+      - node: MET-SENSOR-INTAKE-01
+      - node: sw-plant-cell-intake
+
+  - id: attach-intake-legacy
+    kind: access
+    description: Legacy Telnet gateway on the plant intake segment
+    network_id: plant-intake
+    cidr: 10.20.10.0/24
+    endpoints:
+      - node: MET-LEGACY-GATEWAY-01
+      - node: sw-plant-cell-intake
+
+  - id: attach-reservoir-rtu
+    kind: access
+    description: Reservoir RTU on the reservoir station LAN
+    network_id: reservoir
+    cidr: 10.20.14.0/24
+    endpoints:
+      - node: MET-RTU-RESERVOIR-01
+      - node: sw-reservoir-access
+
+  - id: attach-raw-water-rtu
+    kind: access
+    description: Raw-water RTU on the lift station LAN
+    network_id: raw-water
+    cidr: 10.20.15.0/24
+    endpoints:
+      - node: MET-RTU-RAW-WATER-01
+      - node: sw-raw-water-access
+
+  - id: attach-scada
+    kind: access
+    description: SCADA collector on the operations segment
+    network_id: scada
+    cidr: 10.20.20.0/24
+    endpoints:
+      - node: MET-SCADA-01
+      - node: sw-operations-scada
+
+  - id: attach-engineering
+    kind: access
+    description: Engineering workstation on the engineering segment
+    network_id: engineering
+    cidr: 10.20.21.0/24
+    endpoints:
+      - node: MET-ENGINEERING-01
+      - node: sw-operations-engineering
+
+  - id: attach-control-client
+    kind: access
+    description: Routine control client on the engineering segment
+    network_id: engineering
+    cidr: 10.20.21.0/24
+    endpoints:
+      - node: MET-CONTROL-CLIENT-01
+      - node: sw-operations-engineering
+
+  - id: attach-historian
+    kind: access
+    description: Historian on the historian segment
+    network_id: historian
+    cidr: 10.20.22.0/24
+    endpoints:
+      - node: MET-HISTORIAN-01
+      - node: sw-operations-historian
+
+  - id: attach-mqtt-broker
+    kind: access
+    description: MQTT broker on the MQTT services segment
+    network_id: mqtt
+    cidr: 10.20.23.0/24
+    endpoints:
+      - node: MET-MQTT-BROKER-01
+      - node: sw-operations-mqtt
+
+  - id: attach-dns
+    kind: access
+    description: DNS service on the OT services segment
+    network_id: ot-services
+    cidr: 10.20.30.0/24
+    endpoints:
+      - node: MET-DNS-01
+      - node: sw-operations-services
+
+  - id: attach-ntp
+    kind: access
+    description: NTP service on the OT services segment
+    network_id: ot-services
+    cidr: 10.20.30.0/24
+    endpoints:
+      - node: MET-NTP-01
+      - node: sw-operations-services
+
+  - id: attach-hmi-intake
+    kind: access
+    description: Intake HMI on the plant HMI segment
+    network_id: plant-hmi
+    cidr: 10.20.50.0/24
+    endpoints:
+      - node: MET-HMI-INTAKE-01
+      - node: sw-plant-hmi
+
+  # Attack-lab nodes share the isolated attack-test segment.
+  - id: attach-attack-lab
+    kind: access
+    description: Synthetic Mirai and Merlin nodes on the attack-test segment
+    network_id: attack-lab
+    cidr: 10.99.10.0/24
+    endpoints:
+      - node: MET-MIRAI-CNC-01
+      - node: sw-attack-test
+        port_role: attack-host-1
+    notes: >-
+      Representative attachment for the attack-lab subnet. The individual
+      nodes (listener, loaders, bot, Merlin CNC and agent) share this switch
+      and are enumerated in the device inventory.

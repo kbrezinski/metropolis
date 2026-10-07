@@ -1,5 +1,7 @@
 # Initial Metropolis device instances. Addresses are planned examples; reconcile
 # them with the final GNS3 node interfaces before capturing a dataset.
+schema_version: "1.0"
+testbed_id: metropolis
 devices:
   - name: MET-PLC-INTAKE-01
     model: testbeds/metropolis/devices/controllers/plc
@@ -60,6 +62,11 @@ devices:
       NODE_GATEWAY: 10.20.10.1
       SENSOR_TYPE: level
       SENSOR_VALUE: "65.0"
+      # Report the process reading from the PLC rather than a fixed value, so
+      # this sensor and the PLC registers agree and both move.
+      PLC_HOST: 10.20.10.10
+      SENSOR_REGISTER: "0"
+      SENSOR_DIVISOR: "10"
       MQTT_TOPIC: metropolis/plant/intake/telemetry
       MQTT_USERNAME: lab_device
       MQTT_PASSWORD: LabOnly_Device_2026
@@ -207,3 +214,129 @@ devices:
       NODE_HOSTNAME: MET-NTP-01
       NODE_IP: 10.20.30.11/24
       NODE_GATEWAY: 10.20.30.1
+
+  # ---------------------------------------------------------------------------
+  # Attack-lab nodes: synthetic Mirai and Merlin control-plane models.
+  #
+  # These are simulations, not malware. The Mirai chain reproduces Gotham's
+  # cnc/scan-listener/loader/bot lifecycle, and the Merlin pair reproduces its
+  # C2 console and agent choreography. The loader serves an inert text stub and
+  # no bot or agent binary exists in this repository. Keep this subnet isolated
+  # and do not bridge it to a production network.
+  # ---------------------------------------------------------------------------
+
+  - name: MET-MIRAI-CNC-01
+    model: testbeds/metropolis/devices/attack/mirai/cnc
+    image: metropolis/mirai-cnc:dev
+    site: treatment_plant
+    subnet: 10.99.10.0/24
+    address: 10.99.10.10/24
+    gateway: 10.99.10.1
+    protocols: [mirai-cnc, mirai-report]
+    environment:
+      NODE_HOSTNAME: MET-MIRAI-CNC-01
+      NODE_IP: 10.99.10.10/24
+      NODE_GATEWAY: 10.99.10.1
+      MIRAI_CNC_PORT: "23"
+      MIRAI_REPORT_PORT: "48101"
+      C2_PORT: "23"
+
+  - name: MET-MIRAI-LISTENER-01
+    model: testbeds/metropolis/devices/attack/mirai/scan_listener
+    image: metropolis/mirai-scan-listener:dev
+    site: treatment_plant
+    subnet: 10.99.10.0/24
+    address: 10.99.10.11/24
+    gateway: 10.99.10.1
+    protocols: [mirai-report]
+    environment:
+      NODE_HOSTNAME: MET-MIRAI-LISTENER-01
+      NODE_IP: 10.99.10.11/24
+      NODE_GATEWAY: 10.99.10.1
+      MIRAI_REPORT_PORT: "48101"
+      C2_PORT: "48101"
+
+  - name: MET-MIRAI-LOADER-TFTP-01
+    model: testbeds/metropolis/devices/attack/mirai/loader
+    image: metropolis/mirai-loader:dev
+    site: treatment_plant
+    subnet: 10.99.10.0/24
+    address: 10.99.10.12/24
+    gateway: 10.99.10.1
+    protocols: [payload-delivery]
+    environment:
+      NODE_HOSTNAME: MET-MIRAI-LOADER-TFTP-01
+      NODE_IP: 10.99.10.12/24
+      NODE_GATEWAY: 10.99.10.1
+      LOADER_KIND: tftp
+      LOADER_PORT: "69"
+
+  - name: MET-MIRAI-LOADER-WGET-01
+    model: testbeds/metropolis/devices/attack/mirai/wget_loader
+    image: metropolis/mirai-wget-loader:dev
+    site: treatment_plant
+    subnet: 10.99.10.0/24
+    address: 10.99.10.13/24
+    gateway: 10.99.10.1
+    protocols: [payload-delivery]
+    environment:
+      NODE_HOSTNAME: MET-MIRAI-LOADER-WGET-01
+      NODE_IP: 10.99.10.13/24
+      NODE_GATEWAY: 10.99.10.1
+      LOADER_KIND: wget
+      LOADER_PORT: "80"
+      C2_PORT: "80"
+
+  - name: MET-MIRAI-BOT-01
+    model: testbeds/metropolis/devices/attack/mirai/bot
+    image: metropolis/mirai-bot:dev
+    site: treatment_plant
+    subnet: 10.99.10.0/24
+    address: 10.99.10.100/24
+    gateway: 10.99.10.1
+    protocols: [mirai-bot]
+    environment:
+      NODE_HOSTNAME: MET-MIRAI-BOT-01
+      NODE_IP: 10.99.10.100/24
+      NODE_GATEWAY: 10.99.10.1
+      MIRAI_CNC_HOST: 10.99.10.10
+      MIRAI_LISTENER_HOST: 10.99.10.11
+      MIRAI_CNC_PORT: "48101"
+      MIRAI_REPORT_PORT: "48101"
+      BOT_ARCH: linux-x64-synthetic
+      BOT_INTERVAL: "30"
+      BOT_TARGETS: ""
+
+  - name: MET-MERLIN-CNC-01
+    model: testbeds/metropolis/devices/attack/merlin/cnc
+    image: metropolis/merlin-cnc:dev
+    site: treatment_plant
+    subnet: 10.99.10.0/24
+    address: 10.99.10.20/24
+    gateway: 10.99.10.1
+    protocols: [merlin-control, merlin-agent]
+    environment:
+      NODE_HOSTNAME: MET-MERLIN-CNC-01
+      NODE_IP: 10.99.10.20/24
+      NODE_GATEWAY: 10.99.10.1
+      MERLIN_CONTROL_PORT: "23"
+      MERLIN_HTTP_PORT: "8443"
+      C2_PORT: "23"
+
+  - name: MET-MERLIN-AGENT-01
+    model: testbeds/metropolis/devices/attack/merlin/agent
+    image: metropolis/merlin-agent:dev
+    site: treatment_plant
+    subnet: 10.99.10.0/24
+    address: 10.99.10.21/24
+    gateway: 10.99.10.1
+    protocols: [merlin-agent]
+    environment:
+      NODE_HOSTNAME: MET-MERLIN-AGENT-01
+      NODE_IP: 10.99.10.21/24
+      NODE_GATEWAY: 10.99.10.1
+      MERLIN_CNC_URL: http://10.99.10.20:8443
+      MERLIN_CNC_HOST: 10.99.10.20
+      AGENT_ARCH: linux-x64-synthetic
+      AGENT_SLEEP: "20"
+      AGENT_UPLOAD_ONCE: "true"

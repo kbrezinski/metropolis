@@ -1,0 +1,87 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/kbrezinski/ot-detection-systems/blob/main/schemas/link-plan.schema.json",
+  "title": "OT testbed link plan",
+  "description": "Machine-readable cabling between testbed nodes. Interface names are the ones the router and device models configure; switch port roles are logical labels, because literal GNS3 port numbers are only known after cabling.",
+  "type": "object",
+  "required": ["schema_version", "testbed_id", "links"],
+  "properties": {
+    "schema_version": { "const": "1.0" },
+    "testbed_id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_-]*$"
+    },
+    "description": { "type": "string" },
+    "links": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/link" },
+      "minItems": 1
+    }
+  },
+  "$defs": {
+    "endpoint": {
+      "type": "object",
+      "required": ["node"],
+      "properties": {
+        "node": { "type": "string", "minLength": 1 },
+        "interface": {
+          "type": "string",
+          "pattern": "^eth[0-9]+(?:\\.vif[0-9]+)?$",
+          "description": "Interface as the model configures it, optionally a 802.1Q subinterface"
+        },
+        "port_role": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]*$",
+          "description": "Logical switch port label such as router-uplink; not a GNS3 port number"
+        },
+        "inventoried": {
+          "type": "boolean",
+          "default": true,
+          "description": "False when the node is specified but not yet present in the device inventory"
+        },
+        "notes": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "link": {
+      "type": "object",
+      "required": ["id", "kind", "description", "endpoints"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z][a-z0-9_-]*$" },
+        "kind": {
+          "enum": ["trunk", "access", "transit", "underlay"],
+          "description": "trunk carries several VLANs, access one untagged segment, transit and underlay are routed point-to-point"
+        },
+        "description": { "type": "string", "minLength": 1 },
+        "network_id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_-]*$",
+          "description": "Network this link carries, as identified in the address plan"
+        },
+        "cidr": {
+          "type": "string",
+          "pattern": "^(?:[0-9]{1,3}\\.){3}[0-9]{1,3}/(?:[0-9]|[12][0-9]|3[0-2])$"
+        },
+        "vlans": {
+          "type": "array",
+          "items": { "type": "integer", "minimum": 1, "maximum": 4094 },
+          "uniqueItems": true
+        },
+        "endpoints": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/endpoint" },
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "status": {
+          "enum": ["planned", "configured", "verified"],
+          "default": "planned",
+          "description": "planned means specified only; no cabling or configuration has been checked"
+        },
+        "notes": { "type": "string" }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

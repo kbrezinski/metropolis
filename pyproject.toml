@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "metropolis-ot-detection-systems"
 version = "0.1.1"
-description = "To be added..."
+description = "Testbeds and experiment tooling for OT/ICS network traffic and provenance-based detection"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
@@ -21,6 +21,11 @@ dependencies = [
 testpaths = ["tests"]
 addopts = ["--import-mode=importlib", "-q"]
 
+[tool.codespell]
+# "ot" is the operational-technology domain term; "checkin" is the control-frame
+# verb used by the synthetic Mirai and Merlin attack-lab models.
+ignore-words-list = "ot,checkin"
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/metropolis"]
 
@@ -31,9 +36,18 @@ packages = ["src/metropolis"]
 "testbeds/metropolis/datasets/water_treatment_v1/topology/address-plan.yaml" = "testbeds/metropolis/datasets/water_treatment_v1/topology/address-plan.yaml"
 
 [dependency-groups]
+# The experiment toolkit needs paho-mqtt, paramiko, pymodbus, and scapy. They
+# are pinned to the versions scripts/attacks/requirements.txt names, because the
+# device models and tools are written against those APIs: pymodbus 4.x moves the
+# server API and breaks the Modbus controller. Keep the two lists in step.
 dev = [
     "codespell>=2.4.2",
+    "jsonschema>=4.23.0",
+    "paho-mqtt==2.1.0",
+    "paramiko==4.0.0",
     "pre-commit>=4.5.1",
+    "pymodbus==3.8.6",
     "pytest>=9.0.3",
     "ruff>=0.15.11",
+    "scapy==2.6.1",
 ]

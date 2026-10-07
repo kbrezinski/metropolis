@@ -160,7 +160,10 @@ networks:
     kind: lan
     cidr: 10.99.10.0/24
     gateway: 10.99.10.1
-    purpose: Isolated experiment hosts; filtering remains to be configured.
+    purpose: >-
+      Isolated experiment hosts: synthetic Mirai and Merlin control-plane nodes
+      plus the payload-delivery and reporting services they use. Filtering
+      remains to be configured.
   - id: wan-underlay
     name: Simulated WAN underlay
     site: inter_site

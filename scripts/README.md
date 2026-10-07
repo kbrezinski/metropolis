@@ -1,9 +1,10 @@
 # Repository scripts
 
-This directory contains dataset-processing and topology-validation utilities.
-It does not contain attack execution scripts or an automated GNS3 topology
-builder. See [`attacks/README.md`](attacks/README.md) for notes on adapting
-Gotham scripts to the Metropolis nodes and services.
+This directory contains dataset-processing, topology-validation, and bounded
+lab experiment utilities. See [`attacks/README.md`](attacks/README.md) for the
+toolkit and [`attacks/SERVICE_TARGETS.md`](attacks/SERVICE_TARGETS.md) for service
+targets and Gotham adaptation notes. An automated GNS3 topology builder remains
+future work.
 
 ## GNS3 implementation references
 

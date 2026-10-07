@@ -1,0 +1,233 @@
+# Metropolis v1 infrastructure nodes: the routers and switches that carry the
+# device nodes listed in device_instances/initial_devices.yaml.
+#
+# These are not Docker nodes, so they do not belong in that inventory. A router
+# is a VyOS appliance configured by a checked-in script, and a switch is a GNS3
+# Ethernet switch described by a specification document with no image and no
+# filesystem.
+#
+# Router interface addresses are repeated here so drift from the VyOS scripts is
+# caught by scripts/validate_metropolis_topology.py. Switch port roles are the
+# logical labels from the switch specifications; literal GNS3 port numbers are
+# only known once the project is cabled and are deliberately not asserted.
+schema_version: "1.0"
+testbed_id: metropolis
+description: Routers and switches of the Metropolis v1 topology.
+
+routers:
+  - name: MET-PLANT
+    kind: vyos
+    role: Main treatment-plant router
+    config: testbeds/metropolis/router/locations/router_plant.sh
+    interfaces:
+      - name: eth0
+        cidr: 10.20.254.2/30
+        description: Transit to the OT core router
+      - name: eth1
+        kind: trunk
+        vlans: [10, 11, 12, 13, 50, 51, 52, 53]
+        description: 802.1Q trunk to the plant aggregation switch
+
+  - name: MET-OT-CORE
+    kind: vyos
+    role: OT routing hub for the main plant
+    config: testbeds/metropolis/router/backbone/router_ot_core.sh
+    interfaces:
+      - name: eth0
+        cidr: 10.20.254.1/30
+        description: Transit to the plant router
+      - name: eth1
+        cidr: 10.20.254.5/30
+        description: Transit to the OT/DMZ boundary router
+      - name: eth2
+        cidr: 10.20.254.9/30
+        description: Transit to the WAN hub router
+      - name: eth3
+        kind: trunk
+        vlans: [20, 21, 22, 23, 30]
+        description: 802.1Q trunk to the OT operations aggregation switch
+
+  - name: MET-OT-DMZ
+    kind: vyos
+    role: DMZ, enterprise, and attack-test edge
+    config: testbeds/metropolis/router/backbone/router_ot_dmz.sh
+    interfaces:
+      - name: eth0
+        cidr: 10.20.254.6/30
+        description: Transit to the OT core router
+      - name: eth1
+        cidr: 10.20.40.1/24
+        description: OT DMZ network, untagged
+      - name: eth2
+        cidr: 10.30.10.1/24
+        description: Enterprise network, untagged
+      - name: eth3
+        cidr: 10.99.10.1/24
+        description: Isolated attack-test network, untagged
+
+  - name: MET-OT-WAN
+    kind: vyos
+    role: WAN hub for the remote stations
+    config: testbeds/metropolis/router/backbone/router_ot_wan.sh
+    interfaces:
+      - name: eth0
+        cidr: 10.20.254.10/30
+        description: Transit to the OT core router
+      - name: eth1
+        cidr: 172.31.255.1/24
+        description: Simulated WAN underlay
+
+  - name: MET-RESERVOIR
+    kind: vyos
+    role: Reservoir and booster station router
+    config: testbeds/metropolis/router/locations/router_reservoir.sh
+    interfaces:
+      - name: eth0
+        cidr: 10.20.14.1/24
+        description: Reservoir station LAN, untagged
+      - name: eth1
+        cidr: 172.31.255.21/24
+        description: Simulated WAN underlay
+
+  - name: MET-RAW-WATER
+    kind: vyos
+    role: Raw-water lift station router
+    config: testbeds/metropolis/router/locations/router_raw_water.sh
+    interfaces:
+      - name: eth0
+        cidr: 10.20.15.1/24
+        description: Raw-water station LAN, untagged
+      - name: eth1
+        cidr: 172.31.255.11/24
+        description: Simulated WAN underlay
+
+switches:
+  - name: sw-plant-aggregation
+    kind: ethernet-switch
+    role: Layer 2 aggregation between MET-PLANT and the plant and HMI access switches
+    spec: testbeds/metropolis/switch/backbone/sw-plant-aggregation.md
+    attachment_points:
+      - router-uplink
+      - cell-intake-uplink
+      - cell-dosing-uplink
+      - cell-filtration-uplink
+      - cell-disinfection-uplink
+      - hmi-intake-uplink
+      - hmi-dosing-uplink
+      - hmi-filtration-uplink
+      - hmi-disinfection-uplink
+
+  - name: sw-operations-aggregation
+    kind: ethernet-switch
+    role: Layer 2 aggregation between MET-OT-CORE and the OT service access switches
+    spec: testbeds/metropolis/switch/backbone/sw-operations-aggregation.md
+    attachment_points:
+      - router-uplink
+      - scada-uplink
+      - engineering-uplink
+      - historian-uplink
+      - mqtt-uplink
+      - ot-services-uplink
+
+  - name: sw-wan-underlay
+    kind: ethernet-switch
+    role: Shared Layer 2 underlay for the WAN hub and remote-site routers
+    spec: testbeds/metropolis/switch/backbone/sw-wan-underlay.md
+    attachment_points:
+      - wan-hub
+      - raw-water-site
+      - reservoir-site
+
+  - name: sw-dmz
+    kind: ethernet-switch
+    role: Layer 2 segment for OT DMZ hosts
+    spec: testbeds/metropolis/switch/backbone/sw-dmz.md
+    attachment_points:
+      - router-uplink
+      - dmz-host-1
+      - dmz-host-2
+
+  - name: sw-enterprise
+    kind: ethernet-switch
+    role: Layer 2 enterprise-side segment attached to the boundary router
+    spec: testbeds/metropolis/switch/backbone/sw-enterprise.md
+    attachment_points:
+      - router-uplink
+      - enterprise-host-1
+
+  - name: sw-attack-test
+    kind: ethernet-switch
+    role: Dedicated Layer 2 segment for attack-generation nodes
+    spec: testbeds/metropolis/switch/backbone/sw-attack-test.md
+    notes: >-
+      The switch specification warns that VLAN separation here does not provide
+      routed isolation. Keep this segment disconnected until router firewall
+      policy exists.
+    attachment_points:
+      - router-uplink
+      - attack-host-1
+
+  - name: sw-reservoir-access
+    kind: ethernet-switch
+    role: Access Layer 2 segment for the reservoir/booster station
+    spec: testbeds/metropolis/switch/locations/sw-reservoir-access.md
+    attachment_points:
+      - router-uplink
+      - rtu-or-plc
+      - sensor-actuator-1
+      - sensor-actuator-2
+
+  - name: sw-raw-water-access
+    kind: ethernet-switch
+    role: Access Layer 2 segment for the raw-water lift station
+    spec: testbeds/metropolis/switch/locations/sw-raw-water-access.md
+    attachment_points:
+      - router-uplink
+      - rtu-or-plc
+      - sensor-actuator-1
+      - sensor-actuator-2
+
+# Access switches named by the aggregation specs but not given their own spec
+# document. Each carries one VLAN to one segment, so they are recorded here as
+# segments rather than invented as switch appliances. Underlying device
+# attachments in the link plan point at these names.
+segments:
+  - name: sw-plant-cell-intake
+    role: Plant intake cell access segment
+    network_id: plant-intake
+  - name: sw-plant-cell-dosing
+    role: Plant dosing and clarification cell access segment
+    network_id: plant-dosing
+  - name: sw-plant-cell-filtration
+    role: Plant filtration cell access segment
+    network_id: plant-filtration
+  - name: sw-plant-cell-disinfection
+    role: Plant disinfection cell access segment
+    network_id: plant-disinfection
+  - name: sw-plant-hmi
+    role: Plant HMI access segment
+    network_id: plant-hmi
+  - name: sw-plant-dosing-hmi
+    role: Dosing HMI access segment
+    network_id: dosing-hmi
+  - name: sw-plant-filtration-hmi
+    role: Filtration HMI access segment
+    network_id: filtration-hmi
+  - name: sw-plant-disinfection-hmi
+    role: Disinfection HMI access segment
+    network_id: disinfection-hmi
+  - name: sw-operations-scada
+    role: SCADA access segment
+    network_id: scada
+  - name: sw-operations-engineering
+    role: Engineering access segment
+    network_id: engineering
+  - name: sw-operations-historian
+    role: Historian access segment
+    network_id: historian
+  - name: sw-operations-mqtt
+    role: MQTT services access segment
+    network_id: mqtt
+  - name: sw-operations-services
+    role: OT infrastructure services access segment
+    network_id: ot-services
