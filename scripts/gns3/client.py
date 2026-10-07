@@ -196,6 +196,25 @@ class Gns3Client:
             allow=(200, *_NOT_FOUND),
         )
 
+    def node_console(self, project_id: str, node_id: str) -> tuple[str, int] | None:
+        """Where to reach a node's console, or None when it exposes none.
+
+        A router is configured through its console, so the builder needs this to
+        reach it. ``console_host`` can be ``0.0.0.0`` when the server listens on
+        every interface, which is not dialable; the caller substitutes the GNS3
+        server's own host in that case.
+        """
+        record = self.node(project_id, node_id)
+        if not record:
+            return None
+        port = record.get("console")
+        if port is None:
+            return None
+        host = record.get("console_host") or ""
+        if host in {"", "0.0.0.0", "::"}:
+            host = self.server.host
+        return host, int(port)
+
     def set_node_environment(
         self, project_id: str, node_id: str, environment: str
     ) -> dict:

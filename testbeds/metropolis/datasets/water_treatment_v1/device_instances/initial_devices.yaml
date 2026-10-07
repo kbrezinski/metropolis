@@ -216,6 +216,25 @@ devices:
       NODE_GATEWAY: 10.20.30.1
 
   # ---------------------------------------------------------------------------
+  # Reachability probe: a minimal host with no service. It exists so each zone
+  # has something to ping or connect to, which makes routing between zones
+  # verifiable before real devices are in place.
+  # ---------------------------------------------------------------------------
+
+  - name: MET-DEBUG-DMZ-01
+    model: testbeds/metropolis/devices/field/reachability_probe
+    image: metropolis/reachability-probe:dev
+    site: treatment_plant
+    subnet: 10.20.40.0/24
+    address: 10.20.40.10/24
+    gateway: 10.20.40.1
+    protocols: [icmp]
+    environment:
+      NODE_HOSTNAME: MET-DEBUG-DMZ-01
+      NODE_IP: 10.20.40.10/24
+      NODE_GATEWAY: 10.20.40.1
+
+  # ---------------------------------------------------------------------------
   # Attack-lab nodes: synthetic Mirai and Merlin control-plane models.
   #
   # These are simulations, not malware. The Mirai chain reproduces Gotham's

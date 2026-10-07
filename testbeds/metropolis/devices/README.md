@@ -47,6 +47,7 @@ publish Docker ports — they bind to their own GNS3 interfaces.
 | Legacy gateway | `field/legacy_gateway/` | Telnet login and shell, for experiments that need legacy host access | Intake VLAN 10 |
 | DNS | `services/dns/` | Local records for this dataset; no upstream forwarding | OT services VLAN 30 |
 | NTP | `services/ntp/` | Local time replies, using the host clock without changing it | OT services VLAN 30 |
+| Reachability probe | `field/reachability_probe/` | A minimal host that runs no service, so each zone has something to ping or route to | Any zone that needs a positive control |
 | Mirai chain | `attack/mirai/` | Command console, scan listener, loaders, and an inert bot agent | Attack lab `10.99.10.0/24` |
 | Merlin C2 | `attack/merlin/` | C2 console and an inert agent | Attack lab `10.99.10.0/24` |
 
@@ -71,6 +72,7 @@ docker build -f testbeds/metropolis/devices/operations/control_client/Dockerfile
 docker build -f testbeds/metropolis/devices/field/legacy_gateway/Dockerfile -t metropolis/legacy-gateway:dev .
 docker build -f testbeds/metropolis/devices/services/dns/Dockerfile -t metropolis/dns:dev .
 docker build -f testbeds/metropolis/devices/services/ntp/Dockerfile -t metropolis/ntp:dev .
+docker build -f testbeds/metropolis/devices/field/reachability_probe/Dockerfile -t metropolis/reachability-probe:dev .
 docker build -f testbeds/metropolis/devices/attack/mirai/cnc/Dockerfile -t metropolis/mirai-cnc:dev .
 docker build -f testbeds/metropolis/devices/attack/mirai/scan_listener/Dockerfile -t metropolis/mirai-scan-listener:dev .
 docker build -f testbeds/metropolis/devices/attack/mirai/loader/Dockerfile -t metropolis/mirai-loader:dev .
@@ -122,7 +124,7 @@ Beyond the shared `NODE_*` values above:
 | Image | Variables |
 |---|---|
 | `metropolis/controller:dev` | `DEVICE_ROLE=PLC`, `MODBUS_HOST=0.0.0.0`, `MODBUS_PORT=502`, `PROCESS_LEVEL=650`, `PROCESS_FLOW=120`, `PROCESS_QUALITY=950` |
-| `metropolis/mqtt-sensor:dev` | `SENSOR_TYPE`, `SENSOR_VALUE`, `MQTT_USERNAME`, `MQTT_PASSWORD`, `MQTT_HOST`, `MQTT_PORT=1883`, `MQTT_TOPIC`, `COAP_ENABLED=true`, `COAP_PORT=5683` |
+| `metropolis/mqtt-sensor:dev` | `SENSOR_TYPE`, `SENSOR_VALUE`, `PLC_HOST`, `SENSOR_REGISTER`, `SENSOR_DIVISOR`, `MQTT_USERNAME`, `MQTT_PASSWORD`, `MQTT_HOST`, `MQTT_PORT=1883`, `MQTT_TOPIC`, `PUBLISH_MODE=persistent\|per-message`, `COAP_ENABLED=true`, `COAP_PORT=5683` |
 | `metropolis/mqtt-broker:dev` | Builds its password file at startup. Synthetic accounts: `lab_device` / `LabOnly_Device_2026` and `lab_operator` / `LabOnly_MQTT_2026`. Listens on TCP 1883. |
 | `metropolis/scada:dev` | `PLC_HOST`, `MODBUS_PORT=502`, `MODBUS_UNIT_ID=1`, `MQTT_USERNAME`, `MQTT_PASSWORD`, `MQTT_HOST`, `MQTT_PORT`, `MQTT_TOPIC`, `POLL_INTERVAL=5` |
 | `metropolis/hmi:dev` | Required `HMI_PASSWORD`; `HMI_USERNAME=operator`, `HMI_HTTP_HOST=0.0.0.0`, `HMI_HTTP_PORT=8080`, `MQTT_USERNAME`, `MQTT_PASSWORD`, `MQTT_HOST`, `MQTT_PORT`, `MQTT_TOPIC`, `MQTT_TELEMETRY_TOPIC`, `PUBLISH_INTERVAL=30`, `SETPOINT=65.0` |
@@ -281,6 +283,59 @@ Both consoles record delivered commands without running them, so a capture shows
 the control conversation while the testbed stays inert. To drive the whole
 lifecycle, see the experiment toolkit's `run_mirai_choreography` and
 `run_merlin` tools.
+
+## Encrypted traffic
+
+MQTT can run over TLS. It is off by default, so the plaintext lab behaves exactly
+as before. CoAP is plaintext only; see the limitations below.
+
+### MQTT over TLS
+
+Generate the lab's own certificate authority and a broker certificate:
+
+```bash
+uv run python scripts/gen_lab_certificates.py --out-dir certs
+```
+
+That writes `certs/ca.crt`, `certs/server.crt`, and `certs/server.key`.
+Certificates are lab material and the directory is Git-ignored; regenerate them
+whenever you like.
+
+The broker adds an encrypted listener on 8883 when `MQTT_TLS=true`, and needs the
+certificate and key mounted in:
+
+```text
+MQTT_TLS=true
+TLS_CERT_FILE=/mosquitto/certs/server.crt
+TLS_KEY_FILE=/mosquitto/certs/server.key
+TLS_CA_FILE=/mosquitto/certs/ca.crt
+```
+
+Clients reach it by pointing at port 8883 and trusting the CA:
+
+```text
+TLS=true
+TLS_CA_FILE=/certs/ca.crt
+TLS_INSECURE=false
+```
+
+The certificate is issued for the broker's GNS3 node name and its address, so a
+client may reach it either way. `TLS_INSECURE=true` keeps the encryption but
+stops checking the hostname — a lab convenience, not a safe default. The
+certificate is validated rather than merely loaded: the tests run a real
+handshake over loopback and confirm that a name the certificate does not cover
+is refused.
+
+Only the sensor can currently use TLS. SCADA, the HMI, and the historian still
+connect in plaintext.
+
+### CoAP has no DTLS
+
+The CoAP service is plaintext. A DTLS path was written and removed because it
+could not be made to complete a handshake, and a module that is present but
+unverified invites a false claim. Adding it properly means driving the
+datagram-oriented handshake loop to completion and proving it with a test that
+runs a CoAP GET over DTLS. Until then, treat `coaps://` as unsupported.
 
 ## MQTT topics
 

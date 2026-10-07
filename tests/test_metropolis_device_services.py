@@ -56,7 +56,11 @@ def test_coap_discovery_advertises_a_real_json_resource() -> None:
     response = answer(b"\x40\x01\x12\x34\xbb.well-known\x04core")
     assert response is not None
     assert response[:7] == b"\x60\x45\x12\x34\xc1\x28\xff"
-    assert response[7:] == b'</status>;rt="metropolis.sensor";ct=50'
+    # Discovery advertises the status resource plus one per measurement.
+    discovery = response[7:]
+    assert discovery.startswith(b'</status>;rt="metropolis.sensor";ct=50')
+    assert b"</level>" in discovery
+    assert b"</pressure>" in discovery
     status = answer(b"\x40\x01\x12\x35\xb6status")
     assert status is not None
     assert status[:7] == b"\x60\x45\x12\x35\xc1\x32\xff"

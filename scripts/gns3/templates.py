@@ -113,6 +113,11 @@ TEMPLATES: tuple[ImageTemplate, ...] = (
         description="Local time service on UDP 123",
     ),
     spec(
+        "Metropolis reachability probe",
+        "metropolis/reachability-probe:dev",
+        description="Minimal reachable host with no service; a routing positive control",
+    ),
+    spec(
         "Metropolis Mirai CNC",
         "metropolis/mirai-cnc:dev",
         description="Synthetic bot registry and operator console",

@@ -23,11 +23,18 @@ from _cli import (
     add_appliance_arguments,
     add_server_arguments,
     connect,
+    load_documents,
     load_plan,
     report_skipped,
+    router_scripts,
 )
 from builder import build, port_map_yaml
 from client import Gns3Client
+from router_config import (
+    DEFAULT_PASSWORD,
+    DEFAULT_USERNAME,
+    configure_project_routers,
+)
 from templates import TEMPLATES
 
 
@@ -54,6 +61,21 @@ def main() -> int:
         "--write-ports",
         type=Path,
         help="Write the derived switch port map to this path",
+    )
+    parser.add_argument(
+        "--configure-routers",
+        action="store_true",
+        help="Load each router's config script onto it (needs the routers running)",
+    )
+    parser.add_argument(
+        "--router-username",
+        default=DEFAULT_USERNAME,
+        help="Console account for the VyOS routers",
+    )
+    parser.add_argument(
+        "--router-password",
+        default=DEFAULT_PASSWORD,
+        help="Console password for the VyOS routers",
     )
     args = parser.parse_args()
 
@@ -110,6 +132,37 @@ def main() -> int:
     if args.write_ports:
         args.write_ports.write_text(port_map_yaml(topology, args.project), "utf-8")
         print(f"port map written to {args.write_ports}")
+
+    if args.configure_routers:
+        _, _, infrastructure, _ = load_documents()
+        scripts = router_scripts(infrastructure)
+        project = client.project_by_name(args.project)
+        if project is None:
+            print(f"error: project {args.project} is missing", file=sys.stderr)
+            return 2
+        results = configure_project_routers(
+            client,
+            project.project_id,
+            scripts,
+            username=args.router_username,
+            password=args.router_password,
+        )
+        failed = 0
+        for result in results:
+            if result.error:
+                failed += 1
+                print(f"  {result.node}: {result.error}", file=sys.stderr)
+                continue
+            note = (
+                f", {len(result.missing)} address(es) not reported"
+                if result.missing
+                else ""
+            )
+            for missing in result.missing:
+                print(f"  {result.node}: {missing} is not configured", file=sys.stderr)
+            print(f"  {result.node}: {result.commands} commands applied{note}")
+        print(f"{len(results) - failed}/{len(results)} routers configured")
+        return 1 if failed else 0
     return 0
 
 

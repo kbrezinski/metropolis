@@ -208,7 +208,7 @@ def test_the_sensor_reads_the_same_value_the_controller_holds(controller):
     """The sensor's reading and the PLC register must agree, which is the point."""
     client, port = controller
     reader = load("mqtt_sensor", SENSORS / "mqtt_sensor.py").ProcessReader(
-        host="127.0.0.1", port=port, unit_id=1, register=0, divisor=10
+        host="127.0.0.1", port=port, unit_id=1, divisor=10
     )
 
     # Read the pair as closely as possible; the process ticks every 0.1s, so
@@ -217,13 +217,33 @@ def test_the_sensor_reads_the_same_value_the_controller_holds(controller):
     observed = reader()
     after = client.read_holding_registers(0, count=1, slave=1).registers[0]
 
-    assert min(before, after) <= observed * 10 <= max(before, after)
+    assert min(before, after) <= observed["level"] * 10 <= max(before, after)
+
+
+def test_the_sensor_reports_every_measurement(controller):
+    """One reading per CoAP resource, all from the same PLC sample."""
+    _, port = controller
+    reader = load("mqtt_sensor_multi", SENSORS / "mqtt_sensor.py").ProcessReader(
+        host="127.0.0.1", port=port, unit_id=1, divisor=10
+    )
+    values = reader()
+
+    assert set(values) == {
+        "level",
+        "flow",
+        "quality",
+        "pressure",
+        "temperature",
+        "turbidity",
+        "pump",
+    }
+    assert all(isinstance(value, (int, float)) for value in values.values())
 
 
 def test_the_sensor_keeps_its_last_reading_when_the_plc_is_gone(controller):
     client, port = controller
     reader = load("mqtt_sensor_keep", SENSORS / "mqtt_sensor.py").ProcessReader(
-        host="127.0.0.1", port=port, unit_id=1, register=0, divisor=10
+        host="127.0.0.1", port=port, unit_id=1, divisor=10
     )
     good = reader()
 

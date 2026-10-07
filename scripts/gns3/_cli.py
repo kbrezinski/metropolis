@@ -41,6 +41,18 @@ def image_by_node(inventory: dict) -> dict[str, str]:
     return {device["name"]: device["image"] for device in inventory["devices"]}
 
 
+def router_scripts(infrastructure: dict) -> dict[str, str]:
+    """Map each router node name to the absolute path of its config script.
+
+    The scripts are declared in the infrastructure inventory, so nothing here
+    has to know their names.
+    """
+    return {
+        router["name"]: str(ROOT / router["config"])
+        for router in infrastructure["routers"]
+    }
+
+
 def type_by_node(topology: Topology) -> dict[str, str]:
     """Map each planned node name to its kind."""
     return {node.name: node.kind for node in topology.nodes}

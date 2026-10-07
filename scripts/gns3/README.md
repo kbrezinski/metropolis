@@ -32,9 +32,10 @@ python scripts/gns3/run.py register_templates
 python scripts/gns3/run.py build_topology --plan
 python scripts/gns3/run.py build_topology --write-ports derived-ports.yaml
 
-# 3. Start the lab
+# 3. Start the lab, then load the router configurations
 python scripts/gns3/run.py lab_lifecycle --order
 python scripts/gns3/run.py lab_lifecycle --start
+python scripts/gns3/run.py build_topology --configure-routers
 
 # 4. Capture what you need
 python scripts/gns3/run.py capture_traffic --list
@@ -75,10 +76,37 @@ Two things are reported rather than created:
 VyOS and Open vSwitch are appliances, not Docker images, so they cannot be
 registered the way the device images are. Import them once in the GNS3 GUI;
 `templates.py` names both under `APPLIANCES`, and the builder looks them up by
-that name. Router configuration is also out of scope here: the VyOS scripts stay
-the source of truth and are applied separately. This code deliberately does not
-copy Gotham's Telnet-driven installer, which is the most fragile part of that
-codebase.
+that name. A blank VyOS appliance also needs its image installed interactively
+before it will boot; that is a one-time step per appliance.
+
+## Loading the router configurations
+
+The six VyOS scripts in `testbeds/metropolis/router/` are the source of truth
+for addressing and routing. Start the routers, then load each script onto its
+node:
+
+```bash
+python scripts/gns3/run.py lab_lifecycle --start
+python scripts/gns3/run.py build_topology --configure-routers
+```
+
+This logs into each router's console, enters configuration mode, sends the
+script's commands one at a time, and then reads the router's own view of its
+interfaces. Any address the script configures but the router does not report is
+printed, so a configuration that did not take is visible instead of assumed.
+
+The VyOS appliance's default account is `vyos`/`vyos`, which is what Gotham logs
+in with. Override it if you changed it:
+
+```bash
+python scripts/gns3/run.py build_topology --configure-routers \
+    --router-username admin --router-password secret
+```
+
+Gotham does the same job by uploading the script and checking an MD5 checksum,
+driving the console with fixed prompt strings and sleeps. This uses the same
+approach without the sleeps: it waits for each prompt, and it confirms the
+result from the running configuration rather than the upload.
 
 ## Pointing at a server
 

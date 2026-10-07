@@ -165,11 +165,33 @@ do not create GNS3 templates or place nodes in a project.
 
 ### 3. Create the templates and topology
 
-In GNS3, create Docker templates referencing the built images, import the VyOS
-appliance, then add routers, switches, and device nodes to a project. Configure
-switch VLAN membership and trunk ports from `testbeds/metropolis/switch/`, and
-apply the router scripts to the matching VyOS nodes after checking interface
-numbering.
+The GNS3 automation does this from the declared topology. Import the VyOS and
+Ethernet switch appliances once in the GUI — they are appliances rather than
+images, so they cannot be registered like the device images — then:
+
+```bash
+python scripts/gns3/run.py register_templates --check   # registry vs inventory
+python scripts/gns3/run.py register_templates           # one template per image
+python scripts/gns3/run.py build_topology --plan        # what would be created
+python scripts/gns3/run.py build_topology               # create project, nodes, links
+```
+
+`build_topology` reads `initial_devices.yaml`, `infrastructure.yaml`, and
+`links.yaml`, so node names, addresses, and cabling come from those files rather
+than being entered by hand. It also derives the GNS3 port numbers the switch
+specifications leave as a `TODO`; `--write-ports` writes that mapping out.
+
+### 4. Start the lab and load the router configurations
+
+```bash
+python scripts/gns3/run.py lab_lifecycle --start
+python scripts/gns3/run.py build_topology --configure-routers
+```
+
+The lifecycle command starts switches, then routers, then publishers, then
+polling clients, so nothing exhausts its retries against a node that is still
+booting. `--configure-routers` logs into each VyOS console, applies its script,
+and reports any address the router does not come back with.
 
 Use `device_instances/initial_devices.yaml` as the node inventory. GNS3 does not
 read this file, so copy each node's `NODE_HOSTNAME`, `NODE_IP`, and
@@ -182,15 +204,21 @@ inventory is future work.
 Connect each Docker node's interface before starting it, or the entrypoint will
 not find an interface to configure.
 
-### 4. Start and check the lab
+### 5. Check the lab, then capture
 
-Start the broker and controller before the MQTT clients and SCADA node. Check
-each node's console for startup or connection messages, confirm routing between
-the subnets you care about, then capture on the GNS3 links you selected. Record
-the topology, addresses, image versions, scenario, capture points, and
-timestamps under the matching dataset folder.
+Check each node's console for startup or connection messages and confirm routing
+between the subnets you care about. Then capture on the links you selected:
 
-### 5. Generate attack traffic
+```bash
+python scripts/gns3/run.py capture_traffic --list
+python scripts/gns3/run.py capture_traffic --links link-core-plant --duration 60
+```
+
+GNS3 writes each capture next to the project and the command reports where the
+files landed. Record the topology, addresses, image versions, scenario, capture
+points, and timestamps under the matching dataset folder.
+
+### 6. Generate attack traffic
 
 With the lab running, use the experiment toolkit. Every tool takes a dry run
 first:
@@ -211,13 +239,17 @@ Worth repeating, because these bound what you can conclude:
 
 - **No firewall or IPsec.** The attack-test network is not restricted from the
   OT networks, and routing provides reachability rather than containment.
-- **No encrypted traffic.** MQTT is plaintext and CoAP has no DTLS, so nothing
-  here exercises detection under encryption.
-- **No physical process model.** Modbus writes change registers without
-  affecting any simulated process, so "attack detected" and "process affected"
-  are independent.
-- **No orchestration.** Topology creation, capture, and scenario playback are
-  manual; the repository provides the devices and the traffic generator.
+- **Encryption is one device deep.** MQTT over TLS works, with a lab CA and a
+  verified handshake, but only the sensor can use it: SCADA, the HMI, and the
+  historian still connect in plaintext. CoAP has no DTLS, so there is no
+  encrypted CoAP traffic to capture.
+- **A light process model, not a hydraulic one.** The PLC's registers are
+  coupled to the pump coil and to each other, so telemetry moves and the sensor
+  agrees with the registers. It is not a validated model of a water-treatment
+  process, so a register write is not a model of operational damage.
+- **Scenario playback is not built.** Templates, topology, router configuration,
+  lifecycle, and capture are automated; running a *scripted* experiment that
+  starts services, replays traffic, and stops captures on cue is not.
 - **Not verified in deployment.** Everything is unit- and loopback-tested, but
   no end-to-end run on GNS3 has been performed.
 
