@@ -20,6 +20,7 @@ RUN apt-get update \
     && pip install --no-cache-dir paho-mqtt==2.1.0
 COPY testbeds/metropolis/devices/field/sensors/mqtt_sensor.py /opt/metropolis/mqtt_sensor.py
 COPY testbeds/metropolis/devices/field/sensors/coap_sensor.py /opt/metropolis/coap_sensor.py
+COPY testbeds/metropolis/devices/runtime/tls_config.py /opt/metropolis/tls_config.py
 COPY testbeds/metropolis/devices/runtime/network-entrypoint.sh /usr/local/bin/metropolis-entrypoint
 RUN chmod +x /usr/local/bin/metropolis-entrypoint
 

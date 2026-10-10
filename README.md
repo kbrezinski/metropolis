@@ -22,30 +22,49 @@ appropriate.
 
 ## Where things stand
 
-This is a work in progress, and it is worth knowing which parts are real before
-you spend time on them.
+A work in progress. The dates are when each piece landed; the entries marked
+⬜ are not built yet.
 
-| Area | State |
-|---|---|
-| Device simulators | Written and unit-tested; images build |
-| Attack toolkit | Written and tested; runs against the inventory |
-| GNS3 automation | Templates, topology build, lifecycle, and capture; unit-tested with a fake client, not yet run against a live server |
-| Address plan, inventory, link plan, infrastructure, router and switch specs | Complete, and cross-checked by a validator |
-| Dataset labelling and model training | **Not started** — future work |
-
-Nothing in this repository has been verified on a live GNS3 deployment. The
-network plan is complete, but the runbook below is a deployment plan rather than
-a tested sequence.
+| | Item | Date |
+|---|---|---|
+| ✅ | Reproducibility scaffolding: seed and device configuration, directory helpers, address-plan loader | 2026-04-22 |
+| ✅ | Gotham data pipeline: feature cleaning, labelling, per-device preparation | 2026-09-19 |
+| ✅ | Metropolis testbed design: Purdue-informed zones, address plan, device inventory | 2026-09-27 |
+| ✅ | Router and switch specifications: six VyOS scripts, nine switch VLAN plans | 2026-09-27 |
+| ✅ | Device models: PLC/RTU, sensor, broker, SCADA, HMI, historian, engineering workstation, control client, legacy gateway, DNS, NTP | 2026-10-01 |
+| ✅ | Topology validator: cross-checks the address plan, inventory, router interfaces, static routes, and switch VLANs | 2026-10-06 |
+| ✅ | MQTT over TLS: lab certificate authority, broker listener, verification by real handshake | 2026-10-06 |
+| ✅ | Link plan: 40 links as data, with the schema and validator to check them | 2026-10-09 |
+| ✅ | Infrastructure inventory: six routers, eight switches, and ten access segments | 2026-10-09 |
+| ✅ | Four JSON schemas, enforced by the validator rather than decorative | 2026-10-09 |
+| ✅ | Attack toolkit: CoAP, MQTT, Modbus, scanning, discovery, SSH, Telnet, bounded load | 2026-10-09 |
+| ✅ | Synthetic Mirai chain and Merlin C2, with whole-lifecycle drivers | 2026-10-09 |
+| ✅ | GNS3 automation: API client, template registration, topology builder, lifecycle, capture control | 2026-10-09 |
+| ✅ | Router configuration: each VyOS script loaded onto its node and verified from the running config | 2026-10-09 |
+| ✅ | Light process model: coupled PLC registers, so telemetry moves and the sensor agrees with the controller | 2026-10-09 |
+| ✅ | Shared device TLS: sensor, SCADA, HMI, and historian can all encrypt, plus the toolkit's `--tls` | 2026-10-09 |
+| ✅ | Documentation pass: READMEs rewritten around tasks, 250 tests, lint and spelling in CI | 2026-10-09 |
+| ⬜ | Deploy and capture on a live GNS3 server | Future work |
+| ⬜ | Captured packet data — `captures/` is empty | Future work |
+| ⬜ | Firewall policy and IPsec, so routing restricts rather than merely reaches | Future work |
+| ⬜ | CoAP over DTLS — CoAP is plaintext | Future work |
+| ⬜ | More device families: Gotham has twelve, this has three | Future work |
+| ⬜ | Protocol profiles — documented per-protocol settings | Future work |
+| ⬜ | Scenarios — scripted experiment playback | Future work |
+| ⬜ | Dataset labelling for Metropolis captures | Future work |
+| ⬜ | Provenance modelling, training, and evaluation | Future work |
 
 ## What you can do today
 
-- **Build the device images** and create the nodes by hand in GNS3 from a
-  complete inventory of addresses and roles.
+- **Build the device images** and create the topology from the inventory with one
+  command, rather than adding nodes by hand.
 - **Generate attack traffic** against those nodes with the experiment toolkit,
   which resolves every target from the inventory.
-- **Validate the design** — the address plan, inventory, router interfaces,
-  static routes, and switch VLANs are checked against each other by one command.
-- **Capture your own traffic**, and record it under the versioned dataset folder.
+- **Validate the design** — the address plan, inventory, link plan, router
+  interfaces, static routes, and switch VLANs are checked against each other by
+  one command.
+- **Capture traffic** on chosen links, and record it under the versioned dataset
+  folder.
 
 ## What is in the repository
 
@@ -129,8 +148,8 @@ for build commands, environment settings, topics, and register definitions.
 ## Running Metropolis on an Ubuntu GNS3 server
 
 The intended host is Ubuntu with Docker and a GNS3 server reachable by the GNS3
-client. **End-to-end startup is not automated**, and no step below has been
-verified on a live deployment.
+client. The steps below build the images, register the templates, create the
+topology, start the lab, apply the router configurations, and capture traffic.
 
 ### 1. Prepare the host
 
@@ -239,10 +258,9 @@ Worth repeating, because these bound what you can conclude:
 
 - **No firewall or IPsec.** The attack-test network is not restricted from the
   OT networks, and routing provides reachability rather than containment.
-- **Encryption is one device deep.** MQTT over TLS works, with a lab CA and a
-  verified handshake, but only the sensor can use it: SCADA, the HMI, and the
-  historian still connect in plaintext. CoAP has no DTLS, so there is no
-  encrypted CoAP traffic to capture.
+- **Encryption stops at CoAP.** MQTT over TLS works, with a lab CA and a
+  verified handshake, and the sensor, SCADA, the HMI, and the historian can all
+  use it. CoAP has no DTLS, so there is no encrypted CoAP traffic to capture.
 - **A light process model, not a hydraulic one.** The PLC's registers are
   coupled to the pump coil and to each other, so telemetry moves and the sensor
   agrees with the registers. It is not a validated model of a water-treatment
@@ -250,8 +268,6 @@ Worth repeating, because these bound what you can conclude:
 - **Scenario playback is not built.** Templates, topology, router configuration,
   lifecycle, and capture are automated; running a *scripted* experiment that
   starts services, replays traffic, and stops captures on cue is not.
-- **Not verified in deployment.** Everything is unit- and loopback-tested, but
-  no end-to-end run on GNS3 has been performed.
 
 ## Dataset layout
 

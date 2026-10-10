@@ -19,6 +19,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import sys
 import threading
 import time
 from dataclasses import dataclass
@@ -30,6 +31,19 @@ import paho.mqtt.client as mqtt
 import paho.mqtt.publish as publish
 
 from coap_sensor import serve as serve_coap
+
+# The shared TLS settings live with the runtime files, which images copy to
+# /opt/metropolis. From a source checkout they are two directories up, so both
+# locations are tried and the import works either way.
+for _candidate in (
+    Path(__file__).resolve().parents[2] / "runtime",
+    Path("/opt/metropolis"),
+):
+    if (_candidate / "tls_config.py").is_file():
+        if str(_candidate) not in sys.path:
+            sys.path.insert(0, str(_candidate))
+        break
+from tls_config import TlsConfig, from_environment as tls_from_environment  # noqa: E402
 
 
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
@@ -112,57 +126,6 @@ class ProcessReader:
             "pump": 1.0 if pump else 0.0,
         }
         return self.values
-
-
-@dataclass
-class TlsConfig:
-    """How to reach the broker over TLS.
-
-    ``insecure`` keeps the encryption but stops checking the certificate's
-    hostname, which is useful when a device reaches the broker by an address the
-    certificate does not name. It is a lab convenience, not a safe default.
-    """
-
-    ca_file: str | None = None
-    insecure: bool = False
-    client_cert: str | None = None
-    client_key: str | None = None
-
-    def apply(self, client) -> None:
-        client.tls_set(
-            ca_certs=self.ca_file,
-            certfile=self.client_cert,
-            keyfile=self.client_key,
-        )
-        if self.insecure:
-            client.tls_insecure_set(True)
-
-    def paho_tls_args(self) -> dict:
-        """The same settings in the dictionary ``publish.single`` expects."""
-        args: dict = {"ca_certs": self.ca_file}
-        if self.insecure:
-            args["insecure"] = True
-        if self.client_cert:
-            args["certfile"] = self.client_cert
-        if self.client_key:
-            args["keyfile"] = self.client_key
-        return args
-
-
-def tls_from_environment() -> TlsConfig | None:
-    """Read the TLS settings, or None when TLS is not switched on."""
-    if os.getenv("TLS", "").strip().lower() not in {"1", "true", "yes"}:
-        return None
-    ca_file = os.getenv("TLS_CA_FILE") or None
-    if ca_file and not Path(ca_file).is_file():
-        raise SystemExit(f"TLS is enabled but the CA file {ca_file} does not exist")
-    return TlsConfig(
-        ca_file=ca_file,
-        insecure=os.getenv("TLS_INSECURE", "false").strip().lower()
-        in {"1", "true", "yes"},
-        client_cert=os.getenv("TLS_CLIENT_CERT") or None,
-        client_key=os.getenv("TLS_CLIENT_KEY") or None,
-    )
 
 
 @dataclass

@@ -18,6 +18,7 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/* \
     && pip install --no-cache-dir pymodbus==3.8.6 paho-mqtt==2.1.0
 COPY testbeds/metropolis/devices/operations/scada/scada_collector.py /opt/metropolis/scada_collector.py
+COPY testbeds/metropolis/devices/runtime/tls_config.py /opt/metropolis/tls_config.py
 COPY testbeds/metropolis/devices/runtime/network-entrypoint.sh /usr/local/bin/metropolis-entrypoint
 RUN chmod +x /usr/local/bin/metropolis-entrypoint
 

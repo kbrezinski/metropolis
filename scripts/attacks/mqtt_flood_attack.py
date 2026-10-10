@@ -5,7 +5,17 @@ from __future__ import annotations
 import json
 import os
 
-from _common import Run, cli, endpoint, limits, parser, positive, schedule
+from _common import (
+    Run,
+    add_tls_arguments,
+    cli,
+    endpoint,
+    limits,
+    parser,
+    positive,
+    schedule,
+    tls_from_args,
+)
 from _mqtt import BrokerConnection
 
 
@@ -23,6 +33,7 @@ def main():
     options.add_argument("--rate", type=positive, default=10)
     options.add_argument("--duration", type=positive, default=10)
     options.add_argument("--max-messages", type=int, default=100)
+    add_tls_arguments(options)
     args = options.parse_args()
     limits(args)
     if not args.topic_base or any(char in args.topic_base for char in "+#\x00"):
@@ -49,7 +60,7 @@ def main():
             return 0
         confirmed = 0
         with BrokerConnection(
-            host, port, username, password, args.timeout
+            host, port, username, password, args.timeout, tls_from_args(args)
         ) as connection:
             if connection.status != "accepted":
                 raise ConnectionError(f"Broker connection: {connection.status}")

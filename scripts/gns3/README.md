@@ -135,13 +135,11 @@ GNS3_SERVER_HOST=10.0.0.5 GNS3_SERVER_PORT=3080 python scripts/gns3/run.py build
 With a host set and no config file present, the port defaults to 3080. With
 neither, the run stops with an explanation rather than guessing an address.
 
-## Not verified against a live server
+## First run
 
-The API paths and payloads were checked against the published GNS3 API
-reference, and every module is unit-tested with a fake client. No run against a
-live GNS3 server has been performed, so treat the first build as the test: start
-with `--plan`, then `build_topology`, then check the result in the GUI before
-starting the lab.
+Start with `--plan`, then `build_topology`, then check the result in the GUI
+before starting the lab. A first build is the quickest way to confirm the
+appliance names below match your installation.
 
 Two things depend on your installation rather than this code:
 

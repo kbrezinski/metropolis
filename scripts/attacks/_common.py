@@ -132,6 +132,35 @@ def host_of(args, name: str, protocol: str, env_key: str) -> tuple[dict, str]:
     return record, host
 
 
+def add_tls_arguments(parser: argparse.ArgumentParser) -> None:
+    """Let a tool talk to a broker that has TLS switched on.
+
+    The settings mirror the device models' environment variables, so the same
+    certificate and the same switches work on both sides.
+    """
+    parser.add_argument(
+        "--tls", action="store_true", help="Connect to the broker over TLS"
+    )
+    parser.add_argument("--tls-ca", type=Path, help="CA certificate to trust")
+    parser.add_argument(
+        "--tls-insecure",
+        action="store_true",
+        help="Keep the encryption but skip hostname verification",
+    )
+
+
+def tls_from_args(args):
+    """A TlsConfig from the command line, or None when TLS is not asked for."""
+    if not getattr(args, "tls", False):
+        return None
+    from _mqtt import TlsConfig
+
+    ca_file = str(args.tls_ca) if getattr(args, "tls_ca", None) else None
+    if ca_file and not Path(ca_file).is_file():
+        raise ValueError(f"CA certificate {ca_file} does not exist")
+    return TlsConfig(ca_file=ca_file, insecure=bool(args.tls_insecure))
+
+
 def limits(args) -> None:
     if not 0 < args.rate <= 1000 or not 0 < args.duration <= 3600:
         raise ValueError("Rate must be 0–1000/s and duration at most 3600 seconds")

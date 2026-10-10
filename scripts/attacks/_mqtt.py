@@ -3,11 +3,28 @@
 from __future__ import annotations
 
 import secrets
+import sys
 import threading
+from pathlib import Path
+
+# The toolkit reuses the same TLS settings the device models use, so a client
+# here and a device there verify a broker identically.
+_RUNTIME = Path(__file__).resolve().parents[2] / "testbeds/metropolis/devices/runtime"
+if str(_RUNTIME) not in sys.path:
+    sys.path.insert(0, str(_RUNTIME))
+from tls_config import TlsConfig  # noqa: E402
 
 
 class BrokerConnection:
-    def __init__(self, host, port, username, password, timeout):
+    def __init__(
+        self,
+        host,
+        port,
+        username,
+        password,
+        timeout,
+        tls_config: TlsConfig | None = None,
+    ):
         import paho.mqtt.client as mqtt
 
         self.client = mqtt.Client(
@@ -17,6 +34,8 @@ class BrokerConnection:
         )
         self.client.connect_timeout = timeout
         self.client.username_pw_set(username, password)
+        if tls_config is not None:
+            tls_config.apply(self.client)
         self.host, self.port, self.timeout = host, port, timeout
         self.ready = threading.Event()
         self.reason = None

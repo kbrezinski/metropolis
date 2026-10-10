@@ -8,8 +8,6 @@ the targets. Every address here comes from the
 [device inventory](../../testbeds/metropolis/datasets/water_treatment_v1/device_instances/initial_devices.yaml)
 and the [address plan](../../testbeds/metropolis/datasets/water_treatment_v1/topology/address-plan.yaml).
 
-**A service target is not a claim about deployment.** The device models and
-their listeners are specified here, but no live GNS3 run has been verified.
 Start the nodes and confirm normal responses before you build an experiment on
 top of them.
 

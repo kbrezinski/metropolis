@@ -21,6 +21,7 @@ RUN apt-get update \
 COPY testbeds/metropolis/devices/operations/hmi/hmi_simulator.py /opt/metropolis/hmi_simulator.py
 COPY testbeds/metropolis/devices/operations/hmi/hmi_web.py /opt/metropolis/hmi_web.py
 COPY testbeds/metropolis/devices/operations/hmi/hmi.html /opt/metropolis/hmi.html
+COPY testbeds/metropolis/devices/runtime/tls_config.py /opt/metropolis/tls_config.py
 COPY testbeds/metropolis/devices/runtime/network-entrypoint.sh /usr/local/bin/metropolis-entrypoint
 RUN chmod +x /usr/local/bin/metropolis-entrypoint
 

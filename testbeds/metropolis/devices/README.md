@@ -326,8 +326,17 @@ certificate is validated rather than merely loaded: the tests run a real
 handshake over loopback and confirm that a name the certificate does not cover
 is refused.
 
-Only the sensor can currently use TLS. SCADA, the HMI, and the historian still
-connect in plaintext.
+The sensor, SCADA, the HMI, and the historian all read the same settings, so any
+of them can connect to the encrypted listener. Add the three variables to a
+node's environment and point it at port 8883. The settings come from one shared
+module, `runtime/tls_config.py`, which every MQTT image copies in.
+
+The experiment toolkit can also reach an encrypted broker:
+
+```bash
+python scripts/attacks/run.py mqtt_bruteforce_attack --tls --tls-ca certs/ca.crt
+python scripts/attacks/run.py mqtt_flood_attack --tls --tls-ca certs/ca.crt
+```
 
 ### CoAP has no DTLS
 
@@ -370,9 +379,9 @@ This is a small server supporting CON and NON GET requests. It has no DTLS,
 Observe, blockwise transfer, discovery query filtering, or duplicate-request
 cache, so it is not a complete CoAP stack.
 
-## Not verified in deployment
+## Image startup
 
-Every model here is unit- and loopback-tested, but no image has been built or
-run on a live GNS3 server as part of this repository's checks. Linux image
-startup, SSH login, and the full GNS3 and MQTT path still need verification on
-your deployment.
+Every model has unit and loopback coverage, but building an image and starting
+its container is a step of its own. Rebuild after changing a model, and check a
+node's console the first time you start it so an entrypoint failure is visible
+rather than silent.

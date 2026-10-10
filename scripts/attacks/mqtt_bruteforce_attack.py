@@ -6,7 +6,16 @@ import os
 import time
 from pathlib import Path
 
-from _common import Run, cli, endpoint, parser, passwords, positive
+from _common import (
+    Run,
+    add_tls_arguments,
+    cli,
+    endpoint,
+    parser,
+    passwords,
+    positive,
+    tls_from_args,
+)
 from _mqtt import BrokerConnection
 
 
@@ -16,6 +25,7 @@ def main():
     options.add_argument("--wordlist", type=Path)
     options.add_argument("--max-attempts", type=int, default=20)
     options.add_argument("--interval", type=positive, default=1)
+    add_tls_arguments(options)
     args = options.parse_args()
     device, host, port = endpoint(args, "mqtt", "MQTT", 1883)
     env = device.get("environment", {})
@@ -41,7 +51,7 @@ def main():
             return 0
         for index, candidate in enumerate(candidates):
             with BrokerConnection(
-                host, port, username, candidate, args.timeout
+                host, port, username, candidate, args.timeout, tls_from_args(args)
             ) as connection:
                 run.emit(
                     "attempt",

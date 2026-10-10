@@ -12,6 +12,15 @@ import paho.mqtt.client as mqtt
 from hmi_web import HmiState, create_server
 
 
+import sys
+from pathlib import Path
+
+# The shared TLS settings sit beside the entrypoint, which every image copies
+# to /opt/metropolis.
+sys.path.insert(0, str(Path("/opt/metropolis")))
+from tls_config import TlsConfig, apply_to  # noqa: E402,F401
+
+
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 log = logging.getLogger("metropolis.hmi")
 
@@ -38,6 +47,7 @@ def main() -> None:
         os.getenv("MQTT_USERNAME", "lab_device"),
         os.getenv("MQTT_PASSWORD", "LabOnly_Device_2026"),
     )
+    apply_to(client)
     client.reconnect_delay_set(min_delay=1, max_delay=30)
 
     def on_connect(client, userdata, flags, reason_code, properties):
