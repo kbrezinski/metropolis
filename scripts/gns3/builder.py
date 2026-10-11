@@ -150,13 +150,14 @@ def build(
 
 
 def port_map_yaml(topology: Topology, project_name: str) -> str:
-    """Render the derived switch port numbers for the switch specifications."""
+    """Render the derived switch port numbers as YAML."""
     return yaml.safe_dump(
         {
             "project": project_name,
             "note": (
                 "Derived by scripts/gns3/build_topology.py from the port role order "
-                "in each switch specification. Record these in the specs."
+                "in each switch's attachment_points. "
+                "testbeds/metropolis/switch/README.md shows the same mapping."
             ),
             "switches": {
                 switch: {

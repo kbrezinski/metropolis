@@ -21,8 +21,6 @@ except ImportError:  # pragma: no cover - the dev dependency group provides it
 
 # "GNS3 interface map:" entries read "ethN -> neighbour, detail".
 INTERFACE_MAP = re.compile(r"^#\s+(eth\d+)\s*->\s*(.+?)\s*$")
-# A switch specification lists its ports as Markdown table rows.
-SWITCH_PORT_ROW = re.compile(r"^\|\s*`?([a-z][a-z0-9-]*)`?\s*\|", re.M)
 
 
 @dataclass(frozen=True)
@@ -384,16 +382,6 @@ def _documented_router_interfaces(router_file: Path) -> set[str]:
     return numbers
 
 
-def _switch_spec_ports(spec: Path) -> set[str]:
-    """Port roles a switch specification lists in its table."""
-    return {
-        match.group(1)
-        for match in SWITCH_PORT_ROW.finditer(spec.read_text(encoding="utf-8"))
-        # Skip the table header and alignment row.
-        if match.group(1) not in {"port-role", "---"}
-    }
-
-
 def _validate_infrastructure(
     infrastructure: dict,
     devices: list[dict],
@@ -456,24 +444,16 @@ def _validate_infrastructure(
                 f"{sorted(undeclared)}"
             )
 
+    # The attachment points are the only record of a switch's ports. The
+    # per-switch Markdown specifications that used to restate them are gone:
+    # testbeds/metropolis/switch/README.md is generated from this same data.
     switch_roles: dict[str, set[str]] = {}
     for switch in switches:
         name = switch["name"]
-        spec = Path(switch["spec"])
-        if not (repository_root / spec).is_file():
-            problems.append(f"{name}: spec {spec} does not exist")
-            continue
-        documented = _switch_spec_ports(repository_root / spec)
         declared = set(switch.get("attachment_points", []))
-        switch_roles[name] = documented
-        if undeclared := documented - declared:
-            problems.append(
-                f"{name}: spec lists undeclared port role(s) {sorted(undeclared)}"
-            )
-        if overspecified := declared - documented:
-            problems.append(
-                f"{name}: declares port role(s) {sorted(overspecified)} absent from spec"
-            )
+        switch_roles[name] = declared
+        if not declared:
+            problems.append(f"{name}: declares no attachment points")
 
     # Every switch a link references must be in the infrastructure inventory,
     # and each port role it names must exist on that switch. Segments accept a

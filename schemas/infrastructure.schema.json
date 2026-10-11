@@ -72,16 +72,11 @@
     },
     "switch": {
       "type": "object",
-      "required": ["name", "kind", "role", "spec", "attachment_points"],
+      "required": ["name", "kind", "role", "attachment_points"],
       "properties": {
         "name": { "$ref": "#/$defs/name" },
         "kind": { "enum": ["ethernet-switch"] },
         "role": { "type": "string", "minLength": 1 },
-        "spec": {
-          "type": "string",
-          "minLength": 1,
-          "description": "Repository-relative path to the switch specification document"
-        },
         "notes": { "type": "string" },
         "attachment_points": {
           "type": "array",

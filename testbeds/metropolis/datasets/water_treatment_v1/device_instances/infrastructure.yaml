@@ -105,7 +105,6 @@ switches:
   - name: sw-plant-aggregation
     kind: ethernet-switch
     role: Layer 2 aggregation between MET-PLANT and the plant and HMI access switches
-    spec: testbeds/metropolis/switch/backbone/sw-plant-aggregation.md
     attachment_points:
       - router-uplink
       - cell-intake-uplink
@@ -120,7 +119,6 @@ switches:
   - name: sw-operations-aggregation
     kind: ethernet-switch
     role: Layer 2 aggregation between MET-OT-CORE and the OT service access switches
-    spec: testbeds/metropolis/switch/backbone/sw-operations-aggregation.md
     attachment_points:
       - router-uplink
       - scada-uplink
@@ -132,7 +130,6 @@ switches:
   - name: sw-wan-underlay
     kind: ethernet-switch
     role: Shared Layer 2 underlay for the WAN hub and remote-site routers
-    spec: testbeds/metropolis/switch/backbone/sw-wan-underlay.md
     attachment_points:
       - wan-hub
       - raw-water-site
@@ -141,7 +138,6 @@ switches:
   - name: sw-dmz
     kind: ethernet-switch
     role: Layer 2 segment for OT DMZ hosts
-    spec: testbeds/metropolis/switch/backbone/sw-dmz.md
     attachment_points:
       - router-uplink
       - dmz-host-1
@@ -150,7 +146,6 @@ switches:
   - name: sw-enterprise
     kind: ethernet-switch
     role: Layer 2 enterprise-side segment attached to the boundary router
-    spec: testbeds/metropolis/switch/backbone/sw-enterprise.md
     attachment_points:
       - router-uplink
       - enterprise-host-1
@@ -158,7 +153,6 @@ switches:
   - name: sw-attack-test
     kind: ethernet-switch
     role: Dedicated Layer 2 segment for attack-generation nodes
-    spec: testbeds/metropolis/switch/backbone/sw-attack-test.md
     notes: >-
       The switch specification warns that VLAN separation here does not provide
       routed isolation. Keep this segment disconnected until router firewall
@@ -170,7 +164,6 @@ switches:
   - name: sw-reservoir-access
     kind: ethernet-switch
     role: Access Layer 2 segment for the reservoir/booster station
-    spec: testbeds/metropolis/switch/locations/sw-reservoir-access.md
     attachment_points:
       - router-uplink
       - rtu-or-plc
@@ -180,7 +173,6 @@ switches:
   - name: sw-raw-water-access
     kind: ethernet-switch
     role: Access Layer 2 segment for the raw-water lift station
-    spec: testbeds/metropolis/switch/locations/sw-raw-water-access.md
     attachment_points:
       - router-uplink
       - rtu-or-plc

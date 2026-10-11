@@ -30,7 +30,7 @@ A work in progress. The dates are when each piece landed; the entries marked
 | ✅ | Reproducibility scaffolding: seed and device configuration, directory helpers, address-plan loader | 2026-04-22 |
 | ✅ | Gotham data pipeline: feature cleaning, labelling, per-device preparation | 2026-09-19 |
 | ✅ | Metropolis testbed design: Purdue-informed zones, address plan, device inventory | 2026-09-27 |
-| ✅ | Router and switch specifications: six VyOS scripts, nine switch VLAN plans | 2026-09-27 |
+| ✅ | Router and switch specifications: six VyOS scripts and the switch VLAN plan | 2026-09-27 |
 | ✅ | Device models: PLC/RTU, sensor, broker, SCADA, HMI, historian, engineering workstation, control client, legacy gateway, DNS, NTP | 2026-10-01 |
 | ✅ | Topology validator: cross-checks the address plan, inventory, router interfaces, static routes, and switch VLANs | 2026-10-06 |
 | ✅ | MQTT over TLS: lab certificate authority, broker listener, verification by real handshake | 2026-10-06 |

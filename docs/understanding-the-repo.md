@@ -193,15 +193,47 @@ Each file is a list of **VyOS** commands. VyOS is a real router operating
 system; these scripts are real configuration for it. The top of each file
 documents, in comments, which numbered network interface connects to what.
 
-#### `testbeds/metropolis/switch/` — nine switch specifications
+#### `testbeds/metropolis/switch/` — the switch reference
 
-Switches connect devices within one network. These are Markdown documents, not
-programs: they describe which *port* does what and which VLANs it carries.
+Switches connect devices within one network. This directory holds one document,
+`README.md`, describing every switch and every port.
 
-`switch/README.md` is the master table mapping each switch to a router and to
-the VLANs it must carry. The individual files in `backbone/` and `locations/`
-list ports by *role* — names like `router-uplink` or `rtu-or-plc` — because the
-literal port numbers only exist once someone physically cables the simulation.
+It is **generated**, not written by hand:
+
+```bash
+uv run python scripts/generate_switch_reference.py --write   # regenerate it
+uv run python scripts/generate_switch_reference.py --check   # is it current?
+```
+
+It is built from `device_instances/infrastructure.yaml` (the port roles, in
+order) and `topology/links.yaml` (which devices connect, and the VLANs), so it
+describes the topology the builder actually creates.
+
+**Why generated rather than written.** This directory previously held eight
+separate Markdown specifications, one per switch, plus a summary README. They
+restated data that was already in the YAML, and no code read them. Eight
+documents that drive nothing will eventually describe a network that does not
+exist, so they were replaced by one file that cannot drift: if the data changes
+and the document does not, a test fails.
+
+Two facts from the old files were worth keeping, and both are now derived:
+
+| Was prose in the specs | Now comes from |
+|---|---|
+| VLAN mode (trunk or access) | the link's `kind` — `trunk` or `access` |
+| Which VLANs a port carries | the link's `vlans` list |
+
+Anything that could not be derived was moved into the data. The one case was a
+note that VLAN 10 carries "the PLC, sensor, and legacy Telnet gateway", which now
+lives in that link's `description` in `links.yaml`.
+
+Because the roles are listed in order and the port number is the position,
+`README.md` shows the exact numbering the build uses — including the ports with
+nothing cabled, which it marks *spare*. Those are the extension points: the
+reservoir and raw-water sites, for instance, each have a router uplink plus three
+empty ports waiting for an RTU and sensors.
+
+Section 4.5 traces one role all the way to a real cable.
 
 #### `testbeds/metropolis/devices/` — the device models
 
@@ -327,7 +359,76 @@ folder, so old captures stay explainable.
 The four YAML files are the single source of truth. Everything else is
 generated from them or checked against them.
 
-### 4.5 `scripts/` — the software you run
+### 4.5 How a port role becomes a real cable
+
+This is the least obvious step in the whole system, so it is worth following one
+cable all the way through. The question it answers: the switch documents talk
+about ports by name, so how does a *name* become a physical connection?
+
+**Step 1 — the design names a cable by role.** In `topology/links.yaml`, a cable
+between the plant router and its aggregation switch looks like this:
+
+```yaml
+- id: link-plant-aggregation
+  endpoints:
+    - node: MET-PLANT
+      interface: eth1          # a Docker node: named by interface
+    - node: sw-plant-aggregation
+      port_role: router-uplink # a switch: named by role
+```
+
+Notice the two endpoints are described *differently*. A router or device names
+its network card (`eth1`). A switch names a port **role**, because a switch does
+not have card names — it has numbered ports, and which number is which is a
+cabling decision.
+
+**Step 2 — the role's position gives the port number.** `topology.py` reads the
+switch's `attachment_points` list from `infrastructure.yaml` and turns each role
+into the number of its position:
+
+| Position | Role | Becomes port |
+|---|---|---|
+| 0 | `router-uplink` | 0 |
+| 1 | `cell-intake-uplink` | 1 |
+| 2 | `cell-dosing-uplink` | 2 |
+| … | … | … |
+
+The code that does this is four lines:
+
+```python
+mapping[switch["name"]] = {
+    role: index for index, role in enumerate(switch["attachment_points"])
+}
+```
+
+So `router-uplink` means "port 0" purely because it is written first.
+
+**Step 3 — the other endpoint uses its interface number.** `eth1` becomes adapter
+1; `eth0` would become adapter 0. Docker nodes have one network card each, so
+they always use adapter 0 on the switch side.
+
+**Step 4 — the link is sent to GNS3.** The plan becomes a concrete request naming
+two node identities and two port positions:
+
+```json
+{"nodes": [
+  {"node_id": "<MET-PLANT>",             "adapter_number": 1, "port_number": 0},
+  {"node_id": "<sw-plant-aggregation>",  "adapter_number": 0, "port_number": 0}
+]}
+```
+
+**Step 5 — GNS3 makes it real.** It creates a virtual cable — a Linux `veth` pair —
+with one end attached to the switch container's port 0 and the other to the
+router container's `eth1`. From that moment there is a genuine network path.
+
+**Why position rather than an explicit number?** Because this is how Open vSwitch
+works in GNS3: port numbers are just positions. Writing `router-uplink: 0`
+explicitly would duplicate information and give two places to get it wrong. The
+cost is that the *order* in the list is load-bearing, which is why the order is
+written down in one generated place — `testbeds/metropolis/switch/README.md` —
+rather than in eight documents that could each fall out of date.
+
+### 4.6 `scripts/` — the software you run
 
 | Path | What it does |
 |---|---|
@@ -339,7 +440,7 @@ generated from them or checked against them.
 
 We cover `gns3/` and `attacks/` in sections 8 and 7.
 
-### 4.6 `src/metropolis/` — the actual research software
+### 4.7 `src/metropolis/` — the actual research software
 
 This is where the eventual attack detector will live. Right now it is small
 scaffolding.
@@ -354,7 +455,7 @@ scaffolding.
 There is **no detection model yet**. That is the point of the project and it
 has not been built.
 
-### 4.7 `tests/` — the automatic checks
+### 4.8 `tests/` — the automatic checks
 
 Nineteen files holding 235 tests. A test is a small program that checks one
 behaviour and shouts if it breaks. They run in about 35 seconds and cover:
@@ -369,7 +470,7 @@ behaviour and shouts if it breaks. They run in about 35 seconds and cover:
 You do not need to read these to understand the system, but if you change
 something, run them.
 
-### 4.8 `data/`, `examples/`, `dist/`
+### 4.9 `data/`, `examples/`, `dist/`
 
 - **`data/`** — Gotham's downloaded dataset: thousands of CSV files of recorded
   traffic from Gotham's own testbed. Used only by `run_gotham_pipeline.py`.

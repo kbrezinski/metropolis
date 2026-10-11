@@ -50,14 +50,14 @@ and `lab_lifecycle --order` contact no server, so they are safe to run anywhere.
 
 ## What the builder does with the switch ports
 
-The switch specifications list port *roles* and leave the GNS3 port numbers as a
-`TODO`, because they are only known once a project is cabled. The builder is what
-makes them real: each role gets the adapter matching its position in the
-specification's own list, and `--write-ports` emits the mapping so the specs can
-be filled in from something that ran.
+The infrastructure inventory lists switch port *roles*, and the port number is
+the role's position in that list. `links.yaml` deliberately does not assert port
+numbers and this code does not invent them — it derives them from the order.
 
-`links.yaml` deliberately does not assert port numbers, and neither does this
-code invent them — it derives them and writes them back.
+`testbeds/metropolis/switch/README.md` shows the resulting numbering for every
+switch, generated from the same data, so it always matches what a build does. If
+you want the mapping as data rather than as a document, `--write-ports` emits it
+as YAML.
 
 ## What is repeated and what is skipped
 
