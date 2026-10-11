@@ -63,7 +63,7 @@ Here is the whole thing in one diagram.
   +-------------------------------------------------------+
   |  GNS3  - orchestrates: creates the containers,        |
   |          wires them together, starts and stops them   |
-  |          (it does not fake anything - see section 9)  |
+  |          (it does not fake anything - see section 10) |
   |                                                       |
   |   +----------------+      +---------------------+     |
   |   |  Routers       |      |  Switches           |     |
@@ -312,7 +312,7 @@ Reading a couple of rows out loud:
 **What this means for a capture.** If you capture on the link between the plant
 cell and the operations network, you are capturing traffic that must cross a
 router, so you see all of it. If you capture on one device's own subnet, you see
-only that subnet's local traffic. Section 10 says where to record.
+only that subnet's local traffic. Section 11 says where to record.
 
 **Three details worth noticing.**
 
@@ -440,27 +440,29 @@ rather than in eight documents that could each fall out of date.
 
 We cover `gns3/` and `attacks/` in sections 8 and 7.
 
-### 4.7 `src/metropolis/` — the actual research software
+### 4.7 `src/metropolis/` — the library
 
-This is where the eventual attack detector will live. Right now it is small
-scaffolding.
+This is the installable Python package. It holds the research scaffolding and,
+now, the topology library.
 
 | File | What it does |
 |---|---|
 | `config.py` | Reproducibility settings: fixes the random seeds so two runs give identical results, and picks whether to use a GPU. |
 | `paths.py` | Defines the standard folders for data, models, and logs, and creates them on demand. |
-| `testbeds.py` | Reads the address plan out of the package, so installed users need no repository checkout. |
-| `core/__init__.py` | Empty. A placeholder for future work. |
+| `testbeds.py` | Reads testbed YAML out of the package, so installed users need no repository checkout. |
+| `topology/` | **Build, check, write, and draw topologies from Python.** See section 9. |
+| `core/__init__.py` | Empty. A placeholder for the detection model. |
 
-There is **no detection model yet**. That is the point of the project and it
-has not been built.
+There is **no detection model yet**. That is the point of the project and it has
+not been built.
 
 ### 4.8 `tests/` — the automatic checks
 
-Nineteen files holding 235 tests. A test is a small program that checks one
-behaviour and shouts if it breaks. They run in about 35 seconds and cover:
+Twenty-one files holding 313 tests. A test is a small program that checks one
+behaviour and shouts if it breaks. They run in about 37 seconds and cover:
 
 - the design validates
+- the topology library describes the existing dataset exactly
 - each device model behaves correctly
 - each attack tool works, on loopback
 - the simulator client builds the right requests
@@ -577,7 +579,7 @@ Having many small paths rather than one big one matters for research: a poller
 makes a separate round trip per path, so the traffic has visible structure.
 
 **CoAP is not encrypted here.** It has an encrypted form (DTLS), which was
-attempted and removed. See the limitation in section 11.
+attempted and removed. See the limitation in section 12.
 
 ### DNS — names to addresses (port 53)
 
@@ -803,7 +805,208 @@ specification lists the roles, and the mapping can be written out with
 
 ---
 
-## 9. What is actually running
+## 9. Building topologies from Python
+
+Everything in section 4.4 is data: four YAML documents describing the plant. That
+data is the authority, and it works well, but writing YAML by hand is a poor way
+to explore alternatives. `metropolis.topology` is the same thing as a Python
+library, so a topology can be built, changed, checked, and drawn in code.
+
+The two are not alternatives. The library reads and writes exactly those YAML
+documents, so you can build in Python and still use every existing script.
+
+### 9.1 The whole idea in one example
+
+```python
+from metropolis.topology import Device, Interface, Network, Router, Switch, Topology
+
+lab = Topology(testbed_id="demo", description="Two-cell plant")
+
+# Subnets
+lab.add_network("cell-a", "10.0.10.0/24", name="Cell A", vlan_id=10, gateway="10.0.10.1")
+lab.add_network("cell-b", "10.0.11.0/24", name="Cell B", vlan_id=11, gateway="10.0.11.1")
+
+# A router with two ports, and a switch whose ports are named by role
+lab.add(
+    Router("R-EDGE", config="router_edge.sh", interfaces=(
+        Interface("eth0", cidr="10.0.254.1/30"),
+        Interface("eth1", kind="trunk", vlans=(10, 11)),
+    )),
+    Switch("sw-a", attachment_points=("router-uplink", "plc-uplink")),
+)
+
+# A host
+lab.add_device("PLC-A", image="metropolis/controller:dev",
+               subnet="10.0.10.0/24", address="10.0.10.10/24", gateway="10.0.10.1")
+
+# The cables, and what each carries
+lab.link("link-r-sw", "R-EDGE:eth1", "sw-a:router-uplink",
+         kind="trunk", vlans=(10, 11), description="Edge trunk")
+lab.link("link-sw-plc", "sw-a:plc-uplink", "PLC-A:eth0", kind="access")
+
+lab.validate()          # raises, listing every contradiction
+print(lab.summary())    # what it contains
+print(lab.to_mermaid())  # draw it
+lab.save("testbeds/metropolis/datasets/demo_v1")   # write the four documents
+```
+
+Reading a link endpoint is the part worth noticing: `"R-EDGE:eth1"` means a
+router's interface, and `"sw-a:router-uplink"` means a switch's port role. The
+suffix beginning with `eth` is an interface; anything else is a port role. You
+can also pass a mapping if you prefer to be explicit.
+
+### 9.2 What it can do
+
+| Method | What it does |
+|---|---|
+| `add(...)`, `add_network`, `add_device`, `add_switch`, `add_segment` | Add nodes |
+| `link(id, a, b, vlans=, network_id=, ...)` | Connect two endpoints |
+| `add_device(name, subnet="cell-a", auto_network=True)` | Add a host, resolving the subnet and allocating an address |
+| `allocate_address(subnet)` | The next free host address |
+| `ports_of(switch)`, `port_vlans(switch, role)`, `port_mode(switch, role)` | What a switch port carries |
+| `problems()` | Every contradiction, as readable text |
+| `validate()` | Raise if there are any |
+| `to_dicts()` / `to_yaml()` | The four documents, as data or as text |
+| `save(dir)` / `from_directory(dir)` / `from_bundled()` | Write and read datasets |
+| `to_dot()` / `to_mermaid()` | Draw it |
+| `summary()` | A short text description |
+| `switch(name).port_number(role)` | Where a role lands on a switch |
+
+### 9.3 Letting it fill in the obvious parts
+
+Writing out every address and repeating each `NODE_*` value is tedious and easy
+to get wrong. Three conveniences remove that:
+
+```python
+lab.add_network("cell-a", "10.0.10.0/24", vlan_id=10, gateway="10.0.10.1")
+
+# The subnet can be named by network id. Without an address, the next free one
+# is allocated, skipping the gateway and anything already used.
+lab.add_device("PLC-A", image="...", subnet="cell-a", address="10.0.10.10/24")
+
+# auto_network derives the gateway and the three NODE_* values the container
+# entrypoint applies, so identity is stated once and cannot drift.
+lab.add_device("SENSOR-A", image="...", subnet="cell-a", auto_network=True)
+
+# Name the network on a link and the VLAN comes from it: one VLAN is an access
+# port, several is a trunk, and the kind follows automatically.
+lab.link("link-sw-sensor", "sw-cells:ops-uplink", "SENSOR-A:eth0",
+         network_id="cell-a")
+```
+
+`auto_network` is off by default. That matters: with it off, nothing is invented,
+which is why the checked-in dataset round-trips unchanged.
+
+A switch port's VLANs are **not** written twice. The port table names roles in
+order — that is what decides port numbers — and what each port carries comes from
+the link plugged into it:
+
+```python
+Switch.with_ports("sw-cells", (
+    SwitchPort("router-uplink", mode="trunk"),   # mode may be declared
+    SwitchPort("cell-a-uplink", mode="access"),
+))
+
+lab.port_vlans("sw-cells", "cell-a-uplink")   # -> (10,), from the link
+lab.port_mode("sw-cells", "router-uplink")    # -> "trunk"
+lab.ports_of("sw-cells")[1].vlans            # attribute access
+lab.ports_of("sw-cells")[1]["vlans"]         # or mapping access
+```
+
+If a port does state its VLANs and they disagree with its link, `problems()`
+reports it rather than silently picking one.
+
+### 9.4 The checks it runs
+
+`problems()` looks for the mistakes that are easy to make and hard to see:
+
+- the same name used twice
+- two subnets that overlap
+- a gateway outside its own subnet
+- a device whose address is not in its subnet
+- a device on a subnet that is not in the address plan
+- a device whose `NODE_IP` or `NODE_GATEWAY` disagrees with its recorded address
+  (these are what the container entrypoint applies, so a mismatch means the
+  device would come up on the wrong address)
+- a router with no interfaces, or an interface that is neither an address nor a
+  trunk
+- a link to a node that does not exist
+- a link naming a switch port role that switch does not have
+- a link pointing at a subnet that is not in the address plan
+- a link with an unparsable address
+
+None of this replaces `scripts/validate_metropolis_topology.py`, which also
+cross-checks the router scripts and the schemas. It catches things earlier, in
+the code where you made the change.
+
+### 9.5 Drawing it
+
+`to_mermaid()` produces a diagram that renders in Markdown:
+
+```
+graph TD
+  subgraph plant_intake["Plant intake process cell<br/>10.20.10.0/24"]
+    MET_PLC_INTAKE_01["MET-PLC-INTAKE-01"]
+  end
+  MET_OT_CORE["MET-OT-CORE"]
+  sw_plant_aggregation{{"sw-plant-aggregation"}}
+  MET_OT_CORE -->|trunk vlan 10,11| sw_plant_aggregation
+```
+
+Devices are grouped inside their own subnet, which is what makes the picture
+useful: you can see at a glance which hosts share a segment, which routers carry
+which VLANs, and which switches have spare ports.
+
+`to_dot()` produces Graphviz source for a richer picture, with routers as 3D
+boxes, switches as green boxes, and unmanaged segments dashed. To get an image,
+either render the `.dot` yourself or let the command line call Graphviz.
+
+### 9.6 The command line
+
+```bash
+uv run python -m metropolis.topology show                # what is in it
+uv run python -m metropolis.topology check               # contradictions?
+uv run python -m metropolis.topology render --format mermaid
+uv run python -m metropolis.topology render --format dot --out topology.dot
+uv run python -m metropolis.topology export --out /tmp/regenerated
+```
+
+With no `--dataset`, the copy bundled inside the package is used, so these work
+from an installed wheel with no repository checkout.
+
+### 9.7 A worked example
+
+`examples/build_a_topology.py` builds a small two-cell plant, checks it, and can
+draw and write it:
+
+```bash
+uv run python examples/build_a_topology.py --draw
+uv run python examples/build_a_topology.py --write /tmp/demo_v1
+uv run python examples/build_a_topology.py --break-it    # see the checks fire
+```
+
+### 9.8 How this relates to the existing dataset
+
+The library was proved against the real data rather than the other way round:
+loading `water_treatment_v1` and writing it straight back produces all four
+documents **identically**, field for field. That is a test, so it cannot quietly
+stop being true.
+
+Two consequences worth knowing:
+
+- The library is a complete model of the current topology, not an approximation.
+- Existing tools are unaffected. The GNS3 builder still reads the YAML, the
+  validator still reads the YAML, and the switch reference is now rendered
+  through the library rather than re-parsing YAML itself.
+
+One limitation: comments in hand-written YAML are not preserved. Reading a
+dataset and writing it again keeps all the data but loses the `#` notes. In
+practice the dataset documents are generated rather than hand-edited, so this
+rarely matters.
+
+---
+
+## 10. What is actually running
 
 This is the most commonly misunderstood part, so it gets its own section. The
 short answer: **when the lab is running, there is no simulation of the devices
@@ -970,7 +1173,7 @@ studying.
 
 ---
 
-## 10. What actually happens when you run it
+## 11. What actually happens when you run it
 
 Follow one full session.
 
@@ -1033,7 +1236,7 @@ exactly what the attack did and when.
 
 ---
 
-## 11. Honest limits
+## 12. Honest limits
 
 Read this before drawing conclusions from anything above.
 
@@ -1050,7 +1253,7 @@ Read this before drawing conclusions from anything above.
 
 ---
 
-## 12. Where to look for what
+## 13. Where to look for what
 
 | You want to know… | Read |
 |---|---|

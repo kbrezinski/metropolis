@@ -3,8 +3,8 @@
 
 The eight per-switch Markdown specifications used to restate what
 ``links.yaml`` already held, in prose that no code read. Eight files that drive
-nothing drift, so they are gone: this writes one document from the same data the
-builder uses, which means it cannot contradict it.
+nothing drift, so they are gone: this writes one document from the topology
+library, which means it cannot contradict the data the builder uses.
 
 What is derived and what is written:
 
@@ -26,20 +26,23 @@ import argparse
 import sys
 from pathlib import Path
 
-import yaml
-
 ROOT = Path(__file__).resolve().parents[1]
 DATASET = ROOT / "testbeds/metropolis/datasets/water_treatment_v1"
 OUTPUT = ROOT / "testbeds/metropolis/switch/README.md"
+
+if str(ROOT / "src") not in sys.path:
+    sys.path.insert(0, str(ROOT / "src"))
+
+from metropolis.topology import Link, Topology  # noqa: E402
 
 HEADER = """# Metropolis switch reference
 
 **Generated file. Do not edit by hand.**
 
-Written by `scripts/generate_switch_reference.py` from
-`device_instances/infrastructure.yaml` and `topology/links.yaml`, so it cannot
-disagree with the topology the builder creates. To change it, change the data
-and regenerate.
+Written by `scripts/generate_switch_reference.py` using
+`metropolis.topology`, from `device_instances/infrastructure.yaml` and
+`topology/links.yaml`, so it cannot disagree with the topology the builder
+creates. To change it, change the data and regenerate.
 
 Each switch is a GNS3 Ethernet switch appliance. Port numbers come from the
 order of `attachment_points` in the infrastructure inventory, so the port
@@ -61,70 +64,56 @@ FOOTER = """
 """
 
 
-def load() -> tuple[dict, list[dict]]:
-    infrastructure = yaml.safe_load(
-        (DATASET / "device_instances/infrastructure.yaml").read_text(encoding="utf-8")
-    )
-    links = yaml.safe_load(
-        (DATASET / "topology/links.yaml").read_text(encoding="utf-8")
-    )["links"]
-    return infrastructure, links
+def load() -> Topology:
+    """Read the dataset through the library rather than parsing YAML here."""
+    return Topology.from_directory(DATASET)
 
 
-def index_ports(links: list[dict]) -> dict[tuple[str, str], dict]:
-    """(switch, port_role) -> the link that uses that port."""
-    indexed: dict[tuple[str, str], dict] = {}
-    for link in links:
-        for endpoint in link["endpoints"]:
-            if "port_role" in endpoint:
-                indexed[(endpoint["node"], endpoint["port_role"])] = link
+def port_index(topology: Topology) -> dict[tuple[str, str], Link]:
+    """(switch, port_role) -> the link using that port."""
+    indexed: dict[tuple[str, str], Link] = {}
+    for link in topology.links:
+        for endpoint in link.endpoints:
+            if endpoint.port_role:
+                indexed[(endpoint.node, endpoint.port_role)] = link
     return indexed
 
 
-def far_end(link: dict, switch_name: str) -> dict:
-    """The endpoint at the other end of the link, as a mapping."""
-    for endpoint in link["endpoints"]:
-        if endpoint["node"] != switch_name:
-            return endpoint
-    return {}
-
-
-def describe_far_end(endpoint: dict, link: dict) -> str:
+def describe_far_end(endpoint, link: Link) -> str:
     """Name the device, its interface, and what the link says it is."""
-    node = endpoint.get("node", "?")
-    interface = endpoint.get("interface")
-    label = f"`{node}`" + (f" {interface}" if interface else "")
-    if endpoint.get("port_role"):
-        label += f" ({endpoint['port_role']})"
-    description = link.get("description")
-    return f"{label} — {description}" if description else label
+    label = f"`{endpoint.node}`"
+    if endpoint.interface:
+        label += f" {endpoint.interface}"
+    if endpoint.port_role:
+        label += f" ({endpoint.port_role})"
+    return f"{label} — {link.description}" if link.description else label
 
 
 def render() -> str:
-    infrastructure, links = load()
-    ports = index_ports(links)
+    topology = load()
+    ports = port_index(topology)
 
     parts = [HEADER]
-    for switch in infrastructure["switches"]:
-        parts.append(f"\n## `{switch['name']}`\n\n")
-        if switch.get("role"):
-            parts.append(f"{switch['role']}.\n")
+    for switch in topology.switches:
+        parts.append(f"\n## `{switch.name}`\n\n")
+        if switch.role:
+            parts.append(f"{switch.role}.\n")
         parts.append(
             "\n| Port | Role | Mode | VLANs | Far end |\n|---|---|---|---|---|\n"
         )
-        for number, role in enumerate(switch["attachment_points"]):
-            link = ports.get((switch["name"], role))
+        for number, role in enumerate(switch.attachment_points):
+            link = ports.get((switch.name, role))
             if link is None:
                 parts.append(f"| {number} | `{role}` | spare | — | nothing cabled |\n")
                 continue
-            trunk = link.get("kind") == "trunk"
-            mode = "trunk" if trunk else "access"
-            vlans = link.get("vlans")
-            vlan_text = ", ".join(str(v) for v in vlans) if vlans else "untagged"
-            endpoint = far_end(link, switch["name"])
+            mode = "trunk" if link.kind == "trunk" else "access"
+            vlan_text = (
+                ", ".join(str(v) for v in link.vlans) if link.vlans else "untagged"
+            )
+            far_end = link.other(switch.name)
             parts.append(
                 f"| {number} | `{role}` | {mode} | {vlan_text} | "
-                f"{describe_far_end(endpoint, link)} |\n"
+                f"{describe_far_end(far_end, link)} |\n"
             )
 
     parts.append(FOOTER)
@@ -159,8 +148,7 @@ def main() -> int:
 
     OUTPUT.parent.mkdir(parents=True, exist_ok=True)
     OUTPUT.write_text(generated, encoding="utf-8")
-    switches = len(load()[0]["switches"])
-    print(f"Wrote {OUTPUT.relative_to(ROOT)}: {switches} switches")
+    print(f"Wrote {OUTPUT.relative_to(ROOT)}: {len(load().switches)} switches")
     return 0
 
 

@@ -4,6 +4,9 @@ The per-switch Markdown specifications were deleted because eight documents that
 no code reads will eventually describe a topology that does not exist. The single
 reference file is generated instead, and these tests make the generation
 authoritative: if the data changes and the file does not, this fails.
+
+The reference is rendered through the topology library, so these tests use the
+same library rather than re-parsing the YAML.
 """
 
 from __future__ import annotations
@@ -14,7 +17,6 @@ import sys
 from pathlib import Path
 
 import pytest
-import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS = ROOT / "scripts"
@@ -22,8 +24,12 @@ DATASET = ROOT / "testbeds/metropolis/datasets/water_treatment_v1"
 SWITCH_DIR = ROOT / "testbeds/metropolis/switch"
 REFERENCE = SWITCH_DIR / "README.md"
 
+if str(ROOT / "src") not in sys.path:
+    sys.path.insert(0, str(ROOT / "src"))
 if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
+
+from metropolis.topology import Topology  # noqa: E402
 
 
 def load_generator():
@@ -42,14 +48,19 @@ def generator():
 
 
 @pytest.fixture(scope="module")
-def data():
-    infrastructure = yaml.safe_load(
-        (DATASET / "device_instances/infrastructure.yaml").read_text(encoding="utf-8")
-    )
-    links = yaml.safe_load(
-        (DATASET / "topology/links.yaml").read_text(encoding="utf-8")
-    )["links"]
-    return infrastructure, links
+def topology() -> Topology:
+    return Topology.from_directory(DATASET)
+
+
+@pytest.fixture(scope="module")
+def ports(topology) -> dict[tuple[str, str], object]:
+    """(switch, port_role) -> the link using that port."""
+    indexed = {}
+    for link in topology.links:
+        for endpoint in link.endpoints:
+            if endpoint.port_role:
+                indexed[(endpoint.node, endpoint.port_role)] = link
+    return indexed
 
 
 # -- the file must match the data ---------------------------------------------
@@ -64,16 +75,12 @@ def test_the_reference_file_is_exactly_what_the_generator_writes(generator):
     )
 
 
-def test_the_reference_says_it_is_generated(generator):
+def test_the_reference_says_it_is_generated():
     """A reader must not think this is hand-written and start editing it."""
     text = REFERENCE.read_text(encoding="utf-8")
     assert "Generated file. Do not edit by hand." in text
     assert "scripts/generate_switch_reference.py" in text
-
-
-def test_check_mode_passes_on_the_current_file(generator):
-    assert (SCRIPTS / "generate_switch_reference.py").is_file()
-    assert generator.render() == REFERENCE.read_text(encoding="utf-8")
+    assert "metropolis.topology" in text
 
 
 # -- the old per-switch specifications are gone --------------------------------
@@ -84,14 +91,7 @@ def test_the_per_switch_specification_files_are_deleted():
     assert remaining == [], f"these should have been removed: {remaining}"
 
 
-def test_no_switch_entry_references_a_specification_document(data):
-    """The schema no longer allows it, and nothing should be left pointing at one."""
-    infrastructure, _ = data
-    for switch in infrastructure["switches"]:
-        assert "spec" not in switch, f"{switch['name']} still names a spec document"
-
-
-def test_the_schema_no_longer_requires_a_spec(data):
+def test_the_schema_no_longer_requires_a_spec():
     schema = json.loads(
         (ROOT / "schemas/infrastructure.schema.json").read_text(encoding="utf-8")
     )
@@ -103,73 +103,60 @@ def test_the_schema_no_longer_requires_a_spec(data):
 # -- the content must be complete and correct ---------------------------------
 
 
-def test_every_switch_and_port_appears(data, generator):
-    infrastructure, links = data
+def test_every_switch_and_port_appears(topology, ports):
     text = REFERENCE.read_text(encoding="utf-8")
-    ports = generator.index_ports(links)
 
-    for switch in infrastructure["switches"]:
-        assert f"## `{switch['name']}`" in text, f"{switch['name']} is missing"
-        for number, role in enumerate(switch["attachment_points"]):
+    for switch in topology.switches:
+        assert f"## `{switch.name}`" in text, f"{switch.name} is missing"
+        for number, role in enumerate(switch.attachment_points):
             assert f"| {number} | `{role}` |" in text, (
-                f"{switch['name']} port {number} ({role}) is missing"
+                f"{switch.name} port {number} ({role}) is missing"
             )
             # A port with no link must be marked spare, not left blank.
-            if (switch["name"], role) not in ports:
+            if (switch.name, role) not in ports:
                 assert f"| {number} | `{role}` | spare |" in text
 
 
-def test_trunk_ports_list_exactly_the_link_vlans(data, generator):
+def test_trunk_ports_list_exactly_the_link_vlans(topology, ports):
     """VLAN numbers are the part a human would most easily get wrong by hand."""
-    infrastructure, links = data
     text = REFERENCE.read_text(encoding="utf-8")
-    ports = generator.index_ports(links)
 
     checked = 0
-    for switch in infrastructure["switches"]:
-        for role in switch["attachment_points"]:
-            link = ports.get((switch["name"], role))
-            if link is None or link.get("kind") != "trunk":
+    for switch in topology.switches:
+        for role in switch.attachment_points:
+            link = ports.get((switch.name, role))
+            if link is None or link.kind != "trunk":
                 continue
-            expected = ", ".join(str(v) for v in link.get("vlans") or [])
+            expected = ", ".join(str(v) for v in link.vlans)
             assert f"| trunk | {expected} |" in text, (
-                f"{switch['name']}/{role} should carry VLANs {expected}"
+                f"{switch.name}/{role} should carry VLANs {expected}"
             )
             checked += 1
     assert checked >= 15, f"expected the trunk ports to be checked, saw {checked}"
 
 
-def test_the_mode_is_derived_from_the_link_kind(data, generator):
-    """trunk links are tagged; everything else is an access port."""
-    infrastructure, links = data
+def test_the_mode_is_derived_from_the_link_kind(topology, ports):
+    """Trunk links are tagged; everything else is an access port."""
     text = REFERENCE.read_text(encoding="utf-8")
-    ports = generator.index_ports(links)
 
-    for switch in infrastructure["switches"]:
-        for role in switch["attachment_points"]:
-            link = ports.get((switch["name"], role))
+    for switch in topology.switches:
+        for role in switch.attachment_points:
+            link = ports.get((switch.name, role))
             if link is None:
                 continue
-            mode = "trunk" if link.get("kind") == "trunk" else "access"
+            mode = "trunk" if link.kind == "trunk" else "access"
             assert f"| `{role}` | {mode} |" in text, (
-                f"{switch['name']}/{role} should be {mode}"
+                f"{switch.name}/{role} should be {mode}"
             )
 
 
-def test_every_far_end_named_in_the_document_is_a_real_node(data):
-    """The document must not name a device that does not exist."""
-    infrastructure, links = data
+def test_every_switch_in_the_reference_is_a_real_switch(topology):
+    for switch in topology.switches:
+        assert switch.attachment_points, f"{switch.name} has no ports to document"
+        assert len(set(switch.attachment_points)) == len(switch.attachment_points), (
+            f"{switch.name} repeats a port role, which would renumber ports"
+        )
 
-    devices = yaml.safe_load(
-        (DATASET / "device_instances/initial_devices.yaml").read_text(encoding="utf-8")
-    )["devices"]
-    known = {device["name"] for device in devices}
-    known |= {switch["name"] for switch in infrastructure["switches"]}
-    known |= {segment["name"] for segment in infrastructure["segments"]}
-    known |= {router["name"] for router in infrastructure["routers"]}
 
-    for link in links:
-        for endpoint in link["endpoints"]:
-            if "port_role" in endpoint:
-                continue  # a switch port, not a node
-            assert endpoint["node"] in known, f"{endpoint['node']} is not a known node"
+def test_the_bundled_topology_it_documents_is_valid(topology):
+    assert topology.problems() == []

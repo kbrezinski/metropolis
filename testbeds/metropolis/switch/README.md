@@ -2,10 +2,10 @@
 
 **Generated file. Do not edit by hand.**
 
-Written by `scripts/generate_switch_reference.py` from
-`device_instances/infrastructure.yaml` and `topology/links.yaml`, so it cannot
-disagree with the topology the builder creates. To change it, change the data
-and regenerate.
+Written by `scripts/generate_switch_reference.py` using
+`metropolis.topology`, from `device_instances/infrastructure.yaml` and
+`topology/links.yaml`, so it cannot disagree with the topology the builder
+creates. To change it, change the data and regenerate.
 
 Each switch is a GNS3 Ethernet switch appliance. Port numbers come from the
 order of `attachment_points` in the infrastructure inventory, so the port

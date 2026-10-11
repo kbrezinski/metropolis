@@ -43,7 +43,8 @@ A work in progress. The dates are when each piece landed; the entries marked
 | ✅ | Router configuration: each VyOS script loaded onto its node and verified from the running config | 2026-10-09 |
 | ✅ | Light process model: coupled PLC registers, so telemetry moves and the sensor agrees with the controller | 2026-10-09 |
 | ✅ | Shared device TLS: sensor, SCADA, HMI, and historian can all encrypt, plus the toolkit's `--tls` | 2026-10-09 |
-| ✅ | Documentation pass: READMEs rewritten around tasks, 250 tests, lint and spelling in CI | 2026-10-09 |
+| ✅ | Topology library: build, check, write, and draw topologies in Python, with round-trip coverage of the dataset | 2026-10-09 |
+| ✅ | Documentation pass: a plain-language guide, 313 tests, lint and spelling in CI | 2026-10-09 |
 | ⬜ | Deploy and capture on a live GNS3 server | Future work |
 | ⬜ | Captured packet data — `captures/` is empty | Future work |
 | ⬜ | Firewall policy and IPsec, so routing restricts rather than merely reaches | Future work |
@@ -65,6 +66,10 @@ A work in progress. The dates are when each piece landed; the entries marked
   one command.
 - **Capture traffic** on chosen links, and record it under the versioned dataset
   folder.
+- **Design a topology in Python** — build a network, check it for contradictions,
+  draw it, and write it out as the same dataset documents everything else reads.
+  Start with `examples/build_a_topology.py` or
+  `uv run python -m metropolis.topology --help`.
 
 ## What is in the repository
 

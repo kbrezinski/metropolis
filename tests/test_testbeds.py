@@ -22,5 +22,5 @@ def test_load_address_plan_rejects_path_traversal():
 
 
 def test_load_address_plan_reports_missing_testbed():
-    with pytest.raises(FileNotFoundError, match="No bundled address plan"):
+    with pytest.raises(FileNotFoundError, match="No bundled"):
         load_address_plan("future-testbed", "dataset_v1")
