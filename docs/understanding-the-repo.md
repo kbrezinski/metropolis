@@ -868,7 +868,7 @@ can also pass a mapping if you prefer to be explicit.
 | `validate()` | Raise if there are any |
 | `to_dicts()` / `to_yaml()` | The four documents, as data or as text |
 | `save(dir)` / `from_directory(dir)` / `from_bundled()` | Write and read datasets |
-| `to_dot()` / `to_mermaid()` | Draw it |
+| `to_dot()` / `to_mermaid()` / `draw.render()` | Draw it — text, or an image |
 | `summary()` | A short text description |
 | `switch(name).port_number(role)` | Where a role lands on a switch |
 
@@ -941,7 +941,9 @@ the code where you made the change.
 
 ### 9.5 Drawing it
 
-`to_mermaid()` produces a diagram that renders in Markdown:
+Three ways, from simplest to richest.
+
+**`to_mermaid()`** produces a diagram that renders in Markdown:
 
 ```
 graph TD
@@ -953,19 +955,50 @@ graph TD
   MET_OT_CORE -->|trunk vlan 10,11| sw_plant_aggregation
 ```
 
-Devices are grouped inside their own subnet, which is what makes the picture
-useful: you can see at a glance which hosts share a segment, which routers carry
-which VLANs, and which switches have spare ports.
+**`to_dot()`** produces Graphviz source, for feeding to `dot` yourself.
 
-`to_dot()` produces Graphviz source for a richer picture, with routers as 3D
-boxes, switches as green boxes, and unmanaged segments dashed. To get an image,
-either render the `.dot` yourself or let the command line call Graphviz.
+**`draw.render()`** produces an actual image, using **networkx and matplotlib**:
+
+```bash
+uv run python -m metropolis.topology draw --out topology.png \
+    --title "Metropolis water-treatment testbed"
+```
+
+The topology becomes a networkx graph, `networkx.spring_layout` places the
+nodes, and networkx's own matplotlib drawing functions render it. There is no
+hand-written layout code: the positions are the library's.
+
+What the picture tells you:
+
+- **Nodes are coloured by type**, with a legend giving the counts.
+- **Every endpoint shows its name and its address**, so the addressing reads
+  straight off it.
+- **Links are labelled with kind and VLANs.** Trunks are solid and purple;
+  everything else is dashed. Red is deliberately avoided, because in an OT
+  diagram red reads as a fault.
+
+`--seed` fixes the layout, because a force-directed layout is random unless it
+is told not to be: the same seed always gives the same picture. `--dpi` raises
+the resolution, and `--out` accepts `.png`, `.svg` or `.pdf` — the vector
+formats stay sharp at any size.
+
+matplotlib and networkx are not runtime dependencies. They are imported only
+inside `draw.render()`, so installing the package pulls in neither.
+`draw.available()` reports whether they can be used, and the command line
+explains how to install them if not.
+
+**What a force layout does not give you.** It groups by connectivity, not by
+tier, so the picture does not read as a stack of zones, and a node with no links
+has no forces acting on it and is pushed away from the rest. For a diagram with
+a clear top-to-bottom order, `to_dot()` hands the graph to Graphviz, whose
+`dot` layout is built for exactly that.
 
 ### 9.6 The command line
 
 ```bash
 uv run python -m metropolis.topology show                # what is in it
 uv run python -m metropolis.topology check               # contradictions?
+uv run python -m metropolis.topology draw --out topology.png
 uv run python -m metropolis.topology render --format mermaid
 uv run python -m metropolis.topology render --format dot --out topology.dot
 uv run python -m metropolis.topology export --out /tmp/regenerated

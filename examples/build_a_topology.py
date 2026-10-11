@@ -175,6 +175,9 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     parser.add_argument("--draw", action="store_true", help="Print mermaid source")
     parser.add_argument("--dot", action="store_true", help="Print Graphviz source")
+    parser.add_argument(
+        "--image", metavar="FILE", help="Write an image of the topology (.png/.svg)"
+    )
     parser.add_argument("--write", metavar="DIR", help="Write the dataset documents")
     parser.add_argument(
         "--break-it",
@@ -204,6 +207,18 @@ def main() -> int:
     if args.dot:
         print()
         print(lab.to_dot("Demo plant"))
+    if args.image:
+        from metropolis.topology.draw import available, render
+
+        if not available():
+            print(
+                "Writing an image needs matplotlib and networkx:\n"
+                "  uv pip install matplotlib networkx",
+                file=sys.stderr,
+            )
+            return 2
+        print()
+        print(f"wrote {render(lab, args.image, title='Demo plant')}")
     if args.write:
         for path in lab.save(args.write):
             print(f"wrote {path}")

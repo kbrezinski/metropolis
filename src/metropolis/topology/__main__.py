@@ -7,7 +7,7 @@ Examples::
     uv run python -m metropolis.topology check
     uv run python -m metropolis.topology render --format mermaid
     uv run python -m metropolis.topology render --format dot --out topology.dot
-    uv run python -m metropolis.topology render --format png --out topology.png
+    uv run python -m metropolis.topology draw --out topology.png
     uv run python -m metropolis.topology export --out /tmp/regenerated
 
 Reading and drawing need no arguments: with no ``--dataset`` the copy bundled
@@ -116,6 +116,29 @@ def _cmd_export(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_draw(args: argparse.Namespace) -> int:
+    """Draw the topology as an image, using networkx and matplotlib."""
+    from metropolis.topology.draw import available, render
+
+    if not available():
+        print(
+            "Drawing needs matplotlib and networkx. "
+            "Install them with: uv pip install matplotlib networkx",
+            file=sys.stderr,
+        )
+        return 2
+    render(
+        _load(args),
+        args.out,
+        title=args.title,
+        dpi=args.dpi,
+        note=args.note,
+        seed=args.seed,
+    )
+    print(f"wrote {args.out}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="metropolis.topology",
@@ -152,6 +175,23 @@ def build_parser() -> argparse.ArgumentParser:
         "--force", action="store_true", help="Write even if problems were found"
     )
     export.set_defaults(func=_cmd_export)
+
+    draw = commands.add_parser(
+        "draw", help="Draw an image of the topology, top to bottom"
+    )
+    draw.add_argument("--out", required=True, help="Image to write (.png, .svg, .pdf)")
+    draw.add_argument("--title", help="Title across the top")
+    draw.add_argument("--note", help="Small caption along the bottom")
+    draw.add_argument(
+        "--dpi", type=int, default=130, help="Resolution for raster output"
+    )
+    draw.add_argument(
+        "--seed",
+        type=int,
+        default=7,
+        help="Layout seed, so the same command gives the same picture",
+    )
+    draw.set_defaults(func=_cmd_draw)
 
     return parser
 
