@@ -425,10 +425,6 @@ def test_ssh_rejection_and_fixed_command(tcp_peer):
     host_key = paramiko.RSAKey.generate(2048)
 
     class Auth(paramiko.ServerInterface):
-        def __init__(self):
-            self.ready = threading.Event()
-            self.command = None
-
         def check_auth_password(self, username, password):
             return (
                 paramiko.AUTH_SUCCESSFUL
@@ -447,8 +443,25 @@ def test_ssh_rejection_and_fixed_command(tcp_peer):
             )
 
         def check_channel_exec_request(self, channel, command):
-            self.command = command
-            self.ready.set()
+            def answer():
+                # Let Paramiko acknowledge the exec request before sending
+                # output; otherwise a fast loopback server can close the
+                # channel before the client receives that acknowledgement.
+                time.sleep(0.05)
+                if command.startswith(b"printf "):
+                    token = re.findall(rb"'([a-z0-9_]+)'", command)[-1]
+                    reply = token + b"\n"
+                else:
+                    reply = {
+                        b"id -un": b"engineer\n",
+                        b"uname -s": b"Linux\n",
+                        b"pwd": b"/home/engineer\n",
+                    }[command]
+                channel.sendall(reply)
+                channel.send_exit_status(0)
+                channel.shutdown_write()
+
+            threading.Thread(target=answer, daemon=True).start()
             return True
 
     class Handler(socketserver.BaseRequestHandler):
@@ -464,17 +477,11 @@ def test_ssh_rejection_and_fixed_command(tcp_peer):
             try:
                 transport.add_server_key(host_key)
                 transport.start_server(server=auth)
-                channel = transport.accept(10)
-                if channel is not None and auth.ready.wait(10):
-                    token = re.findall(rb"'([a-z0-9_]+)'", auth.command)[-1]
-                    channel.sendall(token + b"\n")
-                    channel.send_exit_status(0)
-                    channel.close()
-                    # Let the client read the reply before the transport goes
-                    # away. Closing immediately resets the connection while the
-                    # client is still reading, which surfaces as a socket error
-                    # rather than a verified command.
-                    time.sleep(0.2)
+                channels = []
+                while transport.is_active():
+                    channel = transport.accept(0.1)
+                    if channel is not None:
+                        channels.append(channel)
             except (EOFError, OSError, paramiko.SSHException):
                 pass
             finally:
@@ -489,8 +496,14 @@ def test_ssh_rejection_and_fixed_command(tcp_peer):
         port,
         "--interval",
         "0.01",
+        "--max-attempts",
+        "2",
     )
     assert result.returncode == 0, result.stdout + result.stderr
     attempts = [item for item in records(result) if item["event"] == "attempt"]
     assert attempts[0]["status"] == "rejected"
     assert attempts[1]["command_verified"] is True
+    assert attempts[1]["post_login_commands_verified"] == 3
+    assert [item["command"] for item in records(result) if item["event"] == "command"] == [
+        "id -un", "uname -s", "pwd"
+    ]

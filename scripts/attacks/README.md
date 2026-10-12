@@ -32,7 +32,7 @@ Every tool takes `--dry-run` and `--help`. Nothing is sent until you set
 | Find live services | `run_iot_discovery_simulation` | Complete TCP/UDP inventory pass by default; protocol-aware UDP probes |
 | Guess MQTT passwords | `mqtt_bruteforce_attack` | A short list of MQTT logins via Paho or Metasploit |
 | Flood an MQTT topic | `mqtt_flood_attack` | Many publishes; can also plant or clear a retained message |
-| Guess SSH passwords | `ssh_bruteforce_attack` | A short list of SSH logins |
+| Guess SSH passwords | `ssh_bruteforce_attack` | Bounded SSH login sequence and read-only shell checks |
 | Guess Telnet passwords | `mirai_infection_sim` | Telnet logins and a fixed command |
 | Measure CoAP responses | `coap_amplification_attack` | CoAP GETs; optionally source-spoofed |
 | Write to the PLC | `modbus_manipulation_attack` | Modbus register and coil writes |
@@ -166,11 +166,11 @@ SSH `10.20.21.10`, Telnet `10.20.10.30`.
 
 ### Credentials
 
-The Paho MQTT login tool and the other login tools try two passwords by
-default: one wrong, one known-good from the inventory. The Metasploit MQTT
-engine uses a longer built-in sequence described below. Pass `--wordlist PATH`
-and `--max-attempts N` for your own bounded list. Passwords never appear in
-the output records.
+The Paho MQTT and Telnet login tools try two passwords by default: one wrong,
+one known-good from the inventory. The Metasploit MQTT and SSH tools use longer
+built-in sequences described below. Pass `--wordlist PATH` and
+`--max-attempts N` for your own bounded list. Passwords never appear in the
+output records.
 
 ### Metasploit MQTT credential experiment
 
@@ -215,6 +215,33 @@ exports that stream. The broker logs are configured in
 These records describe authentication activity; the pcap contains the actual
 MQTT CONNECT/CONNACK traffic. This module does not exploit the broker or
 create a shell.
+
+### SSH credential experiment
+
+The target is the inventoried engineering workstation running OpenSSH. The
+default run supplies 24 distinct wrong guesses followed by its known-good lab
+password. It starts at most 25 attempts, at up to 2 logins per second, for at
+most 120 seconds; slow handshakes can make the actual count lower. These are
+ceilings, not a promise of exactly 25 logins. A custom `--wordlist PATH` replaces
+the built-in list and does not append the known-good password.
+
+```bash
+python scripts/attacks/run.py ssh_bruteforce_attack --dry-run
+export METROPOLIS_LAB_ACK=yes
+python scripts/attacks/run.py ssh_bruteforce_attack \
+  --rate 2 --duration 120 --max-attempts 25 \
+  --output runs/ssh-credentials.jsonl
+```
+
+`--rate` is capped at 100/s, `--duration` at 600 seconds, and `--max-attempts`
+at 1,000. The older `--interval` option still works as an alternative to
+`--rate`. The tool stops after its first accepted login, then verifies a fixed
+`printf` challenge and runs up to three read-only commands: `id -un`,
+`uname -s`, and `pwd`. Use `--post-login-commands 0` to omit them. The JSONL
+records command names and verification outcomes without password or command
+output. OpenSSH logs authentication and session activity to the engineering
+container's stderr; normal SSH packet captures show encrypted session traffic,
+not command text.
 
 ### Tool reference
 
