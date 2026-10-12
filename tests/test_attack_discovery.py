@@ -10,6 +10,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
+import socket
 import socketserver
 import subprocess
 import sys
@@ -145,25 +146,148 @@ def test_discovery_defaults_to_inventory_and_documented_ports():
     start = records(
         invoke(
             "run_iot_discovery_simulation.py",
-            "--protocol",
-            "both",
             "--dry-run",
             ack=False,
         )
     )[0]
+    assert start["protocol"] == "both"
     assert "10.20.10.10" in start["hosts"]
     assert "10.99.10.10" in start["hosts"]
     assert len(start["hosts"]) <= 256
     assert "tcp/502" in start["ports"]
+    assert "tcp/8883" in start["ports"]
+    assert "tcp/48101" in start["ports"]
+    assert "udp/69" in start["ports"]
     assert "udp/5683" in start["ports"]
+    assert start["planned"] == len(start["hosts"]) * len(start["ports"])
 
 
 def test_discovery_probe_helpers_observe_a_live_listener(tcp_listener):
     """TCP opens are reported; a closed reserved port is not."""
     port, _ = tcp_listener
     discovery = load_driver("discovery_driver", "run_iot_discovery_simulation.py")
-    assert discovery.tcp_probe("127.0.0.1", port, 2.0) is True
-    assert discovery.tcp_probe("127.0.0.1", 1, 0.5) is False
+    assert discovery.tcp_probe("127.0.0.1", port, 2.0) == "open"
+    assert discovery.tcp_probe("127.0.0.1", 1, 0.5) in {"closed", "no-response"}
+
+
+def test_discovery_reports_complete_and_partial_coverage(tcp_listener):
+    port, accepted = tcp_listener
+    arguments = (
+        "--host",
+        "127.0.0.1",
+        "--protocol",
+        "tcp",
+        "--tcp-ports",
+        str(port),
+        "--passes",
+        "2",
+        "--rate",
+        "100",
+        "--workers",
+        "2",
+    )
+    complete = invoke("run_iot_discovery_simulation.py", *arguments)
+    assert complete.returncode == 0, complete.stdout + complete.stderr
+    summary = next(row for row in records(complete) if row["event"] == "summary")
+    assert summary["complete"] is True
+    assert (summary["planned"], summary["attempted"], summary["untested"]) == (2, 2, 0)
+    assert summary["live_services"] == {"127.0.0.1": [f"tcp/{port}"]}
+    assert len(accepted) >= 2
+
+    partial = invoke("run_iot_discovery_simulation.py", *arguments, "--max-probes", "1")
+    assert partial.returncode == 1
+    summary = next(row for row in records(partial) if row["event"] == "summary")
+    assert summary["complete"] is False
+    assert (summary["planned"], summary["attempted"], summary["untested"]) == (2, 1, 1)
+
+
+def test_discovery_coap_probe_uses_real_sensor_response():
+    sensor_path = ROOT / "testbeds/metropolis/devices/field/sensors/coap_sensor.py"
+    sensor = load_driver("coap_for_discovery", sensor_path)
+    discovery = load_driver("coap_discovery_driver", "run_iot_discovery_simulation.py")
+
+    class Handler(socketserver.BaseRequestHandler):
+        def handle(self):
+            request, sock = self.request
+            response = sensor.handle_get(request, "MET-SENSOR-01", "level", 65.0)
+            if response:
+                sock.sendto(response, self.client_address)
+
+    class Server(socketserver.ThreadingUDPServer):
+        daemon_threads = True
+
+    server = Server(("127.0.0.1", 0), Handler)
+    worker = threading.Thread(target=server.serve_forever, daemon=True)
+    worker.start()
+    try:
+        assert (
+            discovery.udp_probe("127.0.0.1", server.server_address[1], 1, "coap")
+            == "open"
+        )
+    finally:
+        server.shutdown()
+        server.server_close()
+        worker.join(timeout=2)
+
+
+def test_discovery_accepts_tftp_transfer_port_reply():
+    discovery = load_driver("tftp_discovery_driver", "run_iot_discovery_simulation.py")
+
+    class Handler(socketserver.BaseRequestHandler):
+        def handle(self):
+            request, _ = self.request
+            if request.startswith(b"\x00\x01"):
+                with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as transfer:
+                    transfer.sendto(b"\x00\x05\x00\x01missing\x00", self.client_address)
+
+    class Server(socketserver.ThreadingUDPServer):
+        daemon_threads = True
+
+    server = Server(("127.0.0.1", 0), Handler)
+    worker = threading.Thread(target=server.serve_forever, daemon=True)
+    worker.start()
+    try:
+        assert (
+            discovery.udp_probe("127.0.0.1", server.server_address[1], 1, "tftp")
+            == "open"
+        )
+    finally:
+        server.shutdown()
+        server.server_close()
+        worker.join(timeout=2)
+
+
+@pytest.mark.parametrize("kind", ["dns", "ntp"])
+def test_discovery_recognizes_dns_and_ntp_replies(kind):
+    discovery = load_driver(
+        f"{kind}_discovery_driver", "run_iot_discovery_simulation.py"
+    )
+
+    class Handler(socketserver.BaseRequestHandler):
+        def handle(self):
+            request, sock = self.request
+            reply = (
+                request[:2] + b"\x81\x80" + request[4:]
+                if kind == "dns"
+                else b"\x24" + b"\x00" * 47
+            )
+            sock.sendto(reply, self.client_address)
+
+    class Server(socketserver.ThreadingUDPServer):
+        daemon_threads = True
+
+    server = Server(("127.0.0.1", 0), Handler)
+    worker = threading.Thread(target=server.serve_forever, daemon=True)
+    worker.start()
+    try:
+        assert (
+            discovery.udp_probe("127.0.0.1", server.server_address[1], 1, kind)
+            == "open"
+        )
+    finally:
+        server.shutdown()
+        server.server_close()
+        worker.join(timeout=2)
 
 
 def test_discovery_refuses_public_and_oversized_ranges():
@@ -183,6 +307,12 @@ def test_discovery_refuses_public_and_oversized_ranges():
     assert (
         invoke(
             "run_iot_discovery_simulation.py", "--max-probes", "99999999", "--dry-run"
+        ).returncode
+        == 2
+    )
+    assert (
+        invoke(
+            "run_iot_discovery_simulation.py", "--max-probes", "0", "--dry-run"
         ).returncode
         == 2
     )

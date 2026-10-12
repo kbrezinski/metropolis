@@ -50,7 +50,7 @@ def records(result):
         ("mqtt_bruteforce_attack.py", []),
         ("mqtt_flood_attack.py", []),
         ("modbus_manipulation_attack.py", ["--action", "set-level"]),
-        ("network_recon_scan.py", ["--protocol", "both"]),
+        ("network_recon_scan.py", []),
         ("ssh_bruteforce_attack.py", []),
         ("mirai_infection_sim.py", []),
     ],
@@ -65,8 +65,11 @@ def test_dry_runs_resolve_inventory_without_ack(name, args):
     if name == "mirai_infection_sim.py":
         assert start["hosts"] == ["10.20.10.30"]
     if name == "network_recon_scan.py":
+        assert start["protocol"] == "both"
         ports = start["command"][start["command"].index("-p") + 1]
-        assert "U:53,123,5683" in ports
+        assert ports == (
+            "T:22,23,53,80,443,502,1883,8080,8443,8883,48101,U:53,69,123,5683"
+        )
     assert "LabOnly_" not in result.stdout
 
 

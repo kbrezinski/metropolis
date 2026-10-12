@@ -29,7 +29,7 @@ Every tool takes `--dry-run` and `--help`. Nothing is sent until you set
 | Experiment | Tool | What it sends |
 |---|---|---|
 | Scan the lab | `network_recon_scan` | Nmap service scan of inventoried hosts |
-| Find live services | `run_iot_discovery_simulation` | TCP/UDP probes across the documented port set |
+| Find live services | `run_iot_discovery_simulation` | Complete TCP/UDP inventory pass by default; protocol-aware UDP probes |
 | Guess MQTT passwords | `mqtt_bruteforce_attack` | A short list of MQTT logins |
 | Flood an MQTT topic | `mqtt_flood_attack` | Many publishes; can also plant or clear a retained message |
 | Guess SSH passwords | `ssh_bruteforce_attack` | A short list of SSH logins |
@@ -186,6 +186,28 @@ produces fewer packets than `--max-packets`.
 
 `network_recon_scan` and `run_iot_discovery_simulation` default to inventoried
 hosts. `--cidr` accepts a private range of at most 256 addresses.
+
+`run_iot_discovery_simulation` uses the scanner's current port lists and checks
+both transports by default. It completes one pass across every selected
+host/port unless you set a shorter `--duration` or `--max-probes` limit.
+`--passes 2` repeats the full sweep; `--rate` and `--workers` control the
+traffic pattern. `--tcp-ports` and `--udp-ports` select concrete comma-separated
+ports for a different testbed. `--udp-style service` (the default) sends a DNS
+query, NTP request, CoAP resource request, or TFTP read on their known ports;
+`--udp-style generic` sends the same short datagram everywhere. Every probe
+has a timestamped result. The summary reports planned, attempted, and untested
+probes plus open and inconclusive services. An incomplete sweep exits 1.
+Unanswered UDP probes mean **no response**, not proof that the port is closed.
+
+The Nmap scanner checks TCP 22 (SSH/SFTP), 23 (Telnet and synthetic C2
+consoles), 53 (DNS), 80 (HTTP loader), 443 (conventional HTTPS), 502 (Modbus),
+1883 (MQTT), 8080 (HMI), 8443 (Merlin agent channel), 8883 (optional MQTT
+TLS), and 48101 (Mirai reports). Its UDP scan checks 53 (DNS), 69 (TFTP
+loader), 123 (NTP), and 5683 (CoAP). Both transports are scanned by default;
+use `--protocol tcp` or `--protocol udp` to narrow the scan. No current device model listens on 443;
+it is included for future HTTPS services. Port 8883 is open only when the
+broker's optional TLS listener is enabled. The Merlin channel on 8443
+currently speaks plain HTTP despite the port number.
 
 ### Relationship to Gotham
 
