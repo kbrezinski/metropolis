@@ -30,7 +30,7 @@ Every tool takes `--dry-run` and `--help`. Nothing is sent until you set
 |---|---|---|
 | Scan the lab | `network_recon_scan` | Nmap service scan of inventoried hosts |
 | Find live services | `run_iot_discovery_simulation` | Complete TCP/UDP inventory pass by default; protocol-aware UDP probes |
-| Guess MQTT passwords | `mqtt_bruteforce_attack` | A short list of MQTT logins |
+| Guess MQTT passwords | `mqtt_bruteforce_attack` | A short list of MQTT logins via Paho or Metasploit |
 | Flood an MQTT topic | `mqtt_flood_attack` | Many publishes; can also plant or clear a retained message |
 | Guess SSH passwords | `ssh_bruteforce_attack` | A short list of SSH logins |
 | Guess Telnet passwords | `mirai_infection_sim` | Telnet logins and a fixed command |
@@ -56,6 +56,10 @@ export METROPOLIS_PYTHON="$(pwd)/.venv-attacks/bin/python"
 
 Scanning also needs Nmap: `sudo apt install nmap`. Scapy's spoof mode and UDP
 scans need extra privileges.
+
+The optional Metasploit MQTT engine needs `msfconsole` installed on the machine
+running the attack tool; it is not a Python dependency. The broker itself does
+not need Metasploit installed.
 
 The versions in `requirements.txt` are pinned because the device models and
 tools are written against those APIs — pymodbus 4.x moves the server API and
@@ -162,9 +166,55 @@ SSH `10.20.21.10`, Telnet `10.20.10.30`.
 
 ### Credentials
 
-The login tools try two passwords by default: one wrong, one known-good from the
-inventory. Pass `--wordlist PATH` and `--max-attempts N` for your own bounded
-list. Passwords never appear in the output records.
+The Paho MQTT login tool and the other login tools try two passwords by
+default: one wrong, one known-good from the inventory. The Metasploit MQTT
+engine uses a longer built-in sequence described below. Pass `--wordlist PATH`
+and `--max-attempts N` for your own bounded list. Passwords never appear in
+the output records.
+
+### Metasploit MQTT credential experiment
+
+The existing authenticated broker is `MET-MQTT-BROKER-01` (TCP 1883). Its
+Mosquitto configuration sends connection and authentication logs to stdout.
+Run the official Metasploit MQTT scanner from a lab attack host that can reach
+the broker, while capturing that link:
+
+```bash
+python scripts/attacks/run.py mqtt_bruteforce_attack --engine metasploit --dry-run
+export METROPOLIS_LAB_ACK=yes
+python scripts/attacks/run.py mqtt_bruteforce_attack --engine metasploit \
+  --output runs/mqtt-metasploit.jsonl
+```
+
+The tool resolves the broker from the selected inventory and uses one username.
+By default it supplies 24 distinct, deliberately wrong lab password guesses,
+then the known-good inventory fixture: up to 25 credential attempts. This
+produces a sequence of rejected MQTT CONNECTs followed by an accepted one when
+the broker is reachable and configured as expected. The sequence is fixed for
+repeatable captures. `--max-attempts N` caps the sequence at 1–1,000; the
+built-in sequence has only 25 entries, so increasing the cap alone does not
+create more guesses. A custom `--wordlist PATH` replaces the built-in sequence
+and does not automatically append the known-good password. `--username`
+overrides the inventory username. `--metasploit-speed 0..5` controls the
+scanner's own pace (default 3); `--interval` applies only to the Paho engine.
+The scanner also checks whether the broker accepts an anonymous connection
+before trying credentials, so expect one additional connection in the capture.
+Metasploit stops after the first accepted credential, and the overall process
+has a 180-second timeout by default. `--tls` turns on Metasploit SSL; its CA and
+insecure-verification controls are not exposed by this wrapper.
+
+The JSONL `summary` records `credential_accepted`, `anonymous_access`,
+`no_credential_accepted`, `timeout`, or `execution_error`. Metasploit's raw
+console output is suppressed because its success line contains the password.
+This invocation disables the Metasploit database. The temporary password file
+is deleted after the run. For the broker-side audit trail, save the broker
+container's stdout logs from the same time window alongside the JSONL and
+pcap. On the GNS3 Docker host, `docker logs --timestamps <broker-container-id>`
+exports that stream. The broker logs are configured in
+[`mosquitto.conf`](../../testbeds/metropolis/devices/services/mqtt_broker/mosquitto.conf).
+These records describe authentication activity; the pcap contains the actual
+MQTT CONNECT/CONNACK traffic. This module does not exploit the broker or
+create a shell.
 
 ### Tool reference
 
