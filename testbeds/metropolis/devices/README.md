@@ -254,7 +254,7 @@ normal process traffic.
 | `MET-MIRAI-LOADER-TFTP-01` | `10.99.10.12` | TFTP delivery role (UDP 69) |
 | `MET-MIRAI-LOADER-WGET-01` | `10.99.10.13` | HTTP delivery role (TCP 80) |
 | `MET-MIRAI-BOT-01` | `10.99.10.100` | Inert bot: checks in, probes an allow-list, reports |
-| `MET-MERLIN-CNC-01` | `10.99.10.20` | C2 console (TCP 23) and agent channel (TCP 8443) |
+| `MET-MERLIN-CNC-01` | `10.99.10.20` | C2 console (TCP 23) and plaintext HTTP agent channel (TCP 8443) |
 | `MET-MERLIN-AGENT-01` | `10.99.10.21` | Inert agent: checks in, polls commands, uploads an artefact |
 
 Console vocabulary follows Gotham. The Mirai console accepts `bots`, `use`,
@@ -282,7 +282,8 @@ Two properties keep these safe to run:
 Both consoles record delivered commands without running them, so a capture shows
 the control conversation while the testbed stays inert. To drive the whole
 lifecycle, see the experiment toolkit's `run_mirai_choreography` and
-`run_merlin` tools.
+`run_merlin` tools. To connect a user-supplied inert Merlin agent, see the
+[Merlin setup contract](../../../scripts/attacks/README.md#gotham-merlin-setup-adapter).
 
 ## Encrypted traffic
 

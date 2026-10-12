@@ -41,6 +41,7 @@ Every tool takes `--dry-run` and `--help`. Nothing is sent until you set
 | Generate hping3-style traffic | `run_bounded_hping3` | Five bounded Gotham packet profiles; SYN by default |
 | Play out a Mirai infection | `run_mirai_choreography` | Bot check-in, reports, C2 commands, payload fetch |
 | Set up Gotham-style Mirai roles | `gotham_mirai_setup` | Verify inventoried Telnet targets; optionally start the inert bot node |
+| Set up Gotham-style Merlin roles | `gotham_merlin_setup` | Verify the synthetic C2 node and connection contract; optionally start the inert agent node |
 | Play out Merlin C2 | `run_merlin` | C2 listener, agent check-in, command, upload |
 
 The last two need the attack-lab nodes running first — see
@@ -97,16 +98,20 @@ python scripts/attacks/run.py run_merlin
 Metropolis without shipping or invoking its binary. Gotham configures selected
 devices as Telnet targets, then starts its bot executable. Metropolis's
 `MET-LEGACY-GATEWAY-01` already starts BusyBox Telnet with its inventory
-credential; the adapter checks that the node is running. It leaves bot selection
-to the user. `--start-inert-bot` optionally starts the existing example
-`MET-MIRAI-BOT-01`. It does not alter passwords or run commands inside
-containers.
+credential; the adapter checks that the node is running. Choose the bot source
+explicitly: `--external-bot` for your own inert implementation or
+`--start-inert-bot` for the repository's `MET-MIRAI-BOT-01`. Omitting both
+leaves bot startup to the user. The two flags cannot be combined. The adapter
+does not alter passwords or run commands inside containers. `--external-bot`
+does not take a binary path: researchers install and launch their bot in a
+GNS3 lab node themselves, then use the printed Telnet target details.
 
 ```bash
-python scripts/attacks/run.py gotham_mirai_setup --dry-run
+python scripts/attacks/run.py gotham_mirai_setup --external-bot --dry-run
 export METROPOLIS_LAB_ACK=yes
-python scripts/attacks/run.py gotham_mirai_setup --project metropolis_water_treatment_v1
-# Optional: start the supplied example bot node
+python scripts/attacks/run.py gotham_mirai_setup --external-bot \
+  --project metropolis_water_treatment_v1
+# Or: start the repository's example inert bot node
 python scripts/attacks/run.py gotham_mirai_setup --start-inert-bot
 ```
 
@@ -122,6 +127,53 @@ reproduce real Mirai scan, brute-force, infection, or bot traffic without a
 separate implementation. See Gotham's
 [original script](https://github.com/xsaga/gotham-iot-testbed/blob/master/src/run_mirai.py)
 for the method being mapped.
+
+### Gotham Merlin setup adapter
+
+`gotham_merlin_setup` prepares the Metropolis side of Gotham's Merlin sequence
+for a user-supplied **inert** agent. It checks the inventory, the C2 node's
+configured ports, and the example agent's URL. On a live run it verifies that
+the GNS3 project is open and the C2 node is started. It does not install or
+launch an agent binary, test socket reachability, or confirm a check-in.
+Choose the agent source explicitly: `--external-agent` for your own inert
+implementation or `--start-inert-agent` for the repository example. Omitting
+both leaves agent startup to the user. The two flags cannot be combined.
+`--external-agent` does not take a binary path: researchers install and launch
+their agent in a GNS3 lab node themselves, then point it at the C2 URL below.
+The setup tool reports the required protocol and checks the C2 node only.
+
+```bash
+python scripts/attacks/run.py gotham_merlin_setup --external-agent --dry-run
+export METROPOLIS_LAB_ACK=yes
+python scripts/attacks/run.py gotham_merlin_setup --external-agent \
+  --project metropolis_water_treatment_v1
+# Or: start the repository's example inert agent node
+python scripts/attacks/run.py gotham_merlin_setup --start-inert-agent
+```
+
+The default C2 node is `MET-MERLIN-CNC-01` at `10.99.10.20`. Its operator
+console is a line-oriented TCP service on port **23** using Gotham's console
+verbs (`listeners`, `use https`, `start`, `agent list`, `agent interact <id>`,
+`run <command>`). It is a synthetic console, not an authenticated Telnet shell.
+The agent channel is **plain HTTP** at `http://10.99.10.20:8443`; `use https`
+only sets the console's listener label and does not enable TLS. A supplied
+agent must be placed on a lab node that can route to that address and implement:
+
+| Request | Body | Expected result |
+|---|---|---|
+| `POST /checkin` | JSON `{"address":"<agent-ip>","arch":"<arch>"}` | JSON `{"agent_id":"<uuid>"}` |
+| `GET /commands/<agent_id>` | Empty | JSON `{"commands":[...]}`; polling consumes queued commands |
+| `POST /upload/<agent_id>` | Small artefact bytes | JSON `{"stored":true}` |
+
+Set `Content-Length` for POST requests. The supplied agent should treat
+received commands as inert test data; the C2 only queues them. The repository's
+example `MET-MERLIN-AGENT-01` shows the protocol. `run_merlin` performs its own
+synthetic check-in, so use either that one-shot choreography or a separate
+agent-driven experiment when interpreting captures. Gotham instead starts a
+Merlin executable inside a selected container and uploads an `hping3` tool
+through its console. This adapter provides the role and protocol setup, not
+those executable or file-transfer behaviors. Verify reachability and capture
+traffic in the running GNS3 lab before drawing experimental conclusions.
 
 ## What is actually simulated
 
