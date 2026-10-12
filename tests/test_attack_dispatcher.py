@@ -23,6 +23,8 @@ HELPERS = {"_common", "_mqtt", "_telnet", "_c2", "run"}
 
 EXPECTED_TOOLS = {
     "coap_amplification_attack",
+    "coap_experiment_report",
+    "coap_reflection_receiver",
     "mirai_infection_sim",
     "modbus_manipulation_attack",
     "mqtt_bruteforce_attack",

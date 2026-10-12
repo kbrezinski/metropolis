@@ -74,13 +74,14 @@ there does not change the process.
 
 | URI | Normal response |
 |---|---|
-| `/.well-known/core` | `2.05 Content`, `application/link-format` (40), advertising `/status` |
+| `/.well-known/core` | `2.05 Content`, `application/link-format` (40), advertising `/status` and seven measurements |
 | `/status` | `2.05 Content`, `application/json` (50), with device, sensor, and value |
 | `/` | Alias for status |
+| `/level`, `/flow`, `/quality`, `/pressure`, `/temperature`, `/turbidity`, `/pump` | `2.05 Content` text reading when that measurement is available; otherwise `4.04` |
 
 Discovery follows [RFC 6690](https://www.rfc-editor.org/rfc/rfc6690.txt). Unknown
 paths return `4.04`, unsupported methods `4.05`, and incompatible Accept formats
-`4.06`. The server advertises only the status resource it implements and does not
+`4.06`. The server advertises its status and measurement resources and does not
 pad responses to reach a particular ratio.
 
 There is no setting to "enable amplification". Response expansion is something

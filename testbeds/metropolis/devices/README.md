@@ -368,9 +368,15 @@ device-specific telemetry and alarm payload schemas.
 With `COAP_ENABLED=true` the sensor listens on UDP 5683:
 
 - `coap://10.20.10.20:5683/.well-known/core` returns CoRE link-format discovery
-  (Content-Format 40), advertising `</status>;rt="metropolis.sensor";ct=50`.
+  (Content-Format 40), advertising `/status` and seven measurement resources.
 - `coap://10.20.10.20:5683/status` returns JSON (Content-Format 50) with
   `device`, `sensor`, and `value`. `/` is an alias.
+- `/level`, `/flow`, `/quality`, `/pressure`, `/temperature`, `/turbidity`, and
+  `/pump` return text readings when the sensor has those values.
+
+Each response writes a `COAP_AUDIT` JSON record to the container log with its
+resource, response code, byte counts, peer address, and token-derived
+experiment ID for joining a sender and receiver capture.
 
 Unknown URIs return `4.04`, unsupported methods `4.05`, and incompatible Accept
 formats `4.06`. Malformed packets are ignored.

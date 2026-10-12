@@ -16,6 +16,7 @@ import logging
 import secrets
 import socket
 import struct
+from datetime import datetime, timezone
 from typing import NamedTuple
 
 
@@ -190,6 +191,29 @@ def handle_get(
     return respond(69, body, content_format)  # 2.05 Content
 
 
+def audit_response(request: bytes, response: bytes, peer: tuple[str, int]) -> dict:
+    """Record observable CoAP sizes and the shared experiment token prefix."""
+    token_length = request[0] & 15
+    token = request[4 : 4 + token_length]
+    try:
+        path = "/" + b"/".join(
+            part for number, part in _options(request, 4 + token_length)
+            if number == 11
+        ).decode(errors="replace")
+    except ValueError:
+        path = "<invalid-options>"
+    return {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "event": "coap_response",
+        "experiment_id": token[:2].hex() if len(token) >= 2 else None,
+        "peer": peer[0],
+        "resource": path,
+        "response_code": f"{response[1] >> 5}.{response[1] & 31:02d}",
+        "request_bytes": len(request),
+        "response_bytes": len(response),
+    }
+
+
 def serve(host: str, port: int, device_name: str, sensor_type: str, value) -> None:
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
         sock.bind((host, port))
@@ -199,6 +223,10 @@ def serve(host: str, port: int, device_name: str, sensor_type: str, value) -> No
             response = handle_get(request, device_name, sensor_type, value)
             if response is not None:
                 sock.sendto(response, peer)
+                log.info(
+                    "COAP_AUDIT %s",
+                    json.dumps(audit_response(request, response, peer), sort_keys=True),
+                )
             else:
                 log.warning(
                     "Ignored malformed or unsupported CoAP message from %s", peer[0]

@@ -34,7 +34,9 @@ Every tool takes `--dry-run` and `--help`. Nothing is sent until you set
 | Flood an MQTT topic | `mqtt_flood_attack` | Many publishes; can also plant or clear a retained message |
 | Guess SSH passwords | `ssh_bruteforce_attack` | Bounded SSH login sequence and read-only shell checks |
 | Guess Telnet passwords | `mirai_infection_sim` | Telnet logins and a fixed command |
-| Measure CoAP responses | `coap_amplification_attack` | CoAP GETs; optionally source-spoofed |
+| Measure CoAP responses | `coap_amplification_attack` | Mixed CoAP GETs, CON/NON requests, optional reflection |
+| Count reflected CoAP replies | `coap_reflection_receiver` | Bounded listener on a separate private receiver |
+| Combine CoAP observations | `coap_experiment_report` | Offline sender/sensor/receiver report beside a pcap |
 | Write to the PLC | `modbus_manipulation_attack` | Modbus register and coil writes |
 | Load a service | `run_bounded_hping3` | Capped TCP-connect or UDP traffic |
 | Play out a Mirai infection | `run_mirai_choreography` | Bot check-in, reports, C2 commands, payload fetch |
@@ -247,11 +249,57 @@ not command text.
 
 Each tool documents its own options: `run.py <tool> --help`.
 
-`coap_amplification_attack` matches responder addresses and tokens and reports
-response/request ratios at payload and estimated IPv4/UDP level. It does not
-assume an 8× ratio and does not establish denial of service. For a reflection
-experiment, provision a separate private receiver, then use `--mode spoof
---spoof-src RECEIVER_IP --receiver-port PORT`.
+`coap_amplification_attack` defaults to a repeatable mix of discovery, status,
+seven measurement resources, and one missing path. The missing path gives a
+normal `4.04` response. `--resource /status` narrows the run to one path.
+`--message-type mixed` alternates confirmable and non-confirmable GETs; use
+`con` or `non` for one type. The `baseline`, `burst`, and `sustained` profiles
+set rate/duration/message ceilings to 2/s for 30s/60, 25/s for 10s/250, and
+5/s for 120s/600. The default `custom` profile keeps 5/s for 10s/100; it
+accepts explicit `--rate`, `--duration`, and `--max-messages` overrides.
+Measurements are ceilings, so slower replies can produce fewer requests.
+
+In `measure` mode, the tool matches the sensor address, token, and appropriate
+CoAP message type, then reports observed response codes and payload and
+estimated IPv4/UDP ratios. It does not assume an amplification factor or
+establish denial of service.
+
+For reflection, start the receiver on a **different private lab host** first.
+Use the same four-hex-digit experiment ID on sender and receiver, and capture
+the relevant GNS3 links. On the receiver host:
+
+```bash
+export METROPOLIS_LAB_ACK=yes
+python scripts/attacks/run.py coap_reflection_receiver \
+  --experiment-id 7a2f --listen-port 56830 --duration 30 \
+  --output runs/coap-receiver.jsonl
+```
+
+On the sender host, replace `RECEIVER_IP` with that receiver's private address:
+
+```bash
+export METROPOLIS_LAB_ACK=yes
+python scripts/attacks/run.py coap_amplification_attack \
+  --mode spoof --spoof-src RECEIVER_IP --receiver-port 56830 \
+  --experiment-id 7a2f --profile burst --output runs/coap-sender.jsonl
+```
+
+The sender reports emitted requests; the receiver counts matching responses
+from the inventoried sensor. The sensor writes one `COAP_AUDIT` JSON record per
+response to its container stdout, including request/response byte counts and
+the experiment ID. Save those container logs from the same time window. After
+copying the logs and pcap to one machine, combine all three observations:
+
+```bash
+python scripts/attacks/run.py coap_experiment_report \
+  --sender runs/coap-sender.jsonl --sensor-log runs/coap-sensor.log \
+  --receiver runs/coap-receiver.jsonl --pcap runs/coap.pcap \
+  --output runs/coap-report.json
+```
+
+Give each run a distinct experiment ID and sensor-log time window. Spoof mode
+needs permission to send raw packets and a lab route that permits the chosen
+source address. Its sender cannot observe the replies directly.
 
 `mirai_infection_sim`'s `--write-marker` writes `/tmp/metropolis-login-test`
 after a successful login; otherwise it only runs a fixed challenge. A successful
