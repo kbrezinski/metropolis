@@ -163,9 +163,11 @@ delivered commands without running them. Nothing is downloaded, forked, or
 executed. Treat the captures as botnet-*shaped* traffic, not as evidence about
 real Mirai behaviour.
 
-Nothing routes between the attack lab and the process cells, so the lifecycle is
-observable in isolation but cannot reach the PLC or HMI. Cross-zone reachability
-needs router and firewall policy, which is still a `TODO`.
+The router scripts provide a path from the attack subnet through the OT/DMZ
+router and OT core to the plant, plus the return path. Confirm it in the running
+GNS3 project before an experiment. The planned deny-by-default firewall policy
+is still a `TODO`, so the route alone does not enforce isolation. The example
+bot has no scan targets configured by default.
 
 ## Capturing an experiment
 

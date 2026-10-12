@@ -38,8 +38,9 @@ Every tool takes `--dry-run` and `--help`. Nothing is sent until you set
 | Count reflected CoAP replies | `coap_reflection_receiver` | Bounded listener on a separate private receiver |
 | Combine CoAP observations | `coap_experiment_report` | Offline sender/sensor/receiver report beside a pcap |
 | Write to the PLC | `modbus_manipulation_attack` | Modbus register and coil writes |
-| Load a service | `run_bounded_hping3` | Capped TCP-connect or UDP traffic |
+| Generate hping3-style traffic | `run_bounded_hping3` | Five bounded Gotham packet profiles; SYN by default |
 | Play out a Mirai infection | `run_mirai_choreography` | Bot check-in, reports, C2 commands, payload fetch |
+| Set up Gotham-style Mirai roles | `gotham_mirai_setup` | Verify inventoried Telnet targets; optionally start the inert bot node |
 | Play out Merlin C2 | `run_merlin` | C2 listener, agent check-in, command, upload |
 
 The last two need the attack-lab nodes running first — see
@@ -56,8 +57,8 @@ uv pip install --python .venv-attacks/bin/python -r scripts/attacks/requirements
 export METROPOLIS_PYTHON="$(pwd)/.venv-attacks/bin/python"
 ```
 
-Scanning also needs Nmap: `sudo apt install nmap`. Scapy's spoof mode and UDP
-scans need extra privileges.
+Scanning also needs Nmap: `sudo apt install nmap`. Raw SYN mode and Scapy's
+spoof mode need raw-socket privileges; UDP scans may need extra privileges.
 
 The optional Metasploit MQTT engine needs `msfconsole` installed on the machine
 running the attack tool; it is not a Python dependency. The broker itself does
@@ -89,6 +90,38 @@ Once they are up:
 python scripts/attacks/run.py run_mirai_choreography --bots 3
 python scripts/attacks/run.py run_merlin
 ```
+
+### Gotham Mirai setup adapter
+
+`gotham_mirai_setup` maps the two active stages of Gotham's `run_mirai.py` to
+Metropolis without shipping or invoking its binary. Gotham configures selected
+devices as Telnet targets, then starts its bot executable. Metropolis's
+`MET-LEGACY-GATEWAY-01` already starts BusyBox Telnet with its inventory
+credential; the adapter checks that the node is running. It leaves bot selection
+to the user. `--start-inert-bot` optionally starts the existing example
+`MET-MIRAI-BOT-01`. It does not alter passwords or run commands inside
+containers.
+
+```bash
+python scripts/attacks/run.py gotham_mirai_setup --dry-run
+export METROPOLIS_LAB_ACK=yes
+python scripts/attacks/run.py gotham_mirai_setup --project metropolis_water_treatment_v1
+# Optional: start the supplied example bot node
+python scripts/attacks/run.py gotham_mirai_setup --start-inert-bot
+```
+
+Additional future Telnet nodes can be selected with repeated `--target-node`
+arguments if they declare `telnet` in the inventory. The current example bot
+has an empty `BOT_TARGETS` list, so it checks in but does not scan. The router
+scripts include routes between `10.99.10.0/24` and `10.20.10.0/24`, but the
+running GNS3 network still needs a reachability check. The target's fixture
+password is in the inventory and service guide; a user-supplied inert bot must
+use that credential (it is not one of Gotham's Mirai dictionary passwords).
+The adapter cannot
+reproduce real Mirai scan, brute-force, infection, or bot traffic without a
+separate implementation. See Gotham's
+[original script](https://github.com/xsaga/gotham-iot-testbed/blob/master/src/run_mirai.py)
+for the method being mapped.
 
 ## What is actually simulated
 
@@ -305,9 +338,46 @@ source address. Its sender cannot observe the replies directly.
 after a successful login; otherwise it only runs a fixed challenge. A successful
 login is not a Mirai infection.
 
-`run_bounded_hping3` caps packets, rate, and duration. The caps are ceilings, not
-quotas: after a slow probe it does not catch up, so a slow target legitimately
-produces fewer packets than `--max-packets`.
+`run_bounded_hping3` uses Scapy to model Gotham's five `hping3_attacks.sh`
+recipes on an inventoried node. The raw modes need root or raw-socket
+privileges and do not spoof source addresses:
+
+| Mode | Packet pattern |
+|---|---|
+| `syn` (default) | TCP SYN, DF, TTL 64, destination port increments from 0 |
+| `udp-generic` | UDP with 512 random bytes, destination port 0 |
+| `udp-vse` | UDP Source Engine query bytes, destination port 27015 |
+| `ack` | TCP ACK with 512 random bytes, destination port increments |
+| `stomp` | TCP ACK+PSH, DF, 768 random bytes, destination port increments |
+
+Use `--port` to change the starting port for `syn`, `ack`, or `stomp`, or the
+fixed port for `udp-generic`. The VSE profile always uses port 27015. The older
+`connect` and `udp` modes remain for comparison. The default is 20 packets per
+second for 10 seconds. `--flood` removes the gap between packets in any of the
+five raw modes, resembling hping3's send-as-fast-as-possible option. It still
+stops at `--max-packets` or `--duration`; the hard ceilings are 3,000 packets
+and 30 seconds. Normal paced runs are limited to 100 per second and do not
+catch up after a slow send. Gotham's recipes use unrestricted `--flood`, and
+its Merlin script uploads hping3 without invoking a recipe. This tool does not
+reproduce unlimited packet volume or C2 transfer. No current Metropolis node
+is a Source Engine server, so `udp-vse` may produce no application reply. The
+recipe's 21-byte query is preserved exactly; it omits the four-byte connectionless
+header needed for a standard A2S_INFO query.
+Measure the target before, during, and after if availability is the outcome.
+
+```bash
+python scripts/attacks/run.py run_bounded_hping3 --dry-run
+export METROPOLIS_LAB_ACK=yes
+sudo --preserve-env=METROPOLIS_LAB_ACK,METROPOLIS_PYTHON \
+  python scripts/attacks/run.py run_bounded_hping3 \
+  --rate 20 --duration 10 --max-packets 200 --output runs/syn-experiment.jsonl
+
+# Short bounded burst using the same SYN packet profile
+sudo --preserve-env=METROPOLIS_LAB_ACK,METROPOLIS_PYTHON \
+  python scripts/attacks/run.py run_bounded_hping3 \
+  --mode syn --flood --duration 5 --max-packets 500 \
+  --output runs/syn-burst.jsonl
+```
 
 `network_recon_scan` and `run_iot_discovery_simulation` default to inventoried
 hosts. `--cidr` accepts a private range of at most 256 addresses.

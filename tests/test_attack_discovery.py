@@ -80,11 +80,17 @@ def tcp_listener():
 
 
 def test_bounded_probe_resolves_ot_nodes():
-    """TCP load targets the PLC; UDP load targets the CoAP sensor."""
-    connect = records(invoke("run_bounded_hping3.py", "--dry-run", ack=False))[0]
-    assert connect["host"] == "10.20.10.10"
-    assert connect["port"] == 502
-    assert connect["mode"] == "connect"
+    """Raw profiles target the inventory; legacy UDP targets CoAP."""
+    syn = records(invoke("run_bounded_hping3.py", "--dry-run", ack=False))[0]
+    assert syn["host"] == "10.20.10.10"
+    assert syn["port"] == 0
+    assert syn["mode"] == "syn"
+    assert syn["destination_port_policy"] == "incrementing"
+
+    vse = records(
+        invoke("run_bounded_hping3.py", "--mode", "udp-vse", "--dry-run", ack=False)
+    )[0]
+    assert vse["port"] == 27015
 
     udp = records(
         invoke("run_bounded_hping3.py", "--mode", "udp", "--dry-run", ack=False)
@@ -99,6 +105,29 @@ def test_bounded_probe_refuses_unbounded_settings():
     assert invoke("run_bounded_hping3.py", "--duration", "99999").returncode == 2
     assert invoke("run_bounded_hping3.py", "--max-packets", "99999999").returncode == 2
     assert invoke("run_bounded_hping3.py", "--payload-size", "0").returncode == 2
+    assert invoke("run_bounded_hping3.py", "--max-packets", "0").returncode == 2
+    assert (
+        invoke(
+            "run_bounded_hping3.py", "--flood", "--max-packets", "99999999"
+        ).returncode
+        == 2
+    )
+    assert (
+        invoke(
+            "run_bounded_hping3.py", "--mode", "connect", "--flood", "--dry-run"
+        ).returncode
+        == 2
+    )
+    assert (
+        invoke(
+            "run_bounded_hping3.py", "--mode", "udp-vse", "--port", "53", "--dry-run"
+        ).returncode
+        == 2
+    )
+    assert (
+        invoke("run_bounded_hping3.py", "--host", "10.20.10.11", "--dry-run").returncode
+        == 2
+    )
     # A public target is refused by the private-address check.
     assert (
         invoke("run_bounded_hping3.py", "--host", "8.8.8.8", "--dry-run").returncode
@@ -124,6 +153,8 @@ def test_bounded_probe_counts_stay_within_the_cap():
     """
     result = invoke(
         "run_bounded_hping3.py",
+        "--mode",
+        "connect",
         "--host",
         "127.0.0.1",
         "--port",
@@ -139,6 +170,53 @@ def test_bounded_probe_counts_stay_within_the_cap():
     summary = next(item for item in records(result) if item["event"] == "summary")
     assert 1 <= summary["packets"] <= 4
     assert sum(summary["outcomes"].values()) == summary["packets"]
+
+
+def test_raw_profiles_match_gotham_packet_shapes(monkeypatch):
+    """All five recipe types have the documented flags, sizes and ports."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(ROOT / ".venv"))
+    monkeypatch.setenv("XDG_CACHE_HOME", str(ROOT / ".venv"))
+    from scapy.all import IP, TCP, UDP, Raw
+
+    probe = load_driver("raw_profile_driver", "run_bounded_hping3.py")
+    host = "10.20.10.10"
+    syn = probe.raw_packet("syn", host, 0, 2)
+    assert syn[IP].dst == host
+    assert syn[IP].ttl == 64
+    assert syn[IP].flags.DF
+    assert syn[TCP].flags == "S"
+    assert syn[TCP].dport == 2
+    assert syn[TCP].ack == 0
+    assert not syn.haslayer(Raw)
+
+    generic = probe.raw_packet("udp-generic", host, 0, 0)
+    assert generic[UDP].dport == 0
+    assert len(bytes(generic[Raw])) == 512
+    vse = probe.raw_packet("udp-vse", host, 27015, 0)
+    assert vse[UDP].dport == 27015
+    assert bytes(vse[Raw]) == b"TSource Engine Query\x00"
+
+    ack = probe.raw_packet("ack", host, 0, 3)
+    assert ack[TCP].flags == "A"
+    assert ack[TCP].dport == 3
+    assert len(bytes(ack[Raw])) == 512
+    stomp = probe.raw_packet("stomp", host, 0, 4)
+    assert stomp[IP].flags.DF
+    assert stomp[TCP].flags == "PA"
+    assert stomp[TCP].dport == 4
+    assert len(bytes(stomp[Raw])) == 768
+
+
+def test_flood_mode_has_no_pacing_and_still_has_hard_caps(monkeypatch):
+    """A dry run announces flood mode; count and deadline both stop it."""
+    run = records(invoke("run_bounded_hping3.py", "--flood", "--dry-run", ack=False))[0]
+    assert run["flood"] is True
+    assert run["rate"] is None
+    driver = load_driver("flood_driver", "run_bounded_hping3.py")
+    assert list(driver.flood_schedule(1, 4)) == [0, 1, 2, 3]
+    ticks = iter([0.0, 0.1, 0.5])
+    monkeypatch.setattr(driver.time, "monotonic", lambda: next(ticks))
+    assert list(driver.flood_schedule(0.5, 4)) == [0]
 
 
 def test_discovery_defaults_to_inventory_and_documented_ports():
