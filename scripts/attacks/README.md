@@ -36,11 +36,13 @@ Every tool takes `--dry-run` and `--help`. Nothing is sent until you set
 | Guess Telnet passwords | `mirai_infection_sim` | Telnet logins and a fixed command |
 | Measure CoAP responses | `coap_amplification_attack` | CoAP GETs; optionally source-spoofed |
 | Write to the PLC | `modbus_manipulation_attack` | Modbus register and coil writes |
-| Load a service | `run_bounded_hping3` | Capped TCP-connect or UDP traffic |
+| Generate packet load | `run_bounded_hping3` | Capped TCP connections, UDP datagrams, or five raw packet profiles |
 | Play out a Mirai infection | `run_mirai_choreography` | Bot check-in, reports, C2 commands, payload fetch |
 | Play out Merlin C2 | `run_merlin` | C2 listener, agent check-in, command, upload |
+| Check external Mirai bot setup | `gotham_mirai_setup` | Inventory and GNS3 prerequisite checks; no bot traffic |
+| Check external Merlin agent setup | `gotham_merlin_setup` | Inventory and GNS3 prerequisite checks; no agent traffic |
 
-The last two need the attack-lab nodes running first — see
+The Mirai and Merlin choreography tools need the attack-lab nodes running first — see
 [Run the fake botnet](#run-the-fake-botnet).
 
 ## Install
@@ -87,6 +89,39 @@ Once they are up:
 python scripts/attacks/run.py run_mirai_choreography --bots 3
 python scripts/attacks/run.py run_merlin
 ```
+
+### Bring your own inert bot or agent
+
+The setup commands make the researcher-supplied choice explicit. Dry runs read
+the inventory without contacting GNS3:
+
+```bash
+python scripts/attacks/run.py gotham_mirai_setup --external-bot --dry-run
+python scripts/attacks/run.py gotham_merlin_setup --external-agent --dry-run
+```
+
+For a live check, set `METROPOLIS_LAB_ACK=yes` and omit `--dry-run`. The commands
+then verify that the named GNS3 project and required service nodes exist and are
+started. They do not accept, upload, or execute a researcher-supplied file. Put
+your inert bot or agent on your own connected lab node and start it yourself.
+Use `--project NAME` if your GNS3 project has a different name. To start the
+repository example instead, choose `--start-inert-bot` or
+`--start-inert-agent`; each is mutually exclusive with the external option.
+
+The Mirai bot should check in with `MET-MIRAI-CNC-01` at `10.99.10.10:48101`
+using `CHECKIN <bot-ip> <arch>\n`, and send newline-delimited JSON reports to
+`MET-MIRAI-LISTENER-01` at `10.99.10.11:48101`. The Telnet target is
+`MET-LEGACY-GATEWAY-01` at `10.20.10.30:23`; its lab root credential comes from
+the inventory's `LEGACY_ROOT_PASSWORD` setting. The loader at
+`http://10.99.10.13:80` serves an inert text marker.
+
+The Merlin agent should use plain HTTP at `http://10.99.10.20:8443`. It sends
+`POST /checkin` with JSON `{"address":"<agent-ip>","arch":"<arch>"}` and keeps the
+returned `agent_id`. It can then `GET /commands/<agent_id>` and
+`POST /upload/<agent_id>` with a small synthetic body. The console records
+commands; the supplied agent controls how it handles them. The setup check
+confirms GNS3 node state, not end-to-end reachability or successful agent
+check-in. Capture and verify those flows in the running lab.
 
 ## What is actually simulated
 
@@ -257,9 +292,27 @@ experiment, provision a separate private receiver, then use `--mode spoof
 after a successful login; otherwise it only runs a fixed challenge. A successful
 login is not a Mirai infection.
 
-`run_bounded_hping3` caps packets, rate, and duration. The caps are ceilings, not
-quotas: after a slow probe it does not catch up, so a slow target legitimately
-produces fewer packets than `--max-packets`.
+`run_bounded_hping3` has five raw packet profiles: `udp-raw`, `udp-vse`,
+`tcp-syn`, `tcp-ack`, and `tcp-ack-psh`. The TCP profiles increment the destination
+port for each packet, as in Gotham's hping3 recipes. `udp-vse` sends a Source
+Engine query shaped datagram; the OT devices do not implement that protocol, so
+no application response is expected. The existing `connect` and `udp` modes
+remain useful for service load checks.
+
+```bash
+python scripts/attacks/run.py run_bounded_hping3 --mode tcp-syn --dry-run
+METROPOLIS_LAB_ACK=yes python scripts/attacks/run.py run_bounded_hping3 --mode tcp-syn --rate 100 --duration 30 --max-packets 3000
+METROPOLIS_LAB_ACK=yes python scripts/attacks/run.py run_bounded_hping3 --mode udp-vse --flood --duration 10 --max-packets 3000
+```
+
+Raw modes need permission to send IP packets, such as root in a Linux lab node.
+They only target the selected inventoried node. Normal raw runs are limited to
+100 packets per second, 30 seconds, and 3,000 packets. `--flood` removes the
+pacing delay but retains the 30 second and 3,000 packet ceilings. The output
+records send calls, elapsed time, and achieved rate. Use the PCAP to confirm
+which packets reached the capture point; the script does not measure service
+disruption. The caps are ceilings, not quotas: a slow send can produce fewer
+packets than `--max-packets`.
 
 `network_recon_scan` and `run_iot_discovery_simulation` default to inventoried
 hosts. `--cidr` accepts a private range of at most 256 addresses.

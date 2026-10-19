@@ -16,6 +16,7 @@ import subprocess
 import sys
 import threading
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -105,6 +106,114 @@ def test_bounded_probe_refuses_unbounded_settings():
         == 2
     )
     assert invoke("run_bounded_hping3.py", ack=False).returncode == 2
+
+
+@pytest.mark.parametrize(
+    ("mode", "host", "port"),
+    [
+        ("udp-raw", "10.20.10.20", 5683),
+        ("udp-vse", "10.20.10.20", 5683),
+        ("tcp-syn", "10.20.10.10", 502),
+        ("tcp-ack", "10.20.10.10", 502),
+        ("tcp-ack-psh", "10.20.10.10", 502),
+    ],
+)
+def test_raw_profiles_resolve_inventoried_targets(mode, host, port):
+    result = invoke("run_bounded_hping3.py", "--mode", mode, "--dry-run", ack=False)
+    assert result.returncode == 0, result.stdout + result.stderr
+    start = records(result)[0]
+    assert (start["host"], start["port"]) == (host, port)
+
+
+def test_raw_packet_shapes_and_rotating_tcp_ports():
+    from scapy.layers.inet import IP, TCP, UDP
+    from scapy.packet import Raw
+
+    driver = load_driver("raw_hping_driver", "run_bounded_hping3.py")
+    syn = driver.raw_packet("tcp-syn", "10.20.10.10", 502, 1, 64)
+    ack = driver.raw_packet("tcp-ack", "10.20.10.10", 502, 2, 64)
+    psh = driver.raw_packet("tcp-ack-psh", "10.20.10.10", 502, 3, 64)
+    vse = driver.raw_packet("udp-vse", "10.20.10.20", 5683, 0, 64)
+    assert syn[IP].dst == "10.20.10.10"
+    assert (syn[TCP].flags, syn[TCP].dport) == ("S", 503)
+    assert (ack[TCP].flags, ack[TCP].dport) == ("A", 504)
+    assert (psh[TCP].flags, psh[TCP].dport) == ("PA", 505)
+    assert len(bytes(psh[Raw].load)) == 64
+    assert vse[UDP].dport == 5683
+    assert bytes(vse[Raw].load) == driver.VSE_QUERY
+
+
+def test_raw_flood_remains_bounded_and_inventory_scoped():
+    tool = "run_bounded_hping3.py"
+    assert invoke(tool, "--mode", "tcp-syn", "--max-packets", "3001").returncode == 2
+    assert invoke(tool, "--mode", "tcp-syn", "--duration", "31").returncode == 2
+    assert invoke(tool, "--mode", "tcp-syn", "--rate", "101").returncode == 2
+    assert invoke(tool, "--mode", "connect", "--flood").returncode == 2
+    assert invoke(tool, "--mode", "tcp-syn", "--max-packets", "0").returncode == 2
+    assert invoke(tool, "--mode", "tcp-syn", "--host", "10.20.10.99").returncode == 2
+    flood = invoke(tool, "--mode", "tcp-syn", "--flood", "--dry-run", ack=False)
+    assert flood.returncode == 0, flood.stdout + flood.stderr
+    assert records(flood)[0]["flood"] is True
+
+
+def test_raw_flood_stops_after_the_packet_ceiling(monkeypatch, capsys):
+    driver = load_driver("raw_flood_driver", "run_bounded_hping3.py")
+    sent = []
+    monkeypatch.setattr(driver, "raw_packet", lambda *args: args)
+    monkeypatch.setattr(driver, "send_raw", sent.append)
+    monkeypatch.setenv("METROPOLIS_LAB_ACK", "yes")
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "run_bounded_hping3.py",
+            "--mode",
+            "tcp-syn",
+            "--flood",
+            "--duration",
+            "1",
+            "--max-packets",
+            "3",
+        ],
+    )
+    assert driver.main() == 0
+    summary = next(
+        item
+        for item in (json.loads(line) for line in capsys.readouterr().out.splitlines())
+        if item["event"] == "summary"
+    )
+    assert len(sent) == summary["packets"] == 3
+
+
+def test_raw_flood_stops_at_duration(monkeypatch, capsys):
+    driver = load_driver("raw_flood_time_driver", "run_bounded_hping3.py")
+    sent = []
+    ticks = iter((0.0, 0.1, 1.1, 1.2))
+    monkeypatch.setattr(driver, "time", SimpleNamespace(monotonic=lambda: next(ticks)))
+    monkeypatch.setattr(driver, "raw_packet", lambda *args: args)
+    monkeypatch.setattr(driver, "send_raw", sent.append)
+    monkeypatch.setenv("METROPOLIS_LAB_ACK", "yes")
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "run_bounded_hping3.py",
+            "--mode",
+            "tcp-syn",
+            "--flood",
+            "--duration",
+            "1",
+            "--max-packets",
+            "100",
+        ],
+    )
+    assert driver.main() == 0
+    summary = next(
+        item
+        for item in (json.loads(line) for line in capsys.readouterr().out.splitlines())
+        if item["event"] == "summary"
+    )
+    assert len(sent) == summary["packets"] == 1
 
 
 def test_bounded_probe_reaches_a_live_listener(tcp_listener):

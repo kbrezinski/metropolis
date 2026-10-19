@@ -11,6 +11,7 @@ Paths and payloads follow the GNS3 v2 controller API.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 
 from _transport import Gns3Error, Server, Transport
 
@@ -282,4 +283,10 @@ class Gns3Client:
             "GET",
             f"/projects/{project_id}/links/{link_id}",
             allow=(200, *_NOT_FOUND),
+        )
+
+    def download_pcap(self, project_id: str, link_id: str, destination: Path) -> None:
+        """Retrieve a capture through the controller from its compute server."""
+        self.transport.download(
+            f"/projects/{project_id}/links/{link_id}/pcap", destination
         )

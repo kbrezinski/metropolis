@@ -7,6 +7,8 @@ GNS3 server is involved: a fake client records what the builder would do.
 
 from __future__ import annotations
 
+import json
+import struct
 import sys
 from pathlib import Path
 
@@ -18,7 +20,7 @@ if str(GNS3) not in sys.path:
 
 from _cli import load_documents, load_plan, template_name_by_image  # noqa: E402
 from builder import build, existing_link_keys, port_map_yaml  # noqa: E402
-from capture import capture_for, resolve_links  # noqa: E402
+from capture import capture_for, coverage_report, resolve_links  # noqa: E402
 from client import Node, Project  # noqa: E402
 from lifecycle import (  # noqa: E402
     TIER_CLIENT,
@@ -154,13 +156,23 @@ class FakeClient:
 
     def create_link(self, project_id, first, second):
         self.created_links.append((first, second))
-        self._links.append(
-            {
-                "link_id": f"l{len(self._links)}",
-                "nodes": [{"node_id": first[0]}, {"node_id": second[0]}],
-            }
-        )
-        return {}
+        link = {
+            "link_id": f"l{len(self._links)}",
+            "nodes": [
+                {
+                    "node_id": first[0],
+                    "adapter_number": first[1],
+                    "port_number": first[2],
+                },
+                {
+                    "node_id": second[0],
+                    "adapter_number": second[1],
+                    "port_number": second[2],
+                },
+            ],
+        }
+        self._links.append(link)
+        return link
 
     def delete_node(self, project_id, node_id):
         self.deleted.append(node_id)
@@ -235,8 +247,59 @@ def test_build_prune_deletes_nodes_absent_from_the_plan(plan):
 
 
 def test_existing_link_keys_is_order_independent():
-    links = [{"nodes": [{"node_id": "b"}, {"node_id": "a"}]}]
-    assert existing_link_keys(links) == {frozenset(("a", "b"))}
+    links = [
+        {
+            "nodes": [
+                {"node_id": "b", "adapter_number": 1, "port_number": 0},
+                {"node_id": "a", "adapter_number": 2, "port_number": 3},
+            ]
+        }
+    ]
+    assert existing_link_keys(links) == {(("a", 2, 3), ("b", 1, 0))}
+
+
+def test_segment_attachments_get_distinct_physical_ports(plan):
+    topology, _ = plan
+    intake = [
+        (link.first if link.first.node == "sw-plant-cell-intake" else link.second)
+        for link in topology.links
+        if "sw-plant-cell-intake" in {link.first.node, link.second.node}
+    ]
+    assert len(intake) >= 3
+    assert len({(port.adapter, port.port) for port in intake}) == len(intake)
+
+
+def test_builder_rejects_wrong_existing_ports(plan):
+    topology, _ = plan
+    client = FakeClient()
+    first = topology.links[0]
+    client._nodes = [
+        {"node_id": f"id-{node.name}", "name": node.name, "status": "stopped"}
+        for node in topology.nodes
+    ]
+    client._links = [
+        {
+            "link_id": "wrong",
+            "nodes": [
+                {
+                    "node_id": f"id-{first.first.node}",
+                    "adapter_number": first.first.adapter + 1,
+                    "port_number": first.first.port,
+                },
+                {
+                    "node_id": f"id-{first.second.node}",
+                    "adapter_number": first.second.adapter,
+                    "port_number": first.second.port,
+                },
+            ],
+        }
+    ]
+    result = build(client, "lab", topology, template_ids())
+    assert first.link_id not in result.reused_links
+    assert first.link_id not in result.created_links
+    assert any(
+        first.link_id in item and "wrong ports" in item for item in result.skipped
+    )
 
 
 # -- lifecycle ---------------------------------------------------------------
@@ -361,48 +424,255 @@ def test_wait_until_running_returns_when_the_node_starts():
 
 
 class FakeCaptureClient(FakeClient):
-    def __init__(self, links):
-        super().__init__(links=links)
+    def __init__(self):
+        super().__init__()
         self.started: list[str] = []
         self.stopped: list[str] = []
         self.capture_payloads: list[dict] = []
+        self.fail_start: str | None = None
+        self.fail_after_start: str | None = None
+        self.interrupt_after_start: str | None = None
+        self.fail_stop: str | None = None
+        self.fail_download: str | None = None
+        self.missing_path: str | None = None
+        self.empty_file: str | None = None
 
     def start_capture(self, project_id, link_id, **kwargs):
+        if link_id == self.fail_start:
+            raise RuntimeError("start rejected")
         self.started.append(link_id)
         self.capture_payloads.append(kwargs)
-        return {}
+        if link_id == self.fail_after_start:
+            raise RuntimeError("start response lost")
+        if link_id == self.interrupt_after_start:
+            raise KeyboardInterrupt
+        return {"capture_file_path": f"/server/{link_id}.pcap"}
 
     def stop_capture(self, project_id, link_id):
+        if link_id == self.fail_stop:
+            raise RuntimeError("stop rejected")
         self.stopped.append(link_id)
-        # The real endpoint returns the link record, which is where the capture
-        # file path lives.
-        return {"link_id": link_id, "capture_file_path": f"/tmp/{link_id}.pcap"}
+        return {
+            "link_id": link_id,
+            "capture_file_path": (
+                None if link_id == self.missing_path else f"/server/{link_id}.pcap"
+            ),
+        }
 
     def link(self, project_id, link_id):
-        return {"link_id": link_id, "capture_file_path": f"/tmp/{link_id}.pcap"}
+        return {
+            "link_id": link_id,
+            "capturing": link_id in self.started and link_id not in self.stopped,
+            "capture_file_path": None,
+        }
+
+    def download_pcap(self, project_id, link_id, destination):
+        if link_id == self.fail_download:
+            raise RuntimeError("download rejected")
+        header = b"\xd4\xc3\xb2\xa1" + struct.pack("<HHIIII", 2, 4, 0, 0, 65535, 1)
+        record = struct.pack("<IIII", 1, 0, 4, 4) + b"abcd"
+        destination.write_bytes(
+            header if link_id == self.empty_file else header + record
+        )
 
 
-def test_capture_reports_unknown_link_ids():
-    client = FakeCaptureClient([{"link_id": "L1", "description": "link-core-plant"}])
-    resolved, unknown = resolve_links(client, "p1", ["link-core-plant", "nope"])
+@pytest.fixture
+def built_capture(plan):
+    topology, _ = plan
+    client = FakeCaptureClient()
+    build(client, "lab", topology, template_ids())
+    declared = [link.link_id for link in topology.links]
+    resolution = resolve_links(client, "p1", topology, declared)
+    return client, topology, resolution
 
-    assert resolved == {"link-core-plant": "L1"}
-    assert unknown == ["nope"]
+
+def test_builder_to_capture_mapping_uses_ports(built_capture):
+    client, topology, resolution = built_capture
+    assert len(resolution.resolved) == len(topology.links)
+    assert all(item["status"] == "built" for item in resolution.status.values())
+    assert resolution.resolved["link-core-plant"] in {
+        link["link_id"] for link in client.project_links("p1")
+    }
+    chosen = topology.links[0]
+    actual = next(
+        link
+        for link in client._links
+        if link["link_id"] == resolution.resolved[chosen.link_id]
+    )
+    actual["nodes"][0]["adapter_number"] += 1
+    changed = resolve_links(client, "p1", topology, [chosen.link_id])
+    assert changed.status[chosen.link_id]["status"] == "miswired"
+    assert f"gns3_{actual['link_id']}" in changed.capturable
 
 
-def test_capture_starts_and_stops_each_named_link():
-    client = FakeCaptureClient([{"link_id": "L1", "description": "link-core-plant"}])
-    result = capture_for(client, "p1", ["link-core-plant"], duration=0)
+def test_capture_detects_ambiguous_and_missing_links(built_capture):
+    client, topology, resolution = built_capture
+    first, second = topology.links[:2]
+    link_id = resolution.resolved[first.link_id]
+    matching = next(item for item in client._links if item["link_id"] == link_id)
+    client._links.append({**matching, "link_id": "duplicate"})
+    client._links = [
+        item
+        for item in client._links
+        if item["link_id"] != resolution.resolved[second.link_id]
+    ]
+    changed = resolve_links(client, "p1", topology, [first.link_id, second.link_id])
+    assert changed.status[first.link_id]["status"] == "ambiguous"
+    assert changed.status[second.link_id]["status"] == "missing"
+    assert f"gns3_{link_id}" in changed.capturable
+    assert "gns3_duplicate" in changed.capturable
 
-    assert client.started == ["L1"]
-    assert client.stopped == ["L1"]
-    assert result.files == {"link-core-plant": "/tmp/L1.pcap"}
+
+def test_all_built_includes_undeclared_physical_links(documents, built_capture):
+    _, inventory, infrastructure, link_plan = documents
+    client, topology, _ = built_capture
+    client._links.append(
+        {
+            "link_id": "extra",
+            "nodes": [
+                {"node_id": "outside-a", "adapter_number": 0, "port_number": 0},
+                {"node_id": "outside-b", "adapter_number": 1, "port_number": 0},
+            ],
+        }
+    )
+    declared = [link.link_id for link in topology.links]
+    resolution = resolve_links(client, "p1", topology, declared)
+    assert "gns3_extra" in resolution.capturable
+    report = coverage_report(
+        resolution, resolution.capturable, link_plan, inventory, infrastructure
+    )
+    assert report["undeclared_physical_links"] == ["gns3_extra"]
+    assert report["all_network_traffic_verified"] is False
+
+
+def test_coverage_distinguishes_local_routed_and_uncabled(documents, built_capture):
+    _, inventory, infrastructure, link_plan = documents
+    _, _, resolution = built_capture
+    report = coverage_report(
+        resolution, ["link-core-plant"], link_plan, inventory, infrastructure
+    )
+    assert "attach-intake-plc" in report["missing_local_points"]
+    assert "link-core-dmz" in report["missing_routed_points"]
+    assert report["uncabled_devices"]
+    assert report["all_network_traffic_verified"] is False
+    all_report = coverage_report(
+        resolution, resolution.capturable, link_plan, inventory, infrastructure
+    )
+    assert all_report["modeled_local_paths_selected"]
+    assert all_report["modeled_routed_paths_selected"]
+
+
+def test_capture_stops_and_downloads_each_started_link(built_capture, tmp_path):
+    client, _, resolution = built_capture
+    # One router transit point and one local host attachment, from the same build.
+    selected = ["link-core-plant", "attach-intake-plc"]
+    result = capture_for(
+        client,
+        "p1",
+        resolution,
+        selected,
+        1,
+        tmp_path,
+        {"dataset_version": "v1"},
+        sleep=lambda _: None,
+    )
+    assert set(client.started) == set(client.stopped)
+    assert set(result.files) == set(selected)
     assert result.failed == []
+    manifest = json.loads(result.manifest_path.read_text())
+    for name in selected:
+        entry = manifest["captures"][name]
+        assert entry["gns3_link_id"] == resolution.resolved[name]
+        assert entry["packet_count"] == 1
+        assert len(entry["sha256"]) == 64
+        assert entry["started_at_utc"] and entry["stopped_at_utc"]
 
 
-def test_capture_reports_a_link_that_is_not_in_the_project():
-    client = FakeCaptureClient([])
-    result = capture_for(client, "p1", ["link-absent"], duration=0)
+def test_capture_interrupt_stops_only_acknowledged_starts(built_capture, tmp_path):
+    client, _, resolution = built_capture
+    selected = ["link-core-plant", "link-core-dmz"]
 
-    assert client.started == []
-    assert any("not a link in this project" in item for item in result.failed)
+    def interrupt(_):
+        raise KeyboardInterrupt
+
+    result = capture_for(
+        client, "p1", resolution, selected, 1, tmp_path, {}, sleep=interrupt
+    )
+    assert set(client.stopped) == set(client.started)
+    assert any("KeyboardInterrupt" in item for item in result.failed)
+    assert result.manifest_path.is_file()
+
+
+def test_capture_timer_failure_still_stops_every_started_link(built_capture, tmp_path):
+    client, _, resolution = built_capture
+    selected = ["link-core-plant", "link-core-dmz"]
+
+    def fail_timer(_):
+        raise RuntimeError("timer failed")
+
+    result = capture_for(
+        client, "p1", resolution, selected, 1, tmp_path, {}, sleep=fail_timer
+    )
+    assert set(client.stopped) == set(client.started)
+    assert any("timer failed" in item for item in result.failed)
+
+
+def test_capture_partial_start_failure_stops_only_started(built_capture, tmp_path):
+    client, _, resolution = built_capture
+    selected = ["link-core-plant", "link-core-dmz"]
+    client.fail_start = resolution.resolved[selected[1]]
+    result = capture_for(client, "p1", resolution, selected, 1, tmp_path, {})
+    assert client.started == client.stopped == [resolution.resolved[selected[0]]]
+    assert selected[1] not in result.files
+    assert any("start rejected" in item for item in result.failed)
+
+
+@pytest.mark.parametrize("failure", ["fail_after_start", "interrupt_after_start"])
+def test_capture_reconciles_start_that_succeeded_without_a_reply(
+    built_capture, tmp_path, failure
+):
+    client, _, resolution = built_capture
+    selected = ["link-core-plant", "link-core-dmz"]
+    setattr(client, failure, resolution.resolved[selected[1]])
+    result = capture_for(client, "p1", resolution, selected, 1, tmp_path, {})
+    assert set(client.stopped) == set(client.started)
+    assert set(result.files) == set(selected)
+    assert any("capture start failed" in item for item in result.failed)
+
+
+def test_capture_stop_and_download_failures_are_recorded(built_capture, tmp_path):
+    client, _, resolution = built_capture
+    selected = ["link-core-plant", "link-core-dmz", "link-core-wan"]
+    client.fail_stop = resolution.resolved[selected[0]]
+    client.fail_download = resolution.resolved[selected[1]]
+    result = capture_for(
+        client, "p1", resolution, selected, 1, tmp_path, {}, sleep=lambda _: None
+    )
+    assert selected[2] in result.files
+    assert selected[0] not in result.files
+    assert selected[1] not in result.files
+    assert any("stop rejected" in item for item in result.failed)
+    assert any("download rejected" in item for item in result.failed)
+    assert len(client.stopped) == 2
+    assert len(client.started) == 3
+    manifest = json.loads(result.manifest_path.read_text())
+    assert manifest["failures"] == result.failed
+
+
+def test_capture_missing_path_and_empty_file_are_failures(built_capture, tmp_path):
+    client, _, resolution = built_capture
+    name = "link-core-plant"
+    link_id = resolution.resolved[name]
+    client.missing_path = link_id
+    client.start_capture = lambda *_args, **_kwargs: {}
+    result = capture_for(client, "p1", resolution, [name], 1, tmp_path, {})
+    assert any("capture_file_path" in item for item in result.failed)
+    assert result.files == {}
+
+    client.empty_file = link_id
+    client.start_capture = lambda *_args, **_kwargs: {
+        "capture_file_path": "/server/file.pcap"
+    }
+    again = capture_for(client, "p1", resolution, [name], 1, tmp_path, {})
+    assert any("contains no packets" in item for item in again.failed)
+    assert again.files == {}

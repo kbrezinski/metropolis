@@ -158,6 +158,23 @@ def test_capture_payload_never_sends_a_read_only_field():
     assert set(payload) == {"data_link_type"}
 
 
+def test_download_pcap_streams_from_the_link_endpoint(monkeypatch, tmp_path):
+    captured = {}
+
+    def fake_urlopen(request, timeout=None):
+        captured["url"] = request.full_url
+        captured["auth"] = request.get_header("Authorization")
+        return FakeResponse(b"pcap bytes")
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+    client = Gns3Client(Server("gns3.test", 3080, "reader", "secret"))
+    target = tmp_path / "capture.pcap"
+    client.download_pcap("p1", "L1", target)
+    assert target.read_bytes() == b"pcap bytes"
+    assert captured["url"].endswith("/v2/projects/p1/links/L1/pcap")
+    assert captured["auth"] == "Basic " + b64encode(b"reader:secret").decode()
+
+
 class FakeResponse(io.BytesIO):
     def __init__(self, body: bytes, status: int = 200):
         super().__init__(body)

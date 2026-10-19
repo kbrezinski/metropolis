@@ -16,6 +16,7 @@ from dataclasses import dataclass, field
 import yaml
 
 from client import Gns3Client, Node
+from link_identity import planned_key, related_links, server_key
 from topology import Topology, environment_string
 
 
@@ -31,22 +32,8 @@ class BuildResult:
     skipped: list[str] = field(default_factory=list)
 
 
-def _link_key(first: dict, second: dict) -> frozenset:
-    """Identify a link by the two node ids it joins.
-
-    The graph is a tree of point-to-point links, so a pair of nodes is enough;
-    this is stable regardless of which end GNS3 reports first.
-    """
-    return frozenset((first["node_id"], second["node_id"]))
-
-
-def existing_link_keys(links: list[dict]) -> set[frozenset]:
-    keys = set()
-    for link in links:
-        nodes = link.get("nodes", [])
-        if len(nodes) == 2:
-            keys.add(_link_key(nodes[0], nodes[1]))
-    return keys
+def existing_link_keys(links: list[dict]) -> set[tuple]:
+    return {identity for link in links if (identity := server_key(link)) is not None}
 
 
 def ensure_nodes(
@@ -98,7 +85,13 @@ def ensure_links(
     result: BuildResult,
 ) -> None:
     """Create the links that are missing."""
-    present = existing_link_keys(client.project_links(project_id))
+    present = client.project_links(project_id)
+    node_ids = {name: node.node_id for name, node in nodes.items()}
+    planned_keys = {
+        planned_key(link, node_ids)
+        for link in topology.links
+        if link.first.node in node_ids and link.second.node in node_ids
+    }
 
     for planned in topology.links:
         first = nodes.get(planned.first.node)
@@ -106,16 +99,47 @@ def ensure_links(
         if first is None or second is None:
             result.skipped.append(f"{planned.link_id}: an endpoint node is absent")
             continue
-        key = frozenset((first.node_id, second.node_id))
-        if key in present:
+        identity = planned_key(planned, node_ids)
+        exact = [link for link in present if server_key(link) == identity]
+        if len(exact) > 1:
+            result.skipped.append(f"{planned.link_id}: ambiguous duplicate GNS3 links")
+            continue
+        if exact:
             result.reused_links.append(planned.link_id)
             continue
-        client.create_link(
+        conflicts = [
+            link
+            for link in related_links(identity, present)
+            if server_key(link) not in planned_keys
+        ]
+        if conflicts:
+            result.skipped.append(
+                f"{planned.link_id}: a GNS3 link uses the wrong ports or peer"
+            )
+            continue
+        created = client.create_link(
             project_id,
             (first.node_id, planned.first.adapter, planned.first.port),
             (second.node_id, planned.second.adapter, planned.second.port),
         )
-        present.add(key)
+        present.append(
+            created
+            if server_key(created) is not None
+            else {
+                "nodes": [
+                    {
+                        "node_id": first.node_id,
+                        "adapter_number": planned.first.adapter,
+                        "port_number": planned.first.port,
+                    },
+                    {
+                        "node_id": second.node_id,
+                        "adapter_number": planned.second.adapter,
+                        "port_number": planned.second.port,
+                    },
+                ]
+            }
+        )
         result.created_links.append(planned.link_id)
 
 

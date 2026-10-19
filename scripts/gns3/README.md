@@ -37,9 +37,12 @@ python scripts/gns3/run.py lab_lifecycle --order
 python scripts/gns3/run.py lab_lifecycle --start
 python scripts/gns3/run.py build_topology --configure-routers
 
-# 4. Capture what you need
+# 4. Inspect physical capture coverage, then capture
 python scripts/gns3/run.py capture_traffic --list
-python scripts/gns3/run.py capture_traffic --links link-core-plant --duration 60
+python scripts/gns3/run.py capture_traffic --coverage
+python scripts/gns3/run.py capture_traffic --all-built --coverage --duration 60
+# Or choose individual declared links:
+python scripts/gns3/run.py capture_traffic --links link-core-plant attach-intake-plc --duration 60
 
 # 5. Stop it
 python scripts/gns3/run.py lab_lifecycle --stop
@@ -47,6 +50,30 @@ python scripts/gns3/run.py lab_lifecycle --stop
 
 Every command takes `--help`. `build_topology --plan`, `capture_traffic --list`,
 and `lab_lifecycle --order` contact no server, so they are safe to run anywhere.
+
+## Capture coverage and files
+
+`--coverage` compares each `links.yaml` ID with GNS3's actual node, adapter and
+port numbers. It reports built, missing, ambiguous and miswired links. `--all-built`
+selects every physical link that is neither suspended nor already capturing,
+including undeclared GNS3 links labeled `gns3_<link-id>` in the report. A
+declared segment or attachment without a matching physical link is not a capture
+point. The report lists host attachment links needed for local subnet traffic,
+router and trunk links needed for routed traffic, and devices or segments with
+no physical cabling. Selecting a router uplink alone cannot capture traffic
+switched entirely within a local subnet.
+
+Each run retrieves PCAPs from the GNS3 controller into the versioned dataset's
+`captures/<run-id>/` directory. A file is accepted only if it contains at least
+one complete packet. The adjacent `manifest.json` records declared and GNS3
+link IDs, UTC start and stop times, topology and dataset versions, server and
+local paths, packet counts, SHA-256 hashes, coverage and failures. An empty or
+missing capture is a failed run. Captures are git-ignored; preserve the manifest
+with the dataset when publishing or archiving a run.
+
+Coverage describes modeled paths. Inspect PCAPs containing both local subnet
+flows and routed flows before describing the data as broad network coverage.
+Uncabled or undeclared paths are outside the capture set.
 
 ## What the builder does with the switch ports
 
@@ -65,11 +92,14 @@ Building is idempotent: a node or link that already exists is reused, so a build
 that stopped partway resumes instead of duplicating. `--prune-missing` deletes
 project nodes the plan does not contain.
 
-Two things are reported rather than created:
+One thing is reported rather than created:
 
-- **A link endpoint naming an access segment** with no port role — those
-  segments are documented as segments, not appliances, so no port number exists.
 - **A node whose template is not registered** — run `register_templates` first.
+
+Access segments get distinct GNS3 adapter numbers for each declared attachment,
+in `links.yaml` order. The builder checks full endpoint ports before reusing a
+link and reports conflicting wiring instead of treating any link between the
+same two nodes as equivalent.
 
 ## Router and switch appliances
 

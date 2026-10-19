@@ -16,6 +16,7 @@ import json
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
+from pathlib import Path
 
 # A local GNS3 server answers quickly. Anything slower means it is not
 # listening, and a long default would just make a typo look like a hang.
@@ -101,3 +102,20 @@ class Transport:
             return json.loads(raw)
         except json.JSONDecodeError as exc:
             raise Gns3Error(f"{method} {path} returned invalid JSON: {exc}") from exc
+
+    def download(self, path: str, destination: Path) -> None:
+        """Stream a binary API response to a local file."""
+        request = urllib.request.Request(
+            f"{self.server.base_url}{path}", headers=self._headers(), method="GET"
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=self.timeout) as response:
+                with destination.open("wb") as output:
+                    while block := response.read(1 << 20):
+                        output.write(block)
+        except urllib.error.HTTPError as exc:
+            raise Gns3Error(f"GET {path} returned {exc.code}") from exc
+        except urllib.error.URLError as exc:
+            raise Gns3Error(
+                f"Could not reach {self.server.base_url}: {exc.reason}"
+            ) from exc

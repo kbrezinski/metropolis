@@ -213,11 +213,20 @@ def build_plan(
     known = {node.name for node in nodes}
 
     roles = port_map(infrastructure)
+    segments = {item["name"] for item in infrastructure.get("segments", [])}
+    next_segment_adapter = dict.fromkeys(segments, 0)
     links: list[PlannedLink] = []
     skipped: list[str] = []
     for link in link_plan["links"]:
         endpoints = link["endpoints"]
-        adapters = [_adapter_for(endpoint, roles) for endpoint in endpoints]
+        adapters = []
+        for endpoint in endpoints:
+            name = endpoint["node"]
+            if name in segments:
+                adapters.append(next_segment_adapter[name])
+                next_segment_adapter[name] += 1
+            else:
+                adapters.append(_adapter_for(endpoint, roles))
         if any(adapter is None for adapter in adapters):
             unknown = [
                 endpoint["node"]

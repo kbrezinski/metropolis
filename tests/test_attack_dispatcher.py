@@ -23,6 +23,8 @@ HELPERS = {"_common", "_mqtt", "_telnet", "_c2", "run"}
 
 EXPECTED_TOOLS = {
     "coap_amplification_attack",
+    "gotham_merlin_setup",
+    "gotham_mirai_setup",
     "mirai_infection_sim",
     "modbus_manipulation_attack",
     "mqtt_bruteforce_attack",
@@ -120,6 +122,43 @@ def test_dispatcher_passes_through_help():
     result = invoke("modbus_manipulation_attack", "--help")
     assert result.returncode == 0
     assert "--action" in result.stdout
+
+
+@pytest.mark.parametrize(
+    ("tool", "choice", "endpoint_key", "endpoint"),
+    [
+        ("gotham_mirai_setup", "--external-bot", "telnet_target", "10.20.10.30:23"),
+        (
+            "gotham_merlin_setup",
+            "--external-agent",
+            "agent_url",
+            "http://10.99.10.20:8443",
+        ),
+    ],
+)
+def test_external_setup_dry_run_shows_inventory_contract(
+    tool, choice, endpoint_key, endpoint
+):
+    result = invoke(tool, choice, "--dry-run")
+    assert result.returncode == 0, result.stdout + result.stderr
+    started = records(result)[0]
+    assert started["agent_source"] == "user_supplied"
+    assert started[endpoint_key] == endpoint
+
+
+@pytest.mark.parametrize(
+    ("tool", "external", "inert"),
+    [
+        ("gotham_mirai_setup", "--external-bot", "--start-inert-bot"),
+        ("gotham_merlin_setup", "--external-agent", "--start-inert-agent"),
+    ],
+)
+def test_external_setup_requires_one_agent_source(tool, external, inert):
+    assert invoke(tool, "--dry-run").returncode == 2
+    assert invoke(tool, external, inert, "--dry-run").returncode == 2
+    result = invoke(tool, inert, "--dry-run")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert records(result)[0]["agent_source"] == "repository_example"
 
 
 @pytest.mark.parametrize("name", sorted(EXPECTED_TOOLS))
