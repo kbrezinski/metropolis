@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://metropolis.local/schemas/experiment-run.schema.json",
+  "title": "Metropolis experiment run manifest",
+  "type": "object",
+  "required": ["schema_version", "run_id", "project_id", "started_at_utc", "status", "logs", "failures"],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "run_id": {"type": "string", "minLength": 1},
+    "project_id": {"type": "string", "minLength": 1},
+    "project_name": {"type": "string"},
+    "testbed_id": {"type": "string"},
+    "dataset_version": {"type": "string"},
+    "dataset_path": {"type": "string"},
+    "started_at_utc": {"type": "string", "format": "date-time"},
+    "stopped_at_utc": {"type": "string", "format": "date-time"},
+    "status": {"enum": ["running", "complete", "failed", "interrupted"]},
+    "timeline_path": {"type": "string"},
+    "captures": {"type": "array", "items": {"type": "string"}},
+    "logs": {
+      "type": "object",
+      "required": ["normalized_path", "sources"],
+      "properties": {
+        "normalized_path": {"type": "string"},
+        "sources": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "required": ["node_id", "compute_id", "container_id", "raw_path", "lines", "complete"],
+            "properties": {
+              "node_id": {"type": "string"},
+              "compute_id": {"type": "string"},
+              "container_id": {"type": "string"},
+              "raw_path": {"type": "string"},
+              "lines": {"type": "integer", "minimum": 0},
+              "complete": {"type": "boolean"}
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "failures": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["source", "reason"],
+        "properties": {
+          "source": {"type": "string"},
+          "reason": {"type": "string"}
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

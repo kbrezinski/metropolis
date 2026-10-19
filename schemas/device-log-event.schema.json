@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://metropolis.local/schemas/device-log-event.schema.json",
+  "title": "Metropolis normalized device log event",
+  "type": "object",
+  "required": ["timestamp", "run_id", "source", "component", "stream", "level", "event", "message", "attributes", "raw"],
+  "properties": {
+    "timestamp": {"type": "string", "format": "date-time"},
+    "device_timestamp": {"type": "string", "format": "date-time"},
+    "run_id": {"type": "string", "minLength": 1},
+    "source": {"type": "string", "minLength": 1},
+    "component": {"type": "string", "minLength": 1},
+    "stream": {"enum": ["stdout", "stderr"]},
+    "level": {"type": "string"},
+    "event": {"type": ["string", "null"]},
+    "message": {"type": "string"},
+    "attributes": {"type": "object"},
+    "raw": {"type": "string"},
+    "redacted": {"type": "boolean"}
+  },
+  "additionalProperties": false
+}

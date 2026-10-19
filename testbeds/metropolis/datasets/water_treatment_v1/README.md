@@ -15,6 +15,9 @@ and metadata for one version of the water-treatment testbed dataset.
 - `metadata/` records labels, capture points, timestamps, and run configuration.
 - `captures/` is for generated PCAPs and other large outputs; its contents are
   excluded from Git.
+- `runs/<run-id>/logs/` holds normalized and raw Docker device logs for an
+  experiment; `manifest.json` records collection results and `timeline.jsonl`
+  is reserved for actions and project status. Runs are excluded from Git.
 
 Keep reusable device behavior and definitions under the top-level `testbeds/metropolis/devices/`
 directory. A future dataset should get a new versioned directory under `testbeds/metropolis/datasets/`
