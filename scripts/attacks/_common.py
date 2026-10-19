@@ -7,6 +7,7 @@ import ipaddress
 import json
 import math
 import os
+import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -19,6 +20,17 @@ DEFAULT_INVENTORY = (
     / "testbeds/metropolis/datasets/water_treatment_v1"
     / "device_instances/initial_devices.yaml"
 )
+
+
+def gns3_client():
+    """Use the repository's GNS3 connector for live lab setup checks."""
+    gns3_tools = ROOT / "scripts/gns3"
+    if str(gns3_tools) not in sys.path:
+        sys.path.insert(0, str(gns3_tools))
+    from client import Gns3Client
+    from config import resolve_server
+
+    return Gns3Client(resolve_server())
 
 
 def parser(description: str, node: str) -> argparse.ArgumentParser:

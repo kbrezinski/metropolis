@@ -10,6 +10,6 @@ COPY testbeds/metropolis/devices/runtime/network-entrypoint.sh /usr/local/bin/me
 RUN chmod +x /usr/local/bin/metropolis-entrypoint
 
 # MERLIN_CNC_URL must point at the CNC node, for example
-# http://10.99.10.10:8443 . Set it in the GNS3 node environment.
+# http://10.99.10.20:8443 . Set it in the GNS3 node environment.
 ENTRYPOINT ["/usr/local/bin/metropolis-entrypoint"]
 CMD ["python3", "/opt/metropolis/start_merlin_agent.py"]

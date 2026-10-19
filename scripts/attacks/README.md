@@ -34,10 +34,18 @@ Every tool takes `--dry-run` and `--help`. Nothing is sent until you set
 | Flood an MQTT topic | `mqtt_flood_attack` | Many publishes; can also plant or clear a retained message |
 | Guess SSH passwords | `ssh_bruteforce_attack` | Bounded SSH login sequence and read-only shell checks |
 | Guess Telnet passwords | `mirai_infection_sim` | Telnet logins and a fixed command |
-| Measure CoAP responses | `coap_amplification_attack` | CoAP GETs; optionally source-spoofed |
+| Measure CoAP responses | `coap_amplification_attack` | Mixed CoAP GETs, CON/NON requests, optional reflection |
+| Count reflected CoAP replies | `coap_reflection_receiver` | Bounded listener on a separate private receiver |
+| Combine CoAP observations | `coap_experiment_report` | Offline sender/sensor/receiver report beside a pcap |
 | Write to the PLC | `modbus_manipulation_attack` | Modbus register and coil writes |
+<<<<<<< HEAD
 | Generate packet load | `run_bounded_hping3` | Capped TCP connections, UDP datagrams, or five raw packet profiles |
+=======
+| Generate hping3-style traffic | `run_bounded_hping3` | Five bounded Gotham packet profiles; SYN by default |
+>>>>>>> 5e23f21557b30ec53f0429a17cc6561c89992a71
 | Play out a Mirai infection | `run_mirai_choreography` | Bot check-in, reports, C2 commands, payload fetch |
+| Set up Gotham-style Mirai roles | `gotham_mirai_setup` | Verify inventoried Telnet targets; optionally start the inert bot node |
+| Set up Gotham-style Merlin roles | `gotham_merlin_setup` | Verify the synthetic C2 node and connection contract; optionally start the inert agent node |
 | Play out Merlin C2 | `run_merlin` | C2 listener, agent check-in, command, upload |
 | Check external Mirai bot setup | `gotham_mirai_setup` | Inventory and GNS3 prerequisite checks; no bot traffic |
 | Check external Merlin agent setup | `gotham_merlin_setup` | Inventory and GNS3 prerequisite checks; no agent traffic |
@@ -56,8 +64,8 @@ uv pip install --python .venv-attacks/bin/python -r scripts/attacks/requirements
 export METROPOLIS_PYTHON="$(pwd)/.venv-attacks/bin/python"
 ```
 
-Scanning also needs Nmap: `sudo apt install nmap`. Scapy's spoof mode and UDP
-scans need extra privileges.
+Scanning also needs Nmap: `sudo apt install nmap`. Raw SYN mode and Scapy's
+spoof mode need raw-socket privileges; UDP scans may need extra privileges.
 
 The optional Metasploit MQTT engine needs `msfconsole` installed on the machine
 running the attack tool; it is not a Python dependency. The broker itself does
@@ -90,6 +98,7 @@ python scripts/attacks/run.py run_mirai_choreography --bots 3
 python scripts/attacks/run.py run_merlin
 ```
 
+<<<<<<< HEAD
 ### Bring your own inert bot or agent
 
 The setup commands make the researcher-supplied choice explicit. Dry runs read
@@ -122,6 +131,90 @@ returned `agent_id`. It can then `GET /commands/<agent_id>` and
 commands; the supplied agent controls how it handles them. The setup check
 confirms GNS3 node state, not end-to-end reachability or successful agent
 check-in. Capture and verify those flows in the running lab.
+=======
+### Gotham Mirai setup adapter
+
+`gotham_mirai_setup` maps the two active stages of Gotham's `run_mirai.py` to
+Metropolis without shipping or invoking its binary. Gotham configures selected
+devices as Telnet targets, then starts its bot executable. Metropolis's
+`MET-LEGACY-GATEWAY-01` already starts BusyBox Telnet with its inventory
+credential; the adapter checks that the node is running. Choose the bot source
+explicitly: `--external-bot` for your own inert implementation or
+`--start-inert-bot` for the repository's `MET-MIRAI-BOT-01`. Omitting both
+leaves bot startup to the user. The two flags cannot be combined. The adapter
+does not alter passwords or run commands inside containers. `--external-bot`
+does not take a binary path: researchers install and launch their bot in a
+GNS3 lab node themselves, then use the printed Telnet target details.
+
+```bash
+python scripts/attacks/run.py gotham_mirai_setup --external-bot --dry-run
+export METROPOLIS_LAB_ACK=yes
+python scripts/attacks/run.py gotham_mirai_setup --external-bot \
+  --project metropolis_water_treatment_v1
+# Or: start the repository's example inert bot node
+python scripts/attacks/run.py gotham_mirai_setup --start-inert-bot
+```
+
+Additional future Telnet nodes can be selected with repeated `--target-node`
+arguments if they declare `telnet` in the inventory. The current example bot
+has an empty `BOT_TARGETS` list, so it checks in but does not scan. The router
+scripts include routes between `10.99.10.0/24` and `10.20.10.0/24`, but the
+running GNS3 network still needs a reachability check. The target's fixture
+password is in the inventory and service guide; a user-supplied inert bot must
+use that credential (it is not one of Gotham's Mirai dictionary passwords).
+The adapter cannot
+reproduce real Mirai scan, brute-force, infection, or bot traffic without a
+separate implementation. See Gotham's
+[original script](https://github.com/xsaga/gotham-iot-testbed/blob/master/src/run_mirai.py)
+for the method being mapped.
+
+### Gotham Merlin setup adapter
+
+`gotham_merlin_setup` prepares the Metropolis side of Gotham's Merlin sequence
+for a user-supplied **inert** agent. It checks the inventory, the C2 node's
+configured ports, and the example agent's URL. On a live run it verifies that
+the GNS3 project is open and the C2 node is started. It does not install or
+launch an agent binary, test socket reachability, or confirm a check-in.
+Choose the agent source explicitly: `--external-agent` for your own inert
+implementation or `--start-inert-agent` for the repository example. Omitting
+both leaves agent startup to the user. The two flags cannot be combined.
+`--external-agent` does not take a binary path: researchers install and launch
+their agent in a GNS3 lab node themselves, then point it at the C2 URL below.
+The setup tool reports the required protocol and checks the C2 node only.
+
+```bash
+python scripts/attacks/run.py gotham_merlin_setup --external-agent --dry-run
+export METROPOLIS_LAB_ACK=yes
+python scripts/attacks/run.py gotham_merlin_setup --external-agent \
+  --project metropolis_water_treatment_v1
+# Or: start the repository's example inert agent node
+python scripts/attacks/run.py gotham_merlin_setup --start-inert-agent
+```
+
+The default C2 node is `MET-MERLIN-CNC-01` at `10.99.10.20`. Its operator
+console is a line-oriented TCP service on port **23** using Gotham's console
+verbs (`listeners`, `use https`, `start`, `agent list`, `agent interact <id>`,
+`run <command>`). It is a synthetic console, not an authenticated Telnet shell.
+The agent channel is **plain HTTP** at `http://10.99.10.20:8443`; `use https`
+only sets the console's listener label and does not enable TLS. A supplied
+agent must be placed on a lab node that can route to that address and implement:
+
+| Request | Body | Expected result |
+|---|---|---|
+| `POST /checkin` | JSON `{"address":"<agent-ip>","arch":"<arch>"}` | JSON `{"agent_id":"<uuid>"}` |
+| `GET /commands/<agent_id>` | Empty | JSON `{"commands":[...]}`; polling consumes queued commands |
+| `POST /upload/<agent_id>` | Small artefact bytes | JSON `{"stored":true}` |
+
+Set `Content-Length` for POST requests. The supplied agent should treat
+received commands as inert test data; the C2 only queues them. The repository's
+example `MET-MERLIN-AGENT-01` shows the protocol. `run_merlin` performs its own
+synthetic check-in, so use either that one-shot choreography or a separate
+agent-driven experiment when interpreting captures. Gotham instead starts a
+Merlin executable inside a selected container and uploads an `hping3` tool
+through its console. This adapter provides the role and protocol setup, not
+those executable or file-transfer behaviors. Verify reachability and capture
+traffic in the running GNS3 lab before drawing experimental conclusions.
+>>>>>>> 5e23f21557b30ec53f0429a17cc6561c89992a71
 
 ## What is actually simulated
 
@@ -282,16 +375,63 @@ not command text.
 
 Each tool documents its own options: `run.py <tool> --help`.
 
-`coap_amplification_attack` matches responder addresses and tokens and reports
-response/request ratios at payload and estimated IPv4/UDP level. It does not
-assume an 8× ratio and does not establish denial of service. For a reflection
-experiment, provision a separate private receiver, then use `--mode spoof
---spoof-src RECEIVER_IP --receiver-port PORT`.
+`coap_amplification_attack` defaults to a repeatable mix of discovery, status,
+seven measurement resources, and one missing path. The missing path gives a
+normal `4.04` response. `--resource /status` narrows the run to one path.
+`--message-type mixed` alternates confirmable and non-confirmable GETs; use
+`con` or `non` for one type. The `baseline`, `burst`, and `sustained` profiles
+set rate/duration/message ceilings to 2/s for 30s/60, 25/s for 10s/250, and
+5/s for 120s/600. The default `custom` profile keeps 5/s for 10s/100; it
+accepts explicit `--rate`, `--duration`, and `--max-messages` overrides.
+Measurements are ceilings, so slower replies can produce fewer requests.
+
+In `measure` mode, the tool matches the sensor address, token, and appropriate
+CoAP message type, then reports observed response codes and payload and
+estimated IPv4/UDP ratios. It does not assume an amplification factor or
+establish denial of service.
+
+For reflection, start the receiver on a **different private lab host** first.
+Use the same four-hex-digit experiment ID on sender and receiver, and capture
+the relevant GNS3 links. On the receiver host:
+
+```bash
+export METROPOLIS_LAB_ACK=yes
+python scripts/attacks/run.py coap_reflection_receiver \
+  --experiment-id 7a2f --listen-port 56830 --duration 30 \
+  --output runs/coap-receiver.jsonl
+```
+
+On the sender host, replace `RECEIVER_IP` with that receiver's private address:
+
+```bash
+export METROPOLIS_LAB_ACK=yes
+python scripts/attacks/run.py coap_amplification_attack \
+  --mode spoof --spoof-src RECEIVER_IP --receiver-port 56830 \
+  --experiment-id 7a2f --profile burst --output runs/coap-sender.jsonl
+```
+
+The sender reports emitted requests; the receiver counts matching responses
+from the inventoried sensor. The sensor writes one `COAP_AUDIT` JSON record per
+response to its container stdout, including request/response byte counts and
+the experiment ID. Save those container logs from the same time window. After
+copying the logs and pcap to one machine, combine all three observations:
+
+```bash
+python scripts/attacks/run.py coap_experiment_report \
+  --sender runs/coap-sender.jsonl --sensor-log runs/coap-sensor.log \
+  --receiver runs/coap-receiver.jsonl --pcap runs/coap.pcap \
+  --output runs/coap-report.json
+```
+
+Give each run a distinct experiment ID and sensor-log time window. Spoof mode
+needs permission to send raw packets and a lab route that permits the chosen
+source address. Its sender cannot observe the replies directly.
 
 `mirai_infection_sim`'s `--write-marker` writes `/tmp/metropolis-login-test`
 after a successful login; otherwise it only runs a fixed challenge. A successful
 login is not a Mirai infection.
 
+<<<<<<< HEAD
 `run_bounded_hping3` has five raw packet profiles: `udp-raw`, `udp-vse`,
 `tcp-syn`, `tcp-ack`, and `tcp-ack-psh`. The TCP profiles increment the destination
 port for each packet, as in Gotham's hping3 recipes. `udp-vse` sends a Source
@@ -313,6 +453,48 @@ records send calls, elapsed time, and achieved rate. Use the PCAP to confirm
 which packets reached the capture point; the script does not measure service
 disruption. The caps are ceilings, not quotas: a slow send can produce fewer
 packets than `--max-packets`.
+=======
+`run_bounded_hping3` uses Scapy to model Gotham's five `hping3_attacks.sh`
+recipes on an inventoried node. The raw modes need root or raw-socket
+privileges and do not spoof source addresses:
+
+| Mode | Packet pattern |
+|---|---|
+| `syn` (default) | TCP SYN, DF, TTL 64, destination port increments from 0 |
+| `udp-generic` | UDP with 512 random bytes, destination port 0 |
+| `udp-vse` | UDP Source Engine query bytes, destination port 27015 |
+| `ack` | TCP ACK with 512 random bytes, destination port increments |
+| `stomp` | TCP ACK+PSH, DF, 768 random bytes, destination port increments |
+
+Use `--port` to change the starting port for `syn`, `ack`, or `stomp`, or the
+fixed port for `udp-generic`. The VSE profile always uses port 27015. The older
+`connect` and `udp` modes remain for comparison. The default is 20 packets per
+second for 10 seconds. `--flood` removes the gap between packets in any of the
+five raw modes, resembling hping3's send-as-fast-as-possible option. It still
+stops at `--max-packets` or `--duration`; the hard ceilings are 3,000 packets
+and 30 seconds. Normal paced runs are limited to 100 per second and do not
+catch up after a slow send. Gotham's recipes use unrestricted `--flood`, and
+its Merlin script uploads hping3 without invoking a recipe. This tool does not
+reproduce unlimited packet volume or C2 transfer. No current Metropolis node
+is a Source Engine server, so `udp-vse` may produce no application reply. The
+recipe's 21-byte query is preserved exactly; it omits the four-byte connectionless
+header needed for a standard A2S_INFO query.
+Measure the target before, during, and after if availability is the outcome.
+
+```bash
+python scripts/attacks/run.py run_bounded_hping3 --dry-run
+export METROPOLIS_LAB_ACK=yes
+sudo --preserve-env=METROPOLIS_LAB_ACK,METROPOLIS_PYTHON \
+  python scripts/attacks/run.py run_bounded_hping3 \
+  --rate 20 --duration 10 --max-packets 200 --output runs/syn-experiment.jsonl
+
+# Short bounded burst using the same SYN packet profile
+sudo --preserve-env=METROPOLIS_LAB_ACK,METROPOLIS_PYTHON \
+  python scripts/attacks/run.py run_bounded_hping3 \
+  --mode syn --flood --duration 5 --max-packets 500 \
+  --output runs/syn-burst.jsonl
+```
+>>>>>>> 5e23f21557b30ec53f0429a17cc6561c89992a71
 
 `network_recon_scan` and `run_iot_discovery_simulation` default to inventoried
 hosts. `--cidr` accepts a private range of at most 256 addresses.

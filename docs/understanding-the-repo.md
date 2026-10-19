@@ -726,8 +726,10 @@ Two guarantees, both enforced in code and covered by tests:
 - **Nothing arbitrary is ever executed.** The agent accepts only a handful of
   named, harmless operations.
 
-A third, structural: the entire attack lab sits in its own subnet with **no route
-to the plant**. It cannot reach the devices it pretends to attack.
+A third, structural: the attack lab has its own subnet. The router scripts
+already include routes to and from the plant, while the planned inter-zone
+firewall policy is not applied. Verify actual reachability in GNS3 before
+interpreting an attack capture.
 
 The honest consequence: this traffic is botnet-*shaped*, not real malware. It is
 good enough for a detector to learn patterns from. It is not evidence about how

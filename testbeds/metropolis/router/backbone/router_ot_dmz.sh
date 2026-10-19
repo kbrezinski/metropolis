@@ -8,8 +8,8 @@
 #   eth2 -> enterprise switch, 10.30.10.0/24
 #   eth3 -> isolated attack-test switch, 10.99.10.0/24
 # TODO(Metropolis): Define and apply deny-by-default policies for enterprise,
-# DMZ, OT, and attack-test traffic. Specify approved services and test cases
-# before allowing any path from 10.99.10.0/24 into OT.
+# DMZ, OT, and attack-test traffic. The routes below currently provide a path
+# from 10.99.10.0/24 into OT; no firewall rule blocks it yet.
 
 source /opt/vyatta/etc/functions/script-template
 
