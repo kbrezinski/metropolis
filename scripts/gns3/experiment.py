@@ -50,6 +50,11 @@ def run_experiment(
         expected_syslog_sources=[
             router["name"] for router in infrastructure["routers"]
         ],
+        expected_switch_syslog_sources=[
+            switch["name"]
+            for group in ("switches", "segments")
+            for switch in infrastructure.get(group, [])
+        ],
         silent_sources=[
             device["name"]
             for device in inventory["devices"]

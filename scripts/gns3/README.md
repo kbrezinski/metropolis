@@ -106,8 +106,16 @@ Six VyOS 1.3 router scripts forward `info` and higher syslog to the NTP service
 node at `10.20.30.11:514/UDP`. The NTP image must be rebuilt after this change.
 The receiver emits structured lines to its Docker stdout; the collector writes
 router-attributed copies to `logs/syslog.jsonl` and reports each router that
-sent no messages. UDP delivery is not guaranteed. Open vSwitch container logs
-are not collected by the Docker follower or this syslog receiver.
+sent no messages. UDP delivery is not guaranteed. The Metropolis Open vSwitch
+image follows its `ovsdb-server.log` and `ovs-vswitchd.log` files and emits
+structured operational records into Docker stdout. GNS3 Docker switches have
+no routed management interface, so they cannot send UDP directly to the NTP
+receiver. The run collector bridges those marked records into the same
+`logs/syslog.jsonl` file, attributes them to the GNS3 switch node, and records
+`docker_stdout_bridge` as their transport. Ordinary switch stdout and stderr
+remain container records. Missing switch events and daemon log files are
+reported as failures; the image also emits a database health event every 15
+seconds. The manifest lists every expected router and switch.
 
 Start the collector **before** starting the lab, then run the existing
 `lab_lifecycle --start` command in another terminal. It polls for Docker nodes
@@ -151,8 +159,9 @@ successful run requires at least one line from every attached Docker source;
 unstarted nodes, missing compute mappings, Docker errors and empty output are
 reported as failures. Docker log-driver retention/rotation can make older
 startup lines unavailable. VyOS routers reach the syslog relay through the lab
-network; the Metropolis Open vSwitch containers are collected with other Docker
-nodes. Non-Docker nodes remain outside the container collector.
+network; switch daemon events use the Docker log path from their compute. The
+syslog manifest records source kinds, transport, counts, and missing sources.
+Non-Docker nodes remain outside the container collector.
 A remote GNS3 compute requires direct Docker access
 on that compute via the configured SSH connection; the controller API does not
 offer a Docker stdout/stderr relay.

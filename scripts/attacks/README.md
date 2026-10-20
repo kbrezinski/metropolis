@@ -34,7 +34,7 @@ Every tool takes `--dry-run` and `--help`. Nothing is sent until you set
 | Flood an MQTT topic | `mqtt_flood_attack` | Many publishes; can also plant or clear a retained message |
 | Guess SSH passwords | `ssh_bruteforce_attack` | Bounded SSH login sequence and read-only shell checks |
 | Guess Telnet passwords | `mirai_infection_sim` | Telnet logins and a fixed command |
-| Measure CoAP responses | `coap_amplification_attack` | Mixed CoAP GETs, CON/NON requests, optional reflection |
+| Measure CoAP responses | `coap_response_measurement` | Mixed CoAP GETs, CON/NON requests, optional private-lab reflection |
 | Count reflected CoAP replies | `coap_reflection_receiver` | Bounded listener on a separate private receiver |
 | Combine CoAP observations | `coap_experiment_report` | Offline sender/sensor/receiver report beside a pcap |
 | Write to the PLC | `modbus_manipulation_attack` | Modbus register and coil writes |
@@ -52,6 +52,10 @@ Every tool takes `--dry-run` and `--help`. Nothing is sent until you set
 
 The Mirai and Merlin choreography tools need the attack-lab nodes running first — see
 [Run the fake botnet](#run-the-fake-botnet).
+
+The Gotham CoAP amplification recipe is retained separately at
+`coap_amplification_attack/Dockerfile`. It is a Dockerfile, not a Python attack
+entry point, and is not discovered or run by `scripts/attacks/run.py`.
 
 ## Install
 
@@ -375,7 +379,7 @@ not command text.
 
 Each tool documents its own options: `run.py <tool> --help`.
 
-`coap_amplification_attack` defaults to a repeatable mix of discovery, status,
+`coap_response_measurement` defaults to a repeatable mix of discovery, status,
 seven measurement resources, and one missing path. The missing path gives a
 normal `4.04` response. `--resource /status` narrows the run to one path.
 `--message-type mixed` alternates confirmable and non-confirmable GETs; use
@@ -405,7 +409,7 @@ On the sender host, replace `RECEIVER_IP` with that receiver's private address:
 
 ```bash
 export METROPOLIS_LAB_ACK=yes
-python scripts/attacks/run.py coap_amplification_attack \
+python scripts/attacks/run.py coap_response_measurement \
   --mode spoof --spoof-src RECEIVER_IP --receiver-port 56830 \
   --experiment-id 7a2f --profile burst --output runs/coap-sender.jsonl
 ```

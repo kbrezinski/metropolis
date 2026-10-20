@@ -111,6 +111,14 @@ def normalize_line(
         relay_time = record.pop("device_timestamp", None)
         if relay_time:
             record["relay_timestamp"] = relay_time
+        record["attributes"]["transport"] = "udp_relay"
+    elif value.get("_metropolis_switch_syslog") is True:
+        # The Docker node identity is authoritative; do not trust a log payload's
+        # claimed hostname for switch attribution.
+        record["source"] = source
+        record["component"] = "switch"
+        record["stream"] = "syslog"
+        record["attributes"]["transport"] = "docker_stdout_bridge"
     return record
 
 
@@ -132,6 +140,7 @@ class DeviceLogCollector:
         *,
         metadata: dict | None = None,
         expected_syslog_sources: list[str] | None = None,
+        expected_switch_syslog_sources: list[str] | None = None,
         silent_sources: list[str] | None = None,
         docker_binary: str = "docker",
         popen=subprocess.Popen,
@@ -143,6 +152,7 @@ class DeviceLogCollector:
         self.docker_hosts = docker_hosts
         self.docker_binary = docker_binary
         self.silent_sources = set(silent_sources or [])
+        self.switch_syslog_sources = set(expected_switch_syslog_sources or [])
         self.popen = popen
         self.lock = threading.RLock()
         self.processes: dict[str, subprocess.Popen] = {}
@@ -162,8 +172,15 @@ class DeviceLogCollector:
             },
             "syslog": {
                 "path": "logs/syslog.jsonl",
-                "expected_sources": sorted(expected_syslog_sources or []),
+                "expected_sources": sorted(
+                    set(expected_syslog_sources or []) | self.switch_syslog_sources
+                ),
+                "source_kinds": {
+                    **{name: "router" for name in expected_syslog_sources or []},
+                    **{name: "switch" for name in self.switch_syslog_sources},
+                },
                 "sources": {},
+                "transports": {},
                 "missing_sources": [],
             },
             "failures": [],
@@ -224,9 +241,17 @@ class DeviceLogCollector:
             stream=stream,
         )
         if device_time:
-            event["device_timestamp"] = device_time
+            event["docker_timestamp"] = device_time
+            event.setdefault("device_timestamp", device_time)
         if redacted:
             event["redacted"] = True
+        if (
+            event["attributes"].get("_metropolis_switch_syslog") is True
+            and source not in self.switch_syslog_sources
+        ):
+            event["component"] = component
+            event["stream"] = stream
+            event["attributes"].pop("transport", None)
         with self.lock:
             if redacted:
                 raw.write((safe_line + "\n").encode("utf-8"))
@@ -244,6 +269,20 @@ class DeviceLogCollector:
                     syslog_output.flush()
                 sources = self.manifest["syslog"]["sources"]
                 sources[event["source"]] = sources.get(event["source"], 0) + 1
+                self.manifest["syslog"]["transports"][event["source"]] = event[
+                    "attributes"
+                ].get("transport", "unknown")
+                if event["event"] in {
+                    "ovs_log_unavailable",
+                    "ovs_log_read_failed",
+                    "switch_start_failed",
+                    "switch_config_failed",
+                    "switch_health_failed",
+                }:
+                    self._failure(
+                        source,
+                        f"switch syslog reported {event['event']}: {event['message']}",
+                    )
         return key_open
 
     def discover(self) -> None:
@@ -389,7 +428,8 @@ class DeviceLogCollector:
                 - self.manifest["syslog"]["sources"].keys()
             )
             for source in self.manifest["syslog"]["missing_sources"]:
-                self._failure(source, "no router syslog captured")
+                kind = self.manifest["syslog"]["source_kinds"].get(source, "router")
+                self._failure(source, f"no {kind} syslog captured")
             self.manifest["stopped_at_utc"] = utc_now()
             self.manifest["status"] = (
                 "interrupted"

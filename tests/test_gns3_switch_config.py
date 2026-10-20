@@ -59,6 +59,36 @@ def test_runtime_rejects_malformed_and_ambiguous_vlan_settings():
     }
 
 
+def test_ovs_daemon_log_follower_preserves_events_and_reports_missing_files(tmp_path):
+    daemon = tmp_path / "ovs-vswitchd.log"
+    missing = tmp_path / "ovsdb-server.log"
+    daemon.write_text("2026-10-20T03:15:12.482Z|00001|bridge|INFO|port eth0 up\n")
+    follower = runtime.OvsLogFollower((daemon, missing))
+    first = follower.poll()
+    assert first[0]["event"] == "ovs_log"
+    assert first[0]["level"] == "INFO"
+    assert first[0]["timestamp"] == "2026-10-20T03:15:12.482Z"
+    assert first[0]["message"] == "port eth0 up"
+    assert first[1]["event"] == "ovs_log_unavailable"
+    assert follower.poll() == []
+    with daemon.open("a") as output:
+        output.write("2026-10-20T03:15:13Z|00002|bridge|WARN|port eth0 down\n")
+    assert [event["message"] for event in follower.poll()] == ["port eth0 down"]
+    daemon.write_text("malformed daemon line\n")
+    assert follower.poll()[0]["message"] == "malformed daemon line"
+
+
+def test_switch_health_reports_ovs_database_failure(monkeypatch):
+    def fail(*_args):
+        raise subprocess.CalledProcessError(1, "ovs-vsctl", stderr="database down")
+
+    monkeypatch.setattr(runtime, "command", fail)
+    event = runtime.health_event()
+    assert event["event"] == "switch_health_failed"
+    assert event["level"] == "ERROR"
+    assert event["message"] == "database down"
+
+
 def test_runtime_reads_real_ovs_fields_for_verification(monkeypatch):
     responses = {
         ("port-to-br", "eth0"): "br0",

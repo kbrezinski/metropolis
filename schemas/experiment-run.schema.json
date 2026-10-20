@@ -60,7 +60,9 @@
       "properties": {
         "path": {"type": "string"},
         "expected_sources": {"type": "array", "items": {"type": "string"}},
+        "source_kinds": {"type": "object", "additionalProperties": {"enum": ["router", "switch"]}},
         "sources": {"type": "object", "additionalProperties": {"type": "integer", "minimum": 1}},
+        "transports": {"type": "object", "additionalProperties": {"enum": ["udp_relay", "docker_stdout_bridge", "unknown"]}},
         "missing_sources": {"type": "array", "items": {"type": "string"}}
       },
       "additionalProperties": false

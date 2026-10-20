@@ -890,6 +890,10 @@ def test_experiment_collects_router_syslog_and_pcap_under_one_run(
             return self.returncode
 
     def collector_factory(*args, **kwargs):
+        # This fixture supplies router relay output only; switch Docker nodes
+        # and their log followers are covered by the focused collector tests.
+        kwargs["expected_switch_syslog_sources"] = []
+
         def start(*_args, **_kwargs):
             attached.set()
             return Process()

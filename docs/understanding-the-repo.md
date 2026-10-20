@@ -688,7 +688,7 @@ speed bump so nothing fires by accident.
 | `mqtt_flood_attack.py` | Sends many MQTT messages; can also plant or clear a *retained* message (one the broker keeps and delivers to future subscribers). |
 | `ssh_bruteforce_attack.py` | Guesses SSH passwords, then runs one harmless command to prove access. |
 | `mirai_infection_sim.py` | Guesses Telnet passwords, then runs one harmless command. |
-| `coap_amplification_attack.py` | Measures how much bigger a CoAP reply is than the request. Small requests with big replies are what makes a *reflection* attack possible. |
+| `coap_response_measurement.py` | Measures bounded CoAP response sizes and optional private-lab reflection traffic. |
 | `modbus_manipulation_attack.py` | Writes to the PLC's registers and coils — changing the water level the plant believes it has. |
 | `run_bounded_hping3.py` | Generates bounded packet traffic for availability experiments. Its supported profiles and safety limits are documented with the attack toolkit. |
 

@@ -17,7 +17,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 ATTACKS = ROOT / "scripts/attacks"
 sys.path.insert(0, str(ATTACKS))
-import coap_amplification_attack as coap  # noqa: E402
+import coap_response_measurement as coap  # noqa: E402
 import coap_experiment_report as report  # noqa: E402
 import coap_reflection_receiver as receiver  # noqa: E402
 

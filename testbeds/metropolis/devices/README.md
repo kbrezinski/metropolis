@@ -257,7 +257,7 @@ actual compute host. The following audit describes what those streams contain:
 | Legacy Telnet gateway | Structured startup/failure events. BusyBox `telnetd` does not reliably send individual login outcomes to container stdout/stderr; use PCAPs for Telnet session traffic. |
 | DNS | `dnsmasq` query and startup output. |
 | NTP and syslog relay | `chronyd -d` startup, synchronization warnings and errors; structured router syslog datagrams on UDP 514. Chrony does not emit a line for every client request by default. |
-| Metropolis Open vSwitch | Startup readiness and configuration failures on stdout/stderr; the builder verifies each port against OVS state. |
+| Metropolis Open vSwitch | Structured startup/configuration events and followed `ovsdb-server`/`ovs-vswitchd` operational log files. The builder verifies each port against OVS state. |
 | Mirai and Merlin synthetic nodes | Lifecycle, command and report events; the wget loader uses the same loader model. |
 | Reachability probe | Intentionally idle and minimal; no service log is expected. The run manifest lists it as an intentionally silent source without counting its silence as a collector failure. |
 
@@ -265,8 +265,14 @@ VyOS router logs are separate from Docker stdout. Router scripts forward system,
 authentication, interface and configuration messages at `info` or higher to
 `MET-NTP-01` on UDP 514, where the syslog relay prints structured records for
 the experiment collector. UDP can lose messages, and the collector flags routers
-from which no syslog arrived. The Metropolis Open vSwitch image is a Docker node,
-so experiment runs collect its stdout and stderr with the other Docker sources.
+from which no syslog arrived. The Metropolis Open vSwitch image is a Docker node
+without a routed management interface. Its supervisor forwards OVS daemon file
+logs as marked JSON on Docker stdout; the run collector files these under
+`logs/syslog.jsonl` with `component=switch`, `stream=syslog`, and
+`transport=docker_stdout_bridge`. Unmarked stdout/stderr remains ordinary
+device output. The run manifest reports missing switch events and daemon log
+failures. This path requires Docker access to the GNS3 compute and does not
+deliver switch UDP datagrams to `MET-NTP-01`.
 
 ## Attack lab
 

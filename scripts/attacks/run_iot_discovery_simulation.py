@@ -15,7 +15,7 @@ import time
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 
 from _common import Run, cli, inventory, ipv4, parser, positive, schedule
-from coap_amplification_attack import build_get, valid_response
+from coap_response_measurement import build_get, valid_response
 from network_recon_scan import TCP_PORTS, UDP_PORTS
 
 MAX_HOSTS = 256

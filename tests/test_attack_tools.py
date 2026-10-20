@@ -46,7 +46,7 @@ def records(result):
 @pytest.mark.parametrize(
     "name,args",
     [
-        ("coap_amplification_attack.py", []),
+        ("coap_response_measurement.py", []),
         ("mqtt_bruteforce_attack.py", []),
         ("mqtt_flood_attack.py", []),
         ("modbus_manipulation_attack.py", ["--action", "set-level"]),
@@ -77,17 +77,17 @@ def test_missing_ack_and_invalid_settings_fail_before_network():
     assert invoke("mqtt_bruteforce_attack.py", ack=False).returncode == 2
     assert (
         invoke(
-            "coap_amplification_attack.py", "--host", "8.8.8.8", "--dry-run"
+            "coap_response_measurement.py", "--host", "8.8.8.8", "--dry-run"
         ).returncode
         == 2
     )
     assert (
-        invoke("coap_amplification_attack.py", "--rate", "nan", "--dry-run").returncode
+        invoke("coap_response_measurement.py", "--rate", "nan", "--dry-run").returncode
         == 2
     )
     assert (
         invoke(
-            "coap_amplification_attack.py", "--mode", "spoof", "--dry-run"
+            "coap_response_measurement.py", "--mode", "spoof", "--dry-run"
         ).returncode
         == 2
     )
@@ -115,7 +115,7 @@ def test_future_inventory_supplies_addresses_and_ports(tmp_path):
     alternate = tmp_path / "inventory.yaml"
     alternate.write_text(yaml.safe_dump(data), encoding="utf-8")
     result = invoke(
-        "coap_amplification_attack.py", "--inventory", alternate, "--dry-run"
+        "coap_response_measurement.py", "--inventory", alternate, "--dry-run"
     )
     assert result.returncode == 0, result.stdout + result.stderr
     assert records(result)[0]["host"] == "10.20.10.25"
@@ -153,7 +153,7 @@ def test_coap_uses_the_real_sensor_on_loopback():
     worker.start()
     try:
         result = invoke(
-            "coap_amplification_attack.py",
+            "coap_response_measurement.py",
             "--host",
             "127.0.0.1",
             "--port",

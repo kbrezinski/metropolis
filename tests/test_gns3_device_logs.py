@@ -314,6 +314,79 @@ def test_router_syslog_is_saved_separately_and_missing_routers_fail(tmp_path):
     assert manifest["status"] == "failed"
 
 
+def test_switch_syslog_attribution_transport_and_failure_reporting(tmp_path):
+    switch = {**node(), "name": "sw-dmz"}
+    payload = (
+        b'2026-10-20T03:15:13Z {"_metropolis_switch_syslog":true,'
+        b'"timestamp":"2026-10-20T03:15:12.482Z","source":"spoofed",'
+        b'"event":"ovs_log","level":"WARN","message":"port down"}\n'
+        b"2026-10-20T03:15:14Z plain simulator output\n"
+    )
+    collector = DeviceLogCollector(
+        FakeClient([switch]),
+        "project-1",
+        tmp_path / "run",
+        "run",
+        {"remote-1": "ssh://host"},
+        expected_switch_syslog_sources=["sw-dmz", "sw-plant-aggregation"],
+        popen=lambda *_args, **_kwargs: FakeProcess(payload, b""),
+    )
+    manifest = collector.run(0.01, poll_interval=0.001)
+    events = [
+        json.loads(line)
+        for line in (tmp_path / "run/logs/devices.jsonl").read_text().splitlines()
+    ]
+    assert events[0]["source"] == "sw-dmz"
+    assert events[0]["component"] == "switch"
+    assert events[0]["stream"] == "syslog"
+    assert events[0]["device_timestamp"] == "2026-10-20T03:15:12.482Z"
+    assert events[0]["docker_timestamp"] == "2026-10-20T03:15:13Z"
+    assert events[1]["stream"] == "stdout"
+    assert manifest["syslog"]["transports"] == {"sw-dmz": "docker_stdout_bridge"}
+    assert manifest["syslog"]["missing_sources"] == ["sw-plant-aggregation"]
+    assert any(f["reason"] == "no switch syslog captured" for f in manifest["failures"])
+    assert len((tmp_path / "run/logs/syslog.jsonl").read_text().splitlines()) == 1
+
+
+def test_switch_daemon_log_error_marks_source_incomplete(tmp_path):
+    switch = {**node(), "name": "sw-dmz"}
+    payload = b'{"_metropolis_switch_syslog":true,"event":"ovs_log_unavailable","message":"missing ovsdb-server.log"}\n'
+    collector = DeviceLogCollector(
+        FakeClient([switch]),
+        "project-1",
+        tmp_path / "run",
+        "run",
+        {"remote-1": "ssh://host"},
+        expected_switch_syslog_sources=["sw-dmz"],
+        popen=lambda *_args, **_kwargs: FakeProcess(payload, b""),
+    )
+    manifest = collector.run(0.01, poll_interval=0.001)
+    assert manifest["status"] == "failed"
+    assert manifest["logs"]["sources"]["sw-dmz"]["complete"] is False
+    assert any("ovs_log_unavailable" in f["reason"] for f in manifest["failures"])
+
+
+def test_switch_marker_from_non_switch_stays_container_output(tmp_path):
+    payload = b'{"_metropolis_switch_syslog":true,"event":"ovs_log","message":"claimed switch event"}\n'
+    collector = DeviceLogCollector(
+        FakeClient([node()]),
+        "project-1",
+        tmp_path / "run",
+        "run",
+        {"remote-1": "ssh://host"},
+        expected_switch_syslog_sources=["sw-dmz"],
+        popen=lambda *_args, **_kwargs: FakeProcess(payload, b""),
+    )
+    manifest = collector.run(0.01, poll_interval=0.001)
+    event = json.loads(
+        (tmp_path / "run/logs/devices.jsonl").read_text().splitlines()[0]
+    )
+    assert event["stream"] == "stdout"
+    assert event["source"] == "MET-SCADA-01"
+    assert manifest["syslog"]["sources"] == {}
+    assert manifest["syslog"]["missing_sources"] == ["sw-dmz"]
+
+
 def test_ntp_supervisor_cleans_up_when_syslog_cannot_start(monkeypatch, capsys):
     process = FakeProcess(b"", b"")
     calls = 0

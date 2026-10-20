@@ -7,6 +7,7 @@
   "properties": {
     "timestamp": {"type": "string", "format": "date-time"},
     "device_timestamp": {"type": "string", "format": "date-time"},
+    "docker_timestamp": {"type": "string", "format": "date-time"},
     "relay_timestamp": {"type": "string", "format": "date-time"},
     "run_id": {"type": "string", "minLength": 1},
     "source": {"type": "string", "minLength": 1},
