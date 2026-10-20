@@ -8,11 +8,14 @@ GNS3 server is involved: a fake client records what the builder would do.
 from __future__ import annotations
 
 import json
+import io
 import struct
 import sys
+import threading
 from pathlib import Path
 
 import pytest
+from jsonschema import Draft202012Validator, FormatChecker
 
 GNS3 = Path(__file__).resolve().parents[1] / "scripts" / "gns3"
 if str(GNS3) not in sys.path:
@@ -22,6 +25,8 @@ from _cli import load_documents, load_plan, template_name_by_image  # noqa: E402
 from builder import build, existing_link_keys, port_map_yaml  # noqa: E402
 from capture import capture_for, coverage_report, resolve_links  # noqa: E402
 from client import Node, Project  # noqa: E402
+from experiment import run_experiment  # noqa: E402
+from device_logs import DeviceLogCollector  # noqa: E402
 from lifecycle import (  # noqa: E402
     TIER_CLIENT,
     TIER_ROUTER,
@@ -676,3 +681,132 @@ def test_capture_missing_path_and_empty_file_are_failures(built_capture, tmp_pat
     again = capture_for(client, "p1", resolution, [name], 1, tmp_path, {})
     assert any("contains no packets" in item for item in again.failed)
     assert again.files == {}
+
+
+def test_experiment_shares_run_id_and_reports_missing_log_sources(
+    documents, built_capture, tmp_path
+):
+    address_plan, inventory, infrastructure, link_plan = documents
+    client, topology, resolution = built_capture
+    chosen = "link-core-plant"
+    run_id = "test_shared_run"
+
+    def fast_capture(*args, **kwargs):
+        return capture_for(*args, **kwargs, sleep=lambda _: None)
+
+    manifest = run_experiment(
+        client,
+        Project("p1", "lab", "opened"),
+        topology,
+        inventory,
+        infrastructure,
+        link_plan,
+        tmp_path,
+        run_id,
+        0.01,
+        {},
+        selected_links=[chosen],
+        metadata={"testbed_id": address_plan["testbed_id"], "dataset_version": "v1"},
+        capture_fn=fast_capture,
+    )
+    capture_entry = manifest["capture"]["links"][chosen]
+    assert capture_entry["gns3_link_id"] == resolution.resolved[chosen]
+    assert capture_entry["sha256"] and capture_entry["packet_count"] == 1
+    assert Path(capture_entry["local_file"]).is_file()
+    assert Path(manifest["captures"][0]).parent == tmp_path / "captures" / run_id
+    assert manifest["syslog"]["missing_sources"]
+    assert manifest["status"] == "failed"
+    timeline = [
+        json.loads(line)
+        for line in (tmp_path / "runs" / run_id / "timeline.jsonl")
+        .read_text()
+        .splitlines()
+    ]
+    assert [entry["event"] for entry in timeline] == [
+        "run_started",
+        "capture_started",
+        "capture_finished",
+        "run_finished",
+    ]
+    schema = json.loads(
+        (
+            Path(__file__).resolve().parents[1] / "schemas/experiment-run.schema.json"
+        ).read_text()
+    )
+    Draft202012Validator(schema, format_checker=FormatChecker()).validate(manifest)
+
+
+def test_experiment_collects_router_syslog_and_pcap_under_one_run(
+    documents, built_capture, tmp_path
+):
+    _, inventory, infrastructure, link_plan = documents
+    client, topology, _ = built_capture
+    for node in client._nodes:
+        if node["name"] == "MET-NTP-01":
+            node.update(
+                node_type="docker",
+                status="started",
+                compute_id="local",
+                properties={"container_id": "ntp-container"},
+            )
+    router_lines = b"".join(
+        (
+            json.dumps(
+                {
+                    "_metropolis_syslog": True,
+                    "timestamp": "2026-10-20T03:15:12Z",
+                    "source": router["name"],
+                    "event": "syslog_message",
+                    "message": "interface up",
+                }
+            )
+            + "\n"
+        ).encode()
+        for router in infrastructure["routers"]
+    )
+    attached = threading.Event()
+
+    class Process:
+        stdout = io.BytesIO(router_lines)
+        stderr = io.BytesIO(b"")
+        returncode = None
+
+        def poll(self):
+            return self.returncode
+
+        def terminate(self):
+            self.returncode = -15
+
+        def wait(self, timeout=None):
+            return self.returncode
+
+    def collector_factory(*args, **kwargs):
+        def start(*_args, **_kwargs):
+            attached.set()
+            return Process()
+
+        return DeviceLogCollector(*args, **kwargs, popen=start)
+
+    def fast_capture(*args, **kwargs):
+        assert attached.wait(2)
+        return capture_for(*args, **kwargs, sleep=lambda _: None)
+
+    manifest = run_experiment(
+        client,
+        Project("p1", "lab", "opened"),
+        topology,
+        inventory,
+        infrastructure,
+        link_plan,
+        tmp_path,
+        "complete_run",
+        0.1,
+        {"local": "ssh://host"},
+        selected_links=["link-core-plant"],
+        collector_factory=collector_factory,
+        capture_fn=fast_capture,
+    )
+    assert manifest["status"] == "complete"
+    assert len(manifest["syslog"]["sources"]) == len(infrastructure["routers"])
+    assert manifest["syslog"]["missing_sources"] == []
+    assert manifest["capture"]["links"]["link-core-plant"]["sha256"]

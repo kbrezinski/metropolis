@@ -68,7 +68,7 @@ def main() -> int:
     except ValueError as exc:
         parser.error(str(exc))
     dataset = args.dataset.resolve()
-    address_plan, _, _, _ = load_documents(dataset)
+    address_plan, inventory, infrastructure, _ = load_documents(dataset)
     client = connect(args)
     project = client.project_by_name(args.project)
     if project is None:
@@ -90,6 +90,14 @@ def main() -> int:
                 "timeline_path": "timeline.jsonl",
                 "captures": [],
             },
+            expected_syslog_sources=[
+                router["name"] for router in infrastructure["routers"]
+            ],
+            silent_sources=[
+                device["name"]
+                for device in inventory["devices"]
+                if device["image"] == "metropolis/reachability-probe:dev"
+            ],
             docker_binary=args.docker_binary,
         )
     except FileExistsError:

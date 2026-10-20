@@ -27,6 +27,10 @@ SECRET = re.compile(
 PEM_START = re.compile(r"-----BEGIN (?:[A-Z ]* )?PRIVATE KEY-----")
 PEM_END = re.compile(r"-----END (?:[A-Z ]* )?PRIVATE KEY-----")
 SAFE_NAME = re.compile(r"[^A-Za-z0-9._-]+")
+SSH_AUTH = re.compile(
+    r"\b(?P<outcome>Accepted|Failed) (?P<method>password|publickey) for "
+    r"(?:(?:invalid user) )?(?P<user>\S+) from (?P<peer>\S+) port (?P<port>\d+)"
+)
 
 
 def redact(line: str, *, in_private_key: bool = False) -> tuple[str, bool, bool]:
@@ -64,6 +68,21 @@ def normalize_line(
     try:
         value = json.loads(line)
     except (json.JSONDecodeError, ValueError):
+        auth = SSH_AUTH.search(line) if component in {"engineering", "ssh"} else None
+        if auth:
+            record["component"] = "ssh"
+            record["event"] = (
+                "ssh_auth_succeeded"
+                if auth["outcome"] == "Accepted"
+                else "ssh_auth_failed"
+            )
+            record["level"] = "INFO" if auth["outcome"] == "Accepted" else "WARNING"
+            record["attributes"] = {
+                "method": auth["method"],
+                "user": auth["user"],
+                "peer_ip": auth["peer"],
+                "peer_port": int(auth["port"]),
+            }
         return record
     if not isinstance(value, dict):
         return record
@@ -78,11 +97,20 @@ def normalize_line(
                 record["device_timestamp"] = event_time
     if isinstance(value.get("level"), str):
         record["level"] = value["level"].upper()
+    if isinstance(value.get("component"), str):
+        record["component"] = value["component"]
     if isinstance(value.get("event"), str):
         record["event"] = value["event"]
     if isinstance(value.get("message"), str):
         record["message"] = value["message"]
     record["attributes"] = value
+    if value.get("_metropolis_syslog") is True:
+        record["source"] = str(value.get("source") or source)
+        record["component"] = "router"
+        record["stream"] = "syslog"
+        relay_time = record.pop("device_timestamp", None)
+        if relay_time:
+            record["relay_timestamp"] = relay_time
     return record
 
 
@@ -103,6 +131,8 @@ class DeviceLogCollector:
         docker_hosts: dict[str, str],
         *,
         metadata: dict | None = None,
+        expected_syslog_sources: list[str] | None = None,
+        silent_sources: list[str] | None = None,
         docker_binary: str = "docker",
         popen=subprocess.Popen,
     ):
@@ -112,6 +142,7 @@ class DeviceLogCollector:
         self.run_id = run_id
         self.docker_hosts = docker_hosts
         self.docker_binary = docker_binary
+        self.silent_sources = set(silent_sources or [])
         self.popen = popen
         self.lock = threading.RLock()
         self.processes: dict[str, subprocess.Popen] = {}
@@ -124,12 +155,23 @@ class DeviceLogCollector:
             "project_id": project_id,
             "started_at_utc": self.started_at,
             "status": "running",
-            "logs": {"normalized_path": "logs/devices.jsonl", "sources": {}},
+            "logs": {
+                "normalized_path": "logs/devices.jsonl",
+                "sources": {},
+                "intentionally_silent_sources": sorted(self.silent_sources),
+            },
+            "syslog": {
+                "path": "logs/syslog.jsonl",
+                "expected_sources": sorted(expected_syslog_sources or []),
+                "sources": {},
+                "missing_sources": [],
+            },
             "failures": [],
         }
         run_dir.mkdir(parents=True, exist_ok=False)
         (run_dir / "logs" / "raw").mkdir(parents=True)
         (run_dir / "logs" / "devices.jsonl").touch()
+        (run_dir / "logs" / "syslog.jsonl").touch()
         (run_dir / "timeline.jsonl").touch()
         self._write_manifest()
 
@@ -194,6 +236,14 @@ class DeviceLogCollector:
             normalized.write(json.dumps(event, ensure_ascii=False) + "\n")
             normalized.flush()
             self.manifest["logs"]["sources"][source]["lines"] += 1
+            if event["stream"] == "syslog":
+                with (self.run_dir / "logs" / "syslog.jsonl").open(
+                    "a", encoding="utf-8"
+                ) as syslog_output:
+                    syslog_output.write(json.dumps(event, ensure_ascii=False) + "\n")
+                    syslog_output.flush()
+                sources = self.manifest["syslog"]["sources"]
+                sources[event["source"]] = sources.get(event["source"], 0) + 1
         return key_open
 
     def discover(self) -> None:
@@ -256,14 +306,22 @@ class DeviceLogCollector:
                 thread.start()
                 self.threads.append(thread)
 
-    def run(self, duration: float, *, poll_interval: float = 1.0) -> dict:
+    def run(
+        self,
+        duration: float,
+        *,
+        poll_interval: float = 1.0,
+        stop_event: threading.Event | None = None,
+    ) -> dict:
         """Follow until the deadline or interruption and always finish the manifest."""
         if duration <= 0:
             raise ValueError("duration must be positive")
         deadline = time.monotonic() + duration
         interrupted = False
         try:
-            while time.monotonic() < deadline:
+            while time.monotonic() < deadline and not (
+                stop_event is not None and stop_event.is_set()
+            ):
                 try:
                     self.discover()
                 except Exception as exc:  # noqa: BLE001 - retry until run ends
@@ -275,7 +333,11 @@ class DeviceLogCollector:
                             f"Docker log process ended during run (exit {process.returncode})",
                         )
                         del self.processes[source]
-                time.sleep(min(poll_interval, max(0, deadline - time.monotonic())))
+                delay = min(poll_interval, max(0, deadline - time.monotonic()))
+                if stop_event is None:
+                    time.sleep(delay)
+                else:
+                    stop_event.wait(delay)
         except KeyboardInterrupt:
             interrupted = True
             self._failure("collector", "interrupted")
@@ -314,11 +376,20 @@ class DeviceLogCollector:
                 self._failure("collector", f"final GNS3 discovery failed: {exc}")
             for source, item in self.manifest["logs"]["sources"].items():
                 if item["lines"] == 0:
-                    self._failure(source, "no device logs captured")
+                    if source not in self.silent_sources:
+                        self._failure(source, "no device logs captured")
                 elif not any(f["source"] == source for f in self.manifest["failures"]):
                     item["complete"] = True
-            if not self.manifest["logs"]["sources"]:
+            if not any(
+                item["lines"] > 0 for item in self.manifest["logs"]["sources"].values()
+            ):
                 self._failure("collector", "no Docker sources produced logs")
+            self.manifest["syslog"]["missing_sources"] = sorted(
+                set(self.manifest["syslog"]["expected_sources"])
+                - self.manifest["syslog"]["sources"].keys()
+            )
+            for source in self.manifest["syslog"]["missing_sources"]:
+                self._failure(source, "no router syslog captured")
             self.manifest["stopped_at_utc"] = utc_now()
             self.manifest["status"] = (
                 "interrupted"

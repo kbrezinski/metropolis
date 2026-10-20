@@ -30,6 +30,13 @@ ROUTERS = Path(__file__).resolve().parents[1] / "testbeds/metropolis/router"
 SCRIPTS = sorted(ROUTERS.rglob("*.sh"))
 
 
+def test_every_vyos_router_forwards_operational_syslog():
+    assert len(SCRIPTS) == 6
+    for script in SCRIPTS:
+        commands = config_commands(script)
+        assert "set system syslog host 10.20.30.11 facility all level info" in commands
+
+
 class ScriptedSocket:
     """A socket that replies to each command the way a router would.
 

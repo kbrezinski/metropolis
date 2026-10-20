@@ -690,7 +690,7 @@ speed bump so nothing fires by accident.
 | `mirai_infection_sim.py` | Guesses Telnet passwords, then runs one harmless command. |
 | `coap_amplification_attack.py` | Measures how much bigger a CoAP reply is than the request. Small requests with big replies are what makes a *reflection* attack possible. |
 | `modbus_manipulation_attack.py` | Writes to the PLC's registers and coils — changing the water level the plant believes it has. |
-| `run_bounded_hping3.py` | Sends a capped amount of load at a service, to study availability. |
+| `run_bounded_hping3.py` | Generates bounded packet traffic for availability experiments. Its supported profiles and safety limits are documented with the attack toolkit. |
 
 ### 7.2 The two drivers
 
@@ -750,6 +750,8 @@ purpose, plus a couple of shared helpers.
 | `client.py` | A friendly wrapper: `create_node`, `create_link`, `start_capture`, and so on. One method per thing you can ask GNS3 to do. |
 | `config.py` | Finds where GNS3 is running and how to log in, by reading its settings file or environment variables. |
 | `_cli.py` | Small helpers shared by the commands: loading the YAML files, connecting, printing errors consistently. |
+| `device_logs.py` | Follows Docker stdout/stderr and writes normalized device events plus raw logs. |
+| `experiment.py` | Coordinates a run's PCAP capture, device logs, router syslog, timeline, and run manifest. |
 
 ### 8.2 The data-to-topology layer
 
@@ -765,7 +767,9 @@ purpose, plus a couple of shared helpers.
 | `register_templates.py` | Tells GNS3 about each Docker image, once, so nodes can be created from them. Safe to rerun. |
 | `build_topology.py` | Creates the project, all 48 nodes, all 40 cables, and optionally loads each router's configuration. |
 | `lab_lifecycle.py` | Starts and stops the lab in a sensible order, and reports status. |
-| `capture_traffic.py` | Records packets on chosen links for a chosen duration. |
+| `capture_traffic.py` | Checks capture coverage and records packets on chosen links for a chosen duration, then downloads and verifies the PCAPs. |
+| `collect_device_logs.py` | Collects Docker device logs and router syslog for a run. |
+| `experiment_run.py` | Runs a coordinated experiment, giving captures and logs one run ID and recording a timeline and manifest. |
 
 They are launched through a single dispatcher, `run.py`, exactly like the attack
 tools:
@@ -804,6 +808,43 @@ cables it. Since software does the cabling here, the software is the only thing
 that can know the numbers. So `topology.py` assigns them in the order the
 specification lists the roles, and the mapping can be written out with
 `--write-ports` for a human to copy back into the documents.
+
+### 8.6 How an experiment records what happened
+
+Use `experiment_run` when you want packet captures and device-side evidence to
+share one run ID. It can start the lab, configure the routers, collect logs, and
+capture selected links (or all built physical links). The collector starts before
+lab startup so it can include device startup logs.
+
+```bash
+python scripts/gns3/run.py experiment_run --help
+python scripts/gns3/run.py experiment_run --start-lab --configure-routers \
+  --duration 60 --docker-host local=ssh://gns3@gns3-vm
+```
+
+The run manifest and event timeline are saved under
+`testbeds/metropolis/datasets/water_treatment_v1/runs/<run-id>/`. Normalized
+Docker events go to `logs/devices.jsonl`; router messages forwarded to the NTP
+node's syslog receiver go to `logs/syslog.jsonl`; original Docker output is kept
+per node under `logs/raw/`. PCAP files and a capture manifest go under
+`captures/<run-id>/`. The manifest links the artifacts, records hashes, packet
+counts, times, coverage and failures, and identifies the topology and dataset
+version used for the run. These generated run files are ignored by Git.
+
+`capture_traffic` can still be used by itself. Its coverage report compares the
+declared links with the physical GNS3 links and warns about links without a
+capture point. Capturing router uplinks does not see traffic switched entirely
+inside a local subnet. The combined runner records unavailable links and
+collection failures; it does not claim complete network visibility.
+
+Docker logs are read from each compute that hosts Docker nodes, using the
+`--docker-host COMPUTE_ID=URI` mapping. The collector normalizes timestamps and
+structured events, and redacts common credential patterns. Review raw logs
+before sharing them because arbitrary application text can still contain
+secrets. VyOS routers forward syslog over UDP to the NTP service node; UDP can
+drop messages, and Open vSwitch logs are not collected by this path. Run schemas
+are in `schemas/experiment-run.schema.json` and
+`schemas/device-log-event.schema.json`.
 
 ---
 
@@ -1241,7 +1282,12 @@ export METROPOLIS_LAB_ACK=yes
 python scripts/attacks/run.py network_recon_scan --dry-run   # what would happen
 python scripts/attacks/run.py network_recon_scan             # do it
 
-# 7. Record it.
+# 7. Record an experiment. The same run ID ties PCAPs, device logs,
+#    router syslog, timeline events, and the manifest together.
+python scripts/gns3/run.py experiment_run --duration 60 \
+  --docker-host local=ssh://gns3@gns3-vm
+
+# Or capture selected links by itself:
 python scripts/gns3/run.py capture_traffic --list
 python scripts/gns3/run.py capture_traffic --links link-core-plant --duration 60
 
@@ -1262,12 +1308,17 @@ python scripts/gns3/run.py lab_lifecycle --stop
    verifies the result.
 7. Normal traffic flows: MQTT messages through the broker, Modbus polls to the
    PLC, DNS lookups, NTP exchanges, CoAP answers.
-8. The attack tool adds hostile traffic, and prints one JSON line per action.
-9. Capture writes a `.pcap` file you can open in Wireshark.
+8. The attack tool adds hostile traffic, and can write a JSONL event log.
+9. The experiment collector follows Docker logs, receives forwarded router
+   syslog, and captures packets on selected physical links.
+10. It writes verified PCAPs, normalized and raw logs, a timeline, and manifests
+    that connect the artifacts and report gaps or failures.
 
-**What you end up with:** a `.pcap` recording of a simulated plant, containing
-both normal operation and a deliberate attack, with a machine-readable log of
-exactly what the attack did and when.
+**What you end up with:** PCAPs you can inspect in Wireshark, device and router
+logs, and a manifest/timeline for the run. The attack tool's own JSONL events are
+separate evidence; they describe the tool's actions, while PCAP and device logs
+show observed network and device behavior. Together these sources help correlate
+what was attempted with what the testbed recorded.
 
 ---
 
@@ -1277,13 +1328,14 @@ Read this before drawing conclusions from anything above.
 
 | Limit | Why it matters |
 |---|---|
-| **Never run against a real GNS3 server** | The design is complete and the software is tested, but no one has yet built the lab end to end. Expect small surprises on first run. |
-| **No captured traffic yet** | `captures/` is empty. There is no dataset to analyse. |
+| **Use only an isolated lab GNS3 server** | The attack tools are designed for the Metropolis lab. Confirm the selected GNS3 project and network before running traffic-generating commands. |
+| **Live collection depends on the lab setup** | The collector needs Docker access to each relevant GNS3 compute, router syslog forwarding, and physical capture points. Its manifests report missing sources and links; check them before interpreting a run. |
+| **Coverage is not automatic or complete** | Local switched traffic is invisible from a router uplink, and uncabled paths have no capture point. Use the coverage report and inspect the resulting PCAPs. |
 | **No firewall or encryption on the network path** | Routers move traffic but do not restrict it. Attacks can reach anything routable. |
 | **CoAP is plaintext** | Its encrypted form (DTLS) was attempted, did not work, and was removed. Plaintext CoAP is complete. |
 | **Only three device families** | Gotham, the prior work, has twelve. Fewer distinct behaviours means less for a detector to tell apart. |
 | **The process model is light** | The PLC's values are coupled and move realistically, but this is not a real hydraulic model. A register write is not a model of real damage. |
-| **No scenarios, labelling, or model** | There is no scripted experiment playback, no automatic labelling of captures, and no detection model at all. |
+| **No automatic labelling or detection model** | Run artifacts are collected and correlated, but the repository does not yet automatically label captures or provide a detection model. |
 | **The attack lab is simulated** | Its traffic is botnet-shaped, not real malware. |
 
 ---
@@ -1297,6 +1349,8 @@ Read this before drawing conclusions from anything above.
 | What addresses and services exist | `testbeds/metropolis/datasets/water_treatment_v1/` |
 | Which attack to run, and against what | `scripts/attacks/README.md`, then `SERVICE_TARGETS.md` |
 | How to build and run the lab | `scripts/gns3/README.md` |
+| How experiment PCAPs, device logs, and syslog are collected | `scripts/gns3/README.md`, especially “Experiment device logs” |
+| What a dataset run stores | `testbeds/metropolis/datasets/water_treatment_v1/README.md` |
 | What is finished and what is not | the checkmark table in `README.md` |
 | The deep technical detail | `AGENTS.md` / `CLAUDE.md` |
 | Whether a change broke something | run `uv run pytest` |

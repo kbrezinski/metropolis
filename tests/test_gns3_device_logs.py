@@ -18,6 +18,13 @@ from collect_device_logs import docker_host_mapping  # noqa: E402
 import device_logs  # noqa: E402
 from device_logs import DeviceLogCollector, normalize_line, redact  # noqa: E402
 
+NTP_SERVICE = (
+    Path(__file__).resolve().parents[1] / "testbeds/metropolis/devices/services/ntp"
+)
+sys.path.insert(0, str(NTP_SERVICE))
+from syslog_receiver import parse_syslog  # noqa: E402
+import start_services as ntp_services  # noqa: E402
+
 
 class FakeClient:
     def __init__(self, nodes):
@@ -82,6 +89,36 @@ def test_json_and_plain_text_preserve_device_fields_and_collector_time():
     assert structured["run_id"] == plain["run_id"] == "run-1"
     for record in (structured, plain):
         assert datetime.fromisoformat(record["timestamp"].replace("Z", "+00:00")).tzinfo
+
+
+def test_ssh_auth_outcomes_and_syslog_source_attribution():
+    failed = normalize_line(
+        "Failed password for invalid user guest from 10.20.21.30 port 40123 ssh2",
+        run_id="run-1",
+        source="MET-ENGINEERING-01",
+        component="engineering",
+        stream="stderr",
+    )
+    assert failed["event"] == "ssh_auth_failed"
+    assert failed["attributes"]["peer_ip"] == "10.20.21.30"
+    assert failed["attributes"]["user"] == "guest"
+    assert "password" not in failed["attributes"]
+    router = parse_syslog(
+        b"<86>Oct 20 03:15:12 MET-OT-CORE sshd[10]: Accepted publickey for vyos",
+        "10.20.30.1",
+    )
+    event = normalize_line(
+        json.dumps(router),
+        run_id="run-1",
+        source="MET-NTP-01",
+        component="ntp",
+        stream="stdout",
+    )
+    assert event["source"] == "MET-OT-CORE"
+    assert event["stream"] == "syslog"
+    assert event["component"] == "router"
+    assert event["attributes"]["peer_ip"] == "10.20.30.1"
+    assert event["relay_timestamp"]
 
 
 def test_redaction_preserves_json_and_hides_pem_material():
@@ -242,5 +279,82 @@ def test_gns3_discovery_failure_is_preserved_in_manifest(tmp_path):
     )
     manifest = collector.run(0.01, poll_interval=0.005)
     assert manifest["status"] == "failed"
-    assert any("controller disconnected" in failure["reason"] for failure in manifest["failures"])
+    assert any(
+        "controller disconnected" in failure["reason"]
+        for failure in manifest["failures"]
+    )
     assert json.loads((tmp_path / "run/manifest.json").read_text())["failures"]
+
+
+def test_router_syslog_is_saved_separately_and_missing_routers_fail(tmp_path):
+    payload = (
+        json.dumps(
+            parse_syslog(
+                b"<30>Oct 20 03:15:12 MET-OT-CORE interface eth0 up", "10.20.30.1"
+            )
+        ).encode()
+        + b"\n"
+    )
+    process = FakeProcess(payload, b"")
+    collector = DeviceLogCollector(
+        FakeClient([node()]),
+        "project-1",
+        tmp_path / "run",
+        "run",
+        {"remote-1": "ssh://host"},
+        expected_syslog_sources=["MET-OT-CORE", "MET-PLANT"],
+        popen=lambda *_args, **_kwargs: process,
+    )
+    manifest = collector.run(0.01, poll_interval=0.001)
+    syslog_lines = (tmp_path / "run/logs/syslog.jsonl").read_text().splitlines()
+    assert len(syslog_lines) == 1
+    assert json.loads(syslog_lines[0])["source"] == "MET-OT-CORE"
+    assert manifest["syslog"]["sources"]["MET-OT-CORE"] == 1
+    assert manifest["syslog"]["missing_sources"] == ["MET-PLANT"]
+    assert manifest["status"] == "failed"
+
+
+def test_ntp_supervisor_cleans_up_when_syslog_cannot_start(monkeypatch, capsys):
+    process = FakeProcess(b"", b"")
+    calls = 0
+
+    def start(_command):
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise OSError("syslog unavailable")
+        return process
+
+    monkeypatch.setattr(ntp_services.subprocess, "Popen", start)
+    monkeypatch.setattr(ntp_services.signal, "signal", lambda *_args: None)
+    assert ntp_services.main() == 1
+    assert process.terminated
+    events = [
+        json.loads(line)["event"] for line in capsys.readouterr().out.splitlines()
+    ]
+    assert "service_start_failed" in events
+    assert "services_stopped" in events
+
+
+def test_intentionally_silent_probe_is_reported_without_forcing_failure(tmp_path):
+    probe = {
+        **node(),
+        "node_id": "probe-12345678",
+        "name": "MET-DEBUG-DMZ-01",
+        "properties": {"container_id": "probe-container"},
+    }
+    processes = [FakeProcess(b"ready\n", b""), FakeProcess(b"", b"")]
+    collector = DeviceLogCollector(
+        FakeClient([node(), probe]),
+        "project-1",
+        tmp_path / "run",
+        "run",
+        {"remote-1": "ssh://host"},
+        silent_sources=[probe["name"]],
+        popen=lambda *_args, **_kwargs: processes.pop(0),
+    )
+    manifest = collector.run(0.01, poll_interval=0.001)
+    assert manifest["status"] == "complete"
+    assert manifest["logs"]["intentionally_silent_sources"] == [probe["name"]]
+    assert manifest["logs"]["sources"][probe["name"]]["lines"] == 0
+    assert manifest["logs"]["sources"][probe["name"]]["complete"] is False

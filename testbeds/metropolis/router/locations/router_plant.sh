@@ -38,6 +38,7 @@ set interfaces ethernet eth1 vif 53 address '10.20.53.1/24'
 set protocols static route 0.0.0.0/0 next-hop '10.20.254.1'
 
 set system host-name 'MET-PLANT'
+set system syslog host 10.20.30.11 facility all level info
 set system console device ttyS0 speed '115200'
 
 commit

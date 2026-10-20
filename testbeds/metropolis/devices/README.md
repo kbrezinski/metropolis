@@ -52,8 +52,8 @@ publish Docker ports — they bind to their own GNS3 interfaces.
 | Merlin C2 | `attack/merlin/` | C2 console and an inert agent | Attack lab `10.99.10.0/24` |
 
 Actuators are represented by writable Modbus coils on the PLC and RTU — pump run
-and valve open — rather than separate containers. A central log collector
-remains future work.
+and valve open — rather than separate containers. Experiment runs collect Docker
+output with `scripts/gns3/run.py experiment_run`.
 
 ## Build the images
 
@@ -217,7 +217,7 @@ Four nodes exist to give the lab a believable baseline:
 | `MET-CONTROL-CLIENT-01` | `10.20.21.20` | Every 30 seconds: resolves the PLC, requests NTP, reads four holding registers, writes register 0 and coil 0, then reads both back |
 | `MET-LEGACY-GATEWAY-01` | `10.20.10.30:23/TCP` | Telnet host with a root shell and the lab password `LabOnly_Legacy_2026` |
 | `MET-DNS-01` | `10.20.30.10:53/UDP,TCP` | Resolves local names such as `plc-intake.metropolis.test` |
-| `MET-NTP-01` | `10.20.30.11:123/UDP` | Answers NTP requests |
+| `MET-NTP-01` | `10.20.30.11:123/UDP,514/UDP` | Answers NTP requests and receives lab router syslog |
 
 Start DNS and NTP before the control client. The client carries explicit server
 addresses, so it needs no resolver change. Its level writes repeat the sequence
@@ -240,6 +240,29 @@ telnet 10.20.10.30
 Log in for Telnet as `root` with the inventory's password. Confirm the control
 client logs successful cycles and that SCADA sees register 0 change. Record
 capture points on the control-client and intake links.
+
+## Telemetry produced by runnable images
+
+The experiment collector reads each GNS3 Docker node's stdout and stderr on its
+actual compute host. The following audit describes what those streams contain:
+
+| Image or service | Container output |
+|---|---|
+| PLC/RTU, MQTT/CoAP sensor, SCADA, HMI, historian, control client | Application startup, sampled operation, errors; the CoAP responder emits structured audit events. |
+| Mosquitto broker | Broker startup, connection and authentication notices from Mosquitto's stdout configuration. |
+| Engineering workstation | Structured SSH startup/failure events; OpenSSH sends accepted and failed authentication messages to stderr, normalized as `ssh_auth_succeeded` and `ssh_auth_failed`. No passwords or keys are logged. |
+| Legacy Telnet gateway | Structured startup/failure events. BusyBox `telnetd` does not reliably send individual login outcomes to container stdout/stderr; use PCAPs for Telnet session traffic. |
+| DNS | `dnsmasq` query and startup output. |
+| NTP and syslog relay | `chronyd -d` startup, synchronization warnings and errors; structured router syslog datagrams on UDP 514. Chrony does not emit a line for every client request by default. |
+| Mirai and Merlin synthetic nodes | Lifecycle, command and report events; the wget loader uses the same loader model. |
+| Reachability probe | Intentionally idle and minimal; no service log is expected. The run manifest lists it as an intentionally silent source without counting its silence as a collector failure. |
+
+VyOS router logs are separate from Docker stdout. Router scripts forward system,
+authentication, interface and configuration messages at `info` or higher to
+`MET-NTP-01` on UDP 514, where the syslog relay prints structured records for
+the experiment collector. UDP can lose messages, and the collector flags routers
+from which no syslog arrived. The Open vSwitch appliance is not a Docker node;
+its native logs are not collected by this pipeline.
 
 ## Attack lab
 

@@ -48,6 +48,7 @@ set protocols static route 10.30.10.0/24 next-hop '10.20.254.6'
 set protocols static route 10.99.10.0/24 next-hop '10.20.254.6'
 
 set system host-name 'MET-OT-CORE'
+set system syslog host 10.20.30.11 facility all level info
 set system console device ttyS0 speed '115200'
 
 commit

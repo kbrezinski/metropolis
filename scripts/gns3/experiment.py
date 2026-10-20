@@ -1,0 +1,200 @@
+"""Coordinate Docker logs, router syslog, and PCAPs under one run ID."""
+
+from __future__ import annotations
+
+import json
+import threading
+from pathlib import Path
+
+from _cli import router_scripts
+from capture import capture_for, coverage_report, resolve_links
+from device_logs import DeviceLogCollector, utc_now
+from lifecycle import start_all
+from router_config import DEFAULT_PASSWORD, DEFAULT_USERNAME, configure_project_routers
+
+
+def run_experiment(
+    client,
+    project,
+    topology,
+    inventory: dict,
+    infrastructure: dict,
+    link_plan: dict,
+    dataset: Path,
+    run_id: str,
+    duration: float,
+    docker_hosts: dict[str, str],
+    *,
+    selected_links: list[str] | None = None,
+    start_lab: bool = False,
+    configure_routers: bool = False,
+    router_username: str = DEFAULT_USERNAME,
+    router_password: str = DEFAULT_PASSWORD,
+    startup_timeout: float = 120.0,
+    metadata: dict | None = None,
+    collector_factory=DeviceLogCollector,
+    capture_fn=capture_for,
+) -> dict:
+    """Start telemetry before optional lab startup, and stop it after capture."""
+    collector = collector_factory(
+        client,
+        project.project_id,
+        dataset / "runs" / run_id,
+        run_id,
+        docker_hosts,
+        metadata={
+            "captures": [],
+            "timeline_path": "timeline.jsonl",
+            **(metadata or {}),
+        },
+        expected_syslog_sources=[
+            router["name"] for router in infrastructure["routers"]
+        ],
+        silent_sources=[
+            device["name"]
+            for device in inventory["devices"]
+            if device["image"] == "metropolis/reachability-probe:dev"
+        ],
+    )
+    timeline = collector.run_dir / "timeline.jsonl"
+
+    def record(event: str, **attributes) -> None:
+        with timeline.open("a", encoding="utf-8") as output:
+            output.write(
+                json.dumps(
+                    {
+                        "timestamp": utc_now(),
+                        "run_id": run_id,
+                        "event": event,
+                        **attributes,
+                    }
+                )
+                + "\n"
+            )
+            output.flush()
+
+    stop_event = threading.Event()
+    # The extra time permits startup and router configuration before PCAP capture.
+    thread = threading.Thread(
+        target=collector.run,
+        args=(
+            duration
+            + (startup_timeout if start_lab else 0)
+            + (startup_timeout if configure_routers else 0)
+            + 60,
+        ),
+        kwargs={"stop_event": stop_event},
+        daemon=True,
+    )
+    thread.start()
+    capture_result = None
+    capture_manifest = None
+    orchestration_failures: list[str] = []
+    interrupted = False
+    try:
+        record("run_started", project_status=project.status)
+        if start_lab:
+            kinds = {node.name: node.kind for node in topology.nodes}
+            images = {
+                device["name"]: device["image"] for device in inventory["devices"]
+            }
+            started = start_all(
+                client, project.project_id, kinds, images, timeout=startup_timeout
+            )
+            record(
+                "lab_start_completed", started=started.started, failures=started.failed
+            )
+            orchestration_failures.extend(started.failed)
+        if configure_routers:
+            results = configure_project_routers(
+                client,
+                project.project_id,
+                router_scripts(infrastructure),
+                username=router_username,
+                password=router_password,
+            )
+            router_failures = [
+                f"{item.node}: {item.error or ', '.join(item.missing)}"
+                for item in results
+                if item.error or item.missing
+            ]
+            record(
+                "router_configuration_completed",
+                configured=[item.node for item in results if not item.error],
+                failures=router_failures,
+            )
+            orchestration_failures.extend(router_failures)
+        declared = [link["id"] for link in link_plan["links"]]
+        resolution = resolve_links(client, project.project_id, topology, declared)
+        chosen = selected_links if selected_links is not None else resolution.capturable
+        coverage = coverage_report(
+            resolution, chosen, link_plan, inventory, infrastructure
+        )
+        preflight = [
+            f"{name}: {detail['status']}"
+            for name, detail in resolution.status.items()
+            if name in resolution.declared_ids and detail["status"] != "built"
+        ]
+        if not chosen:
+            orchestration_failures.append("no built, capturable PCAP links")
+        else:
+            record("capture_started", selected_links=chosen)
+            capture_result = capture_fn(
+                client,
+                project.project_id,
+                resolution,
+                chosen,
+                duration,
+                dataset / "captures",
+                {
+                    "link_status": resolution.status,
+                    "coverage": coverage,
+                    **(metadata or {}),
+                },
+                run_id=run_id,
+                preflight_failures=preflight,
+            )
+            capture_manifest = json.loads(capture_result.manifest_path.read_text())
+            record(
+                "capture_finished",
+                captured_links=sorted(capture_result.files),
+                failures=capture_result.failed,
+            )
+            orchestration_failures.extend(capture_result.failed)
+    except KeyboardInterrupt:
+        interrupted = True
+        orchestration_failures.append("experiment interrupted")
+    except Exception as exc:  # noqa: BLE001 - always stop telemetry and retain manifest
+        orchestration_failures.append(f"experiment failed: {exc}")
+    finally:
+        stop_event.set()
+        thread.join(timeout=60)
+        if thread.is_alive():
+            orchestration_failures.append("device log collector did not stop")
+        if capture_manifest is not None:
+            collector.manifest["captures"] = [str(capture_result.manifest_path)]
+            collector.manifest["capture"] = {
+                "manifest_path": str(capture_result.manifest_path),
+                "links": capture_manifest["captures"],
+                "unavailable_declared_links": {
+                    name: detail
+                    for name, detail in capture_manifest["link_status"].items()
+                    if name in resolution.declared_ids and detail["status"] != "built"
+                },
+                "failures": capture_result.failed,
+            }
+        for reason in orchestration_failures:
+            collector.manifest["failures"].append(
+                {"source": "experiment", "reason": reason}
+            )
+        if interrupted:
+            collector.manifest["status"] = "interrupted"
+        elif collector.manifest["failures"]:
+            collector.manifest["status"] = "failed"
+        record(
+            "run_finished",
+            status=collector.manifest["status"],
+            failures=orchestration_failures,
+        )
+        collector._write_manifest()
+    return collector.manifest

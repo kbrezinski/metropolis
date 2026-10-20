@@ -27,6 +27,7 @@ set interfaces ethernet eth3 address '10.99.10.1/24'
 set protocols static route 10.20.0.0/16 next-hop '10.20.254.5'
 
 set system host-name 'MET-OT-DMZ'
+set system syslog host 10.20.30.11 facility all level info
 set system console device ttyS0 speed '115200'
 
 commit

@@ -24,6 +24,7 @@ set protocols static route 10.20.23.0/24 next-hop '172.31.255.1'
 set protocols static route 10.20.30.0/24 next-hop '172.31.255.1'
 
 set system host-name 'MET-RAW-WATER'
+set system syslog host 10.20.30.11 facility all level info
 set system console device ttyS0 speed '115200'
 
 commit

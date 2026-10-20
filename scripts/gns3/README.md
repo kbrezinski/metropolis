@@ -19,6 +19,7 @@ makes the server match it.
 | `lifecycle.py` | Startup and shutdown order, and waiting for readiness |
 | `capture.py` | Capture control on chosen links |
 | `device_logs.py` | Read-only Docker stdout/stderr collection and normalization |
+| `experiment.py` | One run ID and manifest for PCAP, device logs, and router syslog |
 | `run.py` | Single entry point for the commands below |
 | `_cli.py` | Argument and server plumbing shared by the commands |
 
@@ -44,6 +45,10 @@ python scripts/gns3/run.py capture_traffic --coverage
 python scripts/gns3/run.py capture_traffic --all-built --coverage --duration 60
 # Or choose individual declared links:
 python scripts/gns3/run.py capture_traffic --links link-core-plant attach-intake-plc --duration 60
+
+# For a complete experiment, collect logs and PCAPs together:
+python scripts/gns3/run.py experiment_run --start-lab --configure-routers --duration 60 \
+  --docker-host local=ssh://gns3@gns3-vm
 
 # 5. Stop it
 python scripts/gns3/run.py lab_lifecycle --stop
@@ -71,12 +76,38 @@ link IDs, UTC start and stop times, topology and dataset versions, server and
 local paths, packet counts, SHA-256 hashes, coverage and failures. An empty or
 missing capture is a failed run. Captures are git-ignored; preserve the manifest
 with the dataset when publishing or archiving a run.
+The original file remains at the server-side `capture_file_path` returned by
+GNS3, which can be on a remote compute. The manifest records that exact path;
+the verified dataset copy is `captures/<run-id>/<declared-link-id>.pcap` (or
+`gns3_<link-id>.pcap` for an undeclared physical link). The coverage report and
+manifest list unavailable declared links and never assert full network coverage.
 
 Coverage describes modeled paths. Inspect PCAPs containing both local subnet
 flows and routed flows before describing the data as broad network coverage.
 Uncabled or undeclared paths are outside the capture set.
 
 ## Experiment device logs
+
+`experiment_run` is the combined command. It starts Docker log collection,
+optionally starts the lab with `--start-lab`, then captures all built physical
+links for `--duration` seconds. Add `--configure-routers` to push the six VyOS
+scripts after startup; this enables their syslog forwarding for a fresh lab.
+The console password defaults to the lab's VyOS default and can be set through
+`METROPOLIS_ROUTER_PASSWORD` without putting it in a command line.
+`--links ID ...` limits capture points. All files
+share one run ID: the run manifest, timeline, `logs/devices.jsonl`, and
+`logs/syslog.jsonl` are under `runs/<run-id>/`; PCAPs and their detailed manifest
+are under `captures/<run-id>/`. The run manifest includes the capture manifest,
+link IDs, PCAP paths, hashes, timestamps, unavailable declarations and failures.
+`--start-lab` leaves nodes running after the experiment; stop them with
+`lab_lifecycle --stop` when appropriate.
+
+Six VyOS 1.3 router scripts forward `info` and higher syslog to the NTP service
+node at `10.20.30.11:514/UDP`. The NTP image must be rebuilt after this change.
+The receiver emits structured lines to its Docker stdout; the collector writes
+router-attributed copies to `logs/syslog.jsonl` and reports each router that
+sent no messages. UDP delivery is not guaranteed. Open vSwitch appliance logs
+are not collected by the Docker follower or this syslog receiver.
 
 Start the collector **before** starting the lab, then run the existing
 `lab_lifecycle --start` command in another terminal. It polls for Docker nodes
@@ -99,11 +130,12 @@ Use SSH keys or an agent for remote computes; password-bearing Docker host URIs
 and unauthenticated TCP Docker endpoints are rejected. This reads Docker logs
 and does not execute commands inside containers or change device state.
 
-Output is under `datasets/<version>/runs/<run-id>/`: `manifest.json`, an empty
-`timeline.jsonl` reserved for actions/status, `logs/devices.jsonl`, and one raw
-file per Docker node in `logs/raw/`. Capture runs keep their existing
-`datasets/<version>/captures/<capture-run-id>/` location and manifest; the
-collector does not mix PCAP records into device logs. The run directory is
+Output is under `datasets/<version>/runs/<run-id>/`: `manifest.json`,
+`timeline.jsonl` for run actions and project status, `logs/devices.jsonl`,
+`logs/syslog.jsonl`, and one raw file per Docker node in `logs/raw/`. A standalone
+`collect_device_logs` run leaves the timeline empty; `experiment_run` fills it.
+PCAPs remain in `datasets/<version>/captures/<run-id>/`; their packet records
+never enter device logs. The run directory is
 ignored by Git. The new schemas are `schemas/experiment-run.schema.json` and
 `schemas/device-log-event.schema.json`.
 
@@ -118,8 +150,9 @@ The manifest is written at start and updated on source/failure changes. A
 successful run requires at least one line from every attached Docker source;
 unstarted nodes, missing compute mappings, Docker errors and empty output are
 reported as failures. Docker log-driver retention/rotation can make older
-startup lines unavailable. VyOS routers, switches and other non-Docker nodes
-are outside this collector. A remote GNS3 compute requires direct Docker access
+startup lines unavailable. VyOS routers reach the syslog relay through the lab
+network; switches and other non-Docker nodes remain outside this collector.
+A remote GNS3 compute requires direct Docker access
 on that compute via the configured SSH connection; the controller API does not
 offer a Docker stdout/stderr relay.
 

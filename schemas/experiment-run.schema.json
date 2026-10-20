@@ -12,16 +12,29 @@
     "testbed_id": {"type": "string"},
     "dataset_version": {"type": "string"},
     "dataset_path": {"type": "string"},
+    "topology_document_sha256": {"type": "object", "additionalProperties": {"type": "string"}},
     "started_at_utc": {"type": "string", "format": "date-time"},
     "stopped_at_utc": {"type": "string", "format": "date-time"},
     "status": {"enum": ["running", "complete", "failed", "interrupted"]},
     "timeline_path": {"type": "string"},
     "captures": {"type": "array", "items": {"type": "string"}},
+    "capture": {
+      "type": "object",
+      "required": ["manifest_path", "links", "unavailable_declared_links", "failures"],
+      "properties": {
+        "manifest_path": {"type": "string"},
+        "links": {"type": "object", "additionalProperties": {"type": "object"}},
+        "unavailable_declared_links": {"type": "object", "additionalProperties": {"type": "object"}},
+        "failures": {"type": "array", "items": {"type": "string"}}
+      },
+      "additionalProperties": false
+    },
     "logs": {
       "type": "object",
       "required": ["normalized_path", "sources"],
       "properties": {
         "normalized_path": {"type": "string"},
+        "intentionally_silent_sources": {"type": "array", "items": {"type": "string"}},
         "sources": {
           "type": "object",
           "additionalProperties": {
@@ -38,6 +51,17 @@
             "additionalProperties": false
           }
         }
+      },
+      "additionalProperties": false
+    },
+    "syslog": {
+      "type": "object",
+      "required": ["path", "expected_sources", "sources", "missing_sources"],
+      "properties": {
+        "path": {"type": "string"},
+        "expected_sources": {"type": "array", "items": {"type": "string"}},
+        "sources": {"type": "object", "additionalProperties": {"type": "integer", "minimum": 1}},
+        "missing_sources": {"type": "array", "items": {"type": "string"}}
       },
       "additionalProperties": false
     },

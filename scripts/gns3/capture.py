@@ -263,17 +263,20 @@ def capture_for(
     output_dir: Path,
     metadata: dict,
     *,
+    run_id: str | None = None,
     preflight_failures: list[str] | None = None,
     sleep=time.sleep,
 ) -> CaptureResult:
     """Stop every acknowledged start, retrieve files, and write a manifest."""
     if duration <= 0:
         raise ValueError("capture duration must be positive")
-    run_id = (
+    run_id = run_id or (
         datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
         + "-"
         + uuid.uuid4().hex[:8]
     )
+    if not SAFE_ID.fullmatch(run_id):
+        raise ValueError("invalid capture run ID")
     run_dir = output_dir / run_id
     run_dir.mkdir(parents=True, exist_ok=False)
     result = CaptureResult(failed=list(preflight_failures or []))
