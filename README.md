@@ -1,6 +1,12 @@
-# OT Detection Systems
+# Metropolis
 
-[![CI](https://github.com/kbrezinski/ot-detection-systems/actions/workflows/ci.yml/badge.svg)](https://github.com/kbrezinski/ot-detection-systems/actions/workflows/ci.yml)
+**OT/ICS detection systems and synthetic testbeds**
+
+[![CI](https://github.com/kbrezinski/metropolis/actions/workflows/ci.yml/badge.svg)](https://github.com/kbrezinski/metropolis/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Python 3.12+](https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/downloads/)
+[![Docker](https://img.shields.io/badge/Docker-containerized-2496ED?logo=docker&logoColor=white)](testbeds/metropolis/devices/)
+[![GNS3](https://img.shields.io/badge/GNS3-simulated%20testbed-2C3E50)](https://www.gns3.com)
 
 Research on OT/ICS network traffic and provenance-based detection. A testbed is
 a self-contained simulated network you can run, attack, and capture.
@@ -162,8 +168,8 @@ Install Docker and GNS3 from their official instructions, then clone the
 repository onto the machine that will build or run the GNS3 Docker nodes:
 
 ```bash
-git clone https://github.com/kbrezinski/ot-detection-systems.git
-cd ot-detection-systems
+git clone https://github.com/kbrezinski/metropolis.git
+cd metropolis
 ```
 
 For a remote GNS3 server, build or transfer images to the Docker host that
@@ -360,3 +366,17 @@ uv build
 
 GitHub Actions runs lint, formatting checks, tests, package builds, and an import
 smoke test. These checks do not build or start the GNS3 testbed.
+
+## Citation
+
+If you use Metropolis in your research, please cite the repository:
+
+```bibtex
+@misc{brezinski2026metropolis,
+  author       = {Brezinski, Kenneth and Hu, Jiankun},
+  title        = {Metropolis: {OT} Detection Systems},
+  year         = {2026},
+  howpublished = {GitHub},
+  url          = {https://github.com/kbrezinski/metropolis}
+}
+```
