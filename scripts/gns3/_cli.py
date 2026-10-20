@@ -69,8 +69,8 @@ def add_server_arguments(parser: argparse.ArgumentParser) -> None:
 def add_appliance_arguments(parser: argparse.ArgumentParser) -> None:
     """Let the appliance template names match whatever the server has.
 
-    The VyOS and Ethernet switch template names depend on what has been imported
-    into a given GNS3 install, so they are overridable rather than assumed.
+    VyOS may be imported under a different name. A switch override is accepted
+    for compatibility, but VLAN configuration requires the owned Docker image.
     """
     parser.add_argument(
         "--router-template",
@@ -80,7 +80,7 @@ def add_appliance_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--switch-template",
         default=APPLIANCES["switch"],
-        help="Name of the Ethernet switch template on the server",
+        help="Switch template name; managed VLANs require Metropolis Open vSwitch",
     )
     parser.add_argument(
         "--compute-id",

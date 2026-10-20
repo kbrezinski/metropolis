@@ -47,6 +47,7 @@ publish Docker ports — they bind to their own GNS3 interfaces.
 | Legacy gateway | `field/legacy_gateway/` | Telnet login and shell, for experiments that need legacy host access | Intake VLAN 10 |
 | DNS | `services/dns/` | Local records for this dataset; no upstream forwarding | OT services VLAN 30 |
 | NTP | `services/ntp/` | Local time replies, using the host clock without changing it | OT services VLAN 30 |
+| Open vSwitch | `infrastructure/openvswitch/` | Managed Layer 2 switching with declared trunk and access VLANs | All switch nodes |
 | Reachability probe | `field/reachability_probe/` | A minimal host that runs no service, so each zone has something to ping or route to | Any zone that needs a positive control |
 | Mirai chain | `attack/mirai/` | Command console, scan listener, loaders, and an inert bot agent | Attack lab `10.99.10.0/24` |
 | Merlin C2 | `attack/merlin/` | C2 console and an inert agent | Attack lab `10.99.10.0/24` |
@@ -72,6 +73,7 @@ docker build -f testbeds/metropolis/devices/operations/control_client/Dockerfile
 docker build -f testbeds/metropolis/devices/field/legacy_gateway/Dockerfile -t metropolis/legacy-gateway:dev .
 docker build -f testbeds/metropolis/devices/services/dns/Dockerfile -t metropolis/dns:dev .
 docker build -f testbeds/metropolis/devices/services/ntp/Dockerfile -t metropolis/ntp:dev .
+docker build -f testbeds/metropolis/devices/infrastructure/openvswitch/Dockerfile -t metropolis/openvswitch:dev .
 docker build -f testbeds/metropolis/devices/field/reachability_probe/Dockerfile -t metropolis/reachability-probe:dev .
 docker build -f testbeds/metropolis/devices/attack/mirai/cnc/Dockerfile -t metropolis/mirai-cnc:dev .
 docker build -f testbeds/metropolis/devices/attack/mirai/scan_listener/Dockerfile -t metropolis/mirai-scan-listener:dev .
@@ -87,7 +89,8 @@ nodes in a project.
 
 ## How a node configures itself
 
-Every image uses `devices/runtime/network-entrypoint.sh` as its entrypoint.
+Every end-device image uses `devices/runtime/network-entrypoint.sh` as its entrypoint.
+The Open vSwitch infrastructure image starts its own OVS services instead.
 Before starting the application it:
 
 1. Sets the hostname from `NODE_HOSTNAME`, if given.
@@ -254,6 +257,7 @@ actual compute host. The following audit describes what those streams contain:
 | Legacy Telnet gateway | Structured startup/failure events. BusyBox `telnetd` does not reliably send individual login outcomes to container stdout/stderr; use PCAPs for Telnet session traffic. |
 | DNS | `dnsmasq` query and startup output. |
 | NTP and syslog relay | `chronyd -d` startup, synchronization warnings and errors; structured router syslog datagrams on UDP 514. Chrony does not emit a line for every client request by default. |
+| Metropolis Open vSwitch | Startup readiness and configuration failures on stdout/stderr; the builder verifies each port against OVS state. |
 | Mirai and Merlin synthetic nodes | Lifecycle, command and report events; the wget loader uses the same loader model. |
 | Reachability probe | Intentionally idle and minimal; no service log is expected. The run manifest lists it as an intentionally silent source without counting its silence as a collector failure. |
 
@@ -261,8 +265,8 @@ VyOS router logs are separate from Docker stdout. Router scripts forward system,
 authentication, interface and configuration messages at `info` or higher to
 `MET-NTP-01` on UDP 514, where the syslog relay prints structured records for
 the experiment collector. UDP can lose messages, and the collector flags routers
-from which no syslog arrived. The Open vSwitch appliance is not a Docker node;
-its native logs are not collected by this pipeline.
+from which no syslog arrived. The Metropolis Open vSwitch image is a Docker node,
+so experiment runs collect its stdout and stderr with the other Docker sources.
 
 ## Attack lab
 

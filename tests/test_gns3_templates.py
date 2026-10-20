@@ -60,6 +60,15 @@ def sample() -> tuple[ImageTemplate, ...]:
     )
 
 
+def test_owned_switch_template_has_known_image_ports_and_start_command():
+    switch = next(item for item in TEMPLATES if item.name == APPLIANCES["switch"])
+    payload = switch.payload()
+    assert payload["template_type"] == "docker"
+    assert payload["image"] == "metropolis/openvswitch:dev"
+    assert payload["adapters"] == 16
+    assert payload["start_command"] == "python3 -u /opt/metropolis/switch.py serve"
+
+
 def test_register_creates_every_missing_template():
     client = FakeClient()
     result = register_templates(client, sample())

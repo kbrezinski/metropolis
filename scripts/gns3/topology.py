@@ -10,9 +10,8 @@ Two deliberate rules:
   list port roles, not GNS3 port numbers. Here each role gets the adapter
   matching its position in the specification's own list, and the mapping is
   written out so the specs' ``TODO`` can be filled in from something real.
-* **Port roles are not nodes.** A link endpoint that names an access segment is
-  skipped and reported, because those segments are documented as segments rather
-  than appliances.
+* **Access segments are switches.** They get distinct Docker adapters for each
+  cabled link, with tagged uplinks and untagged host ports derived from the plan.
 """
 
 from __future__ import annotations
@@ -28,7 +27,7 @@ ROW_HEIGHT = 120
 MARGIN = 60
 
 ROUTER_TEMPLATE = "VyOS 1.3.0"
-SWITCH_TEMPLATE = "Open vSwitch"
+SWITCH_TEMPLATE = "Metropolis Open vSwitch"
 
 
 @dataclass(frozen=True)
@@ -60,6 +59,7 @@ class PlannedLink:
     kind: str
     first: PlannedPort
     second: PlannedPort
+    vlans: tuple[int, ...] = ()
 
 
 @dataclass
@@ -71,6 +71,7 @@ class Topology:
     port_map: dict[str, dict[str, int]]
     skipped: list[str]
     missing_templates: list[str]
+    switch_ports: dict[str, dict[int, dict]] = field(default_factory=dict)
 
 
 def load(dataset: Path) -> tuple[dict, dict, dict]:
@@ -155,6 +156,44 @@ def port_map(infrastructure: dict) -> dict[str, dict[str, int]]:
             role: index for index, role in enumerate(switch["attachment_points"])
         }
     return mapping
+
+
+def switch_port_settings(
+    infrastructure: dict, link_plan: dict
+) -> dict[str, dict[int, dict]]:
+    """Derive intended port behavior without assigning VLANs to spare ports."""
+    roles = port_map(infrastructure)
+    settings: dict[str, dict[int, dict]] = {name: {} for name in roles}
+    for link in link_plan["links"]:
+        for endpoint in link["endpoints"]:
+            name, role = endpoint["node"], endpoint.get("port_role")
+            if name not in roles or role is None:
+                continue
+            number = roles[name][role]
+            if number in settings[name]:
+                raise ValueError(f"{name} port {number} has multiple declared links")
+            vlans = link.get("vlans", [])
+            if link["kind"] == "trunk":
+                if not vlans:
+                    raise ValueError(f"{name} port {number} trunk has no tagged VLANs")
+                mode = "trunk"
+            elif link["kind"] == "access":
+                if len(vlans) > 1:
+                    raise ValueError(f"{name} port {number} access has multiple VLANs")
+                mode = "access" if vlans else "untagged"
+            else:
+                mode = "untagged"
+                if vlans:
+                    raise ValueError(
+                        f"{name} port {number} has VLANs on {link['kind']}"
+                    )
+            settings[name][number] = {
+                "role": role,
+                "mode": mode,
+                "vlans": sorted(vlans),
+                "link_id": link["id"],
+            }
+    return settings
 
 
 def _adapter_for(endpoint: dict, roles: dict[str, dict[str, int]]) -> int | None:
@@ -247,6 +286,7 @@ def build_plan(
                 kind=link["kind"],
                 first=PlannedPort(endpoints[0]["node"], adapters[0] or 0),
                 second=PlannedPort(endpoints[1]["node"], adapters[1] or 0),
+                vlans=tuple(link.get("vlans", [])),
             )
         )
 
@@ -256,4 +296,5 @@ def build_plan(
         port_map=roles,
         skipped=skipped,
         missing_templates=missing,
+        switch_ports=switch_port_settings(infrastructure, link_plan),
     )

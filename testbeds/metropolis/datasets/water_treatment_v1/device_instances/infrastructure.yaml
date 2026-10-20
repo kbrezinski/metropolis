@@ -1,10 +1,9 @@
 # Metropolis v1 infrastructure nodes: the routers and switches that carry the
 # device nodes listed in device_instances/initial_devices.yaml.
 #
-# These are not Docker nodes, so they do not belong in that inventory. A router
-# is a VyOS appliance configured by a checked-in script, and a switch is a GNS3
-# Ethernet switch described by a specification document with no image and no
-# filesystem.
+# These are infrastructure nodes, separate from the end-device inventory. A
+# router is a VyOS appliance configured by a checked-in script. Switches use
+# the Metropolis Open vSwitch Docker image and the declared link settings.
 #
 # Router interface addresses are repeated here so drift from the VyOS scripts is
 # caught by scripts/validate_metropolis_topology.py. Switch port roles are the

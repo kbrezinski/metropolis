@@ -30,6 +30,7 @@ from _cli import (
 )
 from builder import build, port_map_yaml
 from client import Gns3Client
+from collect_device_logs import docker_host_mapping
 from router_config import (
     DEFAULT_PASSWORD,
     DEFAULT_USERNAME,
@@ -56,6 +57,13 @@ def main() -> int:
         "--prune-missing",
         action="store_true",
         help="Delete project nodes the plan does not contain",
+    )
+    parser.add_argument(
+        "--docker-host",
+        action="append",
+        default=[],
+        metavar="COMPUTE_ID=URI",
+        help="Docker engine on each switch compute; repeat for remote computes",
     )
     parser.add_argument(
         "--write-ports",
@@ -100,6 +108,10 @@ def main() -> int:
         return 0
 
     client = connect(args)
+    try:
+        docker_hosts = docker_host_mapping(args.docker_host)
+    except ValueError as exc:
+        parser.error(str(exc))
 
     missing = [
         node.name
@@ -119,6 +131,10 @@ def main() -> int:
         template_ids(client),
         prune_missing=args.prune_missing,
         compute_id=args.compute_id,
+        docker_hosts=docker_hosts,
+    )
+    switch_failed = any(
+        item["status"] == "failed" for item in result.switch_configuration.values()
     )
     print(f"project {args.project}")
     print(
@@ -128,6 +144,16 @@ def main() -> int:
         f"  {len(result.created_links)} links created, {len(result.reused_links)} reused"
     )
     report_skipped(result.skipped)
+    if result.switch_configuration:
+        verified = sum(
+            item["status"] != "failed" for item in result.switch_configuration.values()
+        )
+        print(
+            f"  switch VLAN configuration: {verified}/{len(result.switch_configuration)} verified"
+        )
+        for name, item in sorted(result.switch_configuration.items()):
+            if item["status"] == "failed":
+                print(f"  unconfigured: {name}: {item['reason']}", file=sys.stderr)
 
     if args.write_ports:
         args.write_ports.write_text(port_map_yaml(topology, args.project), "utf-8")
@@ -148,22 +174,27 @@ def main() -> int:
             password=args.router_password,
         )
         failed = 0
-        for result in results:
-            if result.error:
+        for router_result in results:
+            if router_result.error:
                 failed += 1
-                print(f"  {result.node}: {result.error}", file=sys.stderr)
+                print(f"  {router_result.node}: {router_result.error}", file=sys.stderr)
                 continue
             note = (
-                f", {len(result.missing)} address(es) not reported"
-                if result.missing
+                f", {len(router_result.missing)} address(es) not reported"
+                if router_result.missing
                 else ""
             )
-            for missing in result.missing:
-                print(f"  {result.node}: {missing} is not configured", file=sys.stderr)
-            print(f"  {result.node}: {result.commands} commands applied{note}")
+            for missing in router_result.missing:
+                print(
+                    f"  {router_result.node}: {missing} is not configured",
+                    file=sys.stderr,
+                )
+            print(
+                f"  {router_result.node}: {router_result.commands} commands applied{note}"
+            )
         print(f"{len(results) - failed}/{len(results)} routers configured")
-        return 1 if failed else 0
-    return 0
+        return 1 if failed or switch_failed else 0
+    return 1 if switch_failed else 0
 
 
 if __name__ == "__main__":

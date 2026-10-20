@@ -106,7 +106,7 @@ Six VyOS 1.3 router scripts forward `info` and higher syslog to the NTP service
 node at `10.20.30.11:514/UDP`. The NTP image must be rebuilt after this change.
 The receiver emits structured lines to its Docker stdout; the collector writes
 router-attributed copies to `logs/syslog.jsonl` and reports each router that
-sent no messages. UDP delivery is not guaranteed. Open vSwitch appliance logs
+sent no messages. UDP delivery is not guaranteed. Open vSwitch container logs
 are not collected by the Docker follower or this syslog receiver.
 
 Start the collector **before** starting the lab, then run the existing
@@ -151,7 +151,8 @@ successful run requires at least one line from every attached Docker source;
 unstarted nodes, missing compute mappings, Docker errors and empty output are
 reported as failures. Docker log-driver retention/rotation can make older
 startup lines unavailable. VyOS routers reach the syslog relay through the lab
-network; switches and other non-Docker nodes remain outside this collector.
+network; the Metropolis Open vSwitch containers are collected with other Docker
+nodes. Non-Docker nodes remain outside the container collector.
 A remote GNS3 compute requires direct Docker access
 on that compute via the configured SSH connection; the controller API does not
 offer a Docker stdout/stderr relay.
@@ -166,6 +167,27 @@ numbers and this code does not invent them — it derives them from the order.
 switch, generated from the same data, so it always matches what a build does. If
 you want the mapping as data rather than as a document, `--write-ports` emits it
 as YAML.
+
+Switches now use the repo-owned `metropolis/openvswitch:dev` Docker image. Build
+that image on every GNS3 compute that will host switches, then register the
+`Metropolis Open vSwitch` template. The template has 16 NICs; `ethN` is the
+adapter assigned to role number N. The builder starts each switch, sends its
+declared port settings to the container through Docker, and checks OVS's actual
+port state. It sends nothing for spare ports and removes undeclared ports from
+the managed bridge. A rerun skips unchanged OVS settings. The command reports
+each failure and exits with status 1 if any switch remains unverified.
+
+```bash
+docker build -f testbeds/metropolis/devices/infrastructure/openvswitch/Dockerfile -t metropolis/openvswitch:dev .
+python scripts/gns3/run.py register_templates
+python scripts/gns3/run.py build_topology --docker-host local=unix:///var/run/docker.sock
+```
+
+For a remote compute, use `--docker-host COMPUTE_ID=ssh://user@compute-host`.
+Docker CLI access to that compute is required. The switch image starts OVS
+itself and needs a compute with Open vSwitch kernel support and the network
+permissions GNS3 gives Docker nodes. A missing module, container, Docker
+connection, or port is reported as a configuration failure.
 
 ## What is repeated and what is skipped
 
@@ -184,11 +206,9 @@ same two nodes as equivalent.
 
 ## Router and switch appliances
 
-VyOS and Open vSwitch are appliances, not Docker images, so they cannot be
-registered the way the device images are. Import them once in the GNS3 GUI;
-`templates.py` names both under `APPLIANCES`, and the builder looks them up by
-that name. A blank VyOS appliance also needs its image installed interactively
-before it will boot; that is a one-time step per appliance.
+VyOS remains a GUI-imported appliance. The switch is a repo-owned Docker image
+and is registered with the other Docker templates. A blank VyOS appliance needs
+its image installed interactively before it will boot.
 
 ## Loading the router configurations
 
@@ -248,20 +268,19 @@ neither, the run stops with an explanation rather than guessing an address.
 
 ## First run
 
-Start with `--plan`, then `build_topology`, then check the result in the GUI
-before starting the lab. A first build is the quickest way to confirm the
-appliance names below match your installation.
+Start with `--plan`, build the Docker images and register templates, then run
+`build_topology` with the Docker host mapping. Check the result in the GUI
+before starting the lab.
 
 Two things depend on your installation rather than this code:
 
-- **Appliance template names.** `--router-template` and `--switch-template`
-  default to `VyOS 1.3.0` and `Open vSwitch`, which are the usual names. If your
-  GNS3 install imported them differently, override them rather than renaming
-  anything:
+- **Router template name.** `--router-template` defaults to `VyOS 1.3.0`.
+  Override it if your imported VyOS appliance has another name. The switch
+  template is registered from this repository and should keep its default name:
 
   ```bash
   python scripts/gns3/run.py build_topology --router-template "VyOS 1.4" \
-      --switch-template "Ethernet switch"
+      --docker-host local=unix:///var/run/docker.sock
   ```
 
 - **Compute.** `--compute-id` defaults to `local`. A remote or multi-compute

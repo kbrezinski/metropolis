@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/kbrezinski/ot-detection-systems/blob/main/schemas/infrastructure.schema.json",
   "title": "OT testbed infrastructure inventory",
-  "description": "Reusable structure for the routers, switches, and unmodelled access segments of one testbed. These are not Docker nodes, so they are inventoried separately from the device instances.",
+  "description": "Reusable structure for routers, Docker-backed switches, and access segments of one testbed. Infrastructure is inventoried separately from end-device instances.",
   "type": "object",
   "required": ["schema_version", "testbed_id", "routers", "switches", "segments"],
   "properties": {

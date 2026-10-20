@@ -7,7 +7,7 @@ Written by `scripts/generate_switch_reference.py` using
 `topology/links.yaml`, so it cannot disagree with the topology the builder
 creates. To change it, change the data and regenerate.
 
-Each switch is a GNS3 Ethernet switch appliance. Port numbers come from the
+Each switch uses the Metropolis Open vSwitch Docker image. Port numbers come from the
 order of `attachment_points` in the infrastructure inventory, so the port
 numbering below is exactly what the build uses.
 
@@ -111,3 +111,6 @@ Access Layer 2 segment for the raw-water lift station.
   `scripts/validate_metropolis_topology.py` checks that they do.
 - Firewall policy and IPsec are router-layer concerns and are not configured.
   Switch VLAN membership separates traffic; it does not filter it.
+- This table is the declared intent. The Metropolis Open vSwitch Docker image
+  receives these settings from the topology builder, which checks applied OVS
+  state and reports any switch that remains unconfigured.

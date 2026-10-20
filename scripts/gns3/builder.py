@@ -12,11 +12,13 @@ writes the mapping out, so the specs can be filled in from something that ran.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import subprocess
 
 import yaml
 
 from client import Gns3Client, Node
 from link_identity import planned_key, related_links, server_key
+from switch_config import configure_switches
 from topology import Topology, environment_string
 
 
@@ -30,6 +32,7 @@ class BuildResult:
     created_links: list[str] = field(default_factory=list)
     reused_links: list[str] = field(default_factory=list)
     skipped: list[str] = field(default_factory=list)
+    switch_configuration: dict[str, dict] = field(default_factory=dict)
 
 
 def existing_link_keys(links: list[dict]) -> set[tuple]:
@@ -151,6 +154,8 @@ def build(
     *,
     prune_missing: bool = False,
     compute_id: str = "local",
+    docker_hosts: dict[str, str] | None = None,
+    switch_execute=subprocess.run,
 ) -> BuildResult:
     """Make the server match the declared topology.
 
@@ -163,6 +168,23 @@ def build(
     )
     result.skipped.extend(topology.skipped)
     ensure_links(client, project.project_id, topology, nodes, result)
+    result.switch_configuration = configure_switches(
+        client, project.project_id, topology, docker_hosts or {}, execute=switch_execute
+    )
+    unbuilt = {
+        link.link_id
+        for link in topology.links
+        if any(message.startswith(f"{link.link_id}:") for message in result.skipped)
+    }
+    for link in topology.links:
+        if link.link_id not in unbuilt:
+            continue
+        for endpoint in (link.first, link.second):
+            if endpoint.node in result.switch_configuration:
+                result.switch_configuration[endpoint.node] = {
+                    "status": "failed",
+                    "reason": f"declared link {link.link_id} was not built",
+                }
 
     if prune_missing:
         planned = {node.name for node in topology.nodes}

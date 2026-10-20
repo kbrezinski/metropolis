@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import io
 import struct
+import subprocess
 import sys
 import threading
 from pathlib import Path
@@ -39,7 +40,8 @@ from lifecycle import (  # noqa: E402
     wait_until_running,
 )
 from templates import APPLIANCES  # noqa: E402
-from topology import environment_string, port_map  # noqa: E402
+from topology import environment_string, port_map, switch_port_settings  # noqa: E402
+from switch_config import expected_state  # noqa: E402
 
 
 @pytest.fixture(scope="module")
@@ -86,6 +88,29 @@ def test_switch_port_numbers_follow_the_specification_order():
     assert plant["router-uplink"] == 0
     assert plant["cell-intake-uplink"] == 1
     assert len(set(plant.values())) == len(plant)
+
+
+def test_switch_settings_follow_declared_roles_and_leave_spares_unassigned(documents):
+    _, _, infrastructure, link_plan = documents
+    settings = switch_port_settings(infrastructure, link_plan)
+    plant = settings["sw-plant-aggregation"]
+    assert plant[0] == {
+        "role": "router-uplink",
+        "mode": "trunk",
+        "vlans": [10, 11, 12, 13, 50, 51, 52, 53],
+        "link_id": "link-plant-switch",
+    }
+    assert plant[1]["vlans"] == [10]
+    assert all(number in range(9) for number in plant)
+    assert settings["sw-dmz"].keys() == {0}
+
+
+def test_switch_settings_reject_duplicate_roles(documents):
+    _, _, infrastructure, link_plan = documents
+    duplicate = dict(link_plan)
+    duplicate["links"] = [*link_plan["links"], link_plan["links"][10]]
+    with pytest.raises(ValueError, match="multiple declared links"):
+        switch_port_settings(infrastructure, duplicate)
 
 
 def test_router_interfaces_become_adapter_numbers(plan):
@@ -143,6 +168,8 @@ class FakeClient:
         self.created_links: list[dict] = []
         self.deleted: list[str] = []
         self.environments: list[tuple[str, str]] = []
+        self.started_nodes: list[str] = []
+        self.docker_switches = False
 
     def ensure_project(self, name):
         return Project("p1", name, "opened"), True
@@ -156,8 +183,28 @@ class FakeClient:
     def create_node(self, project_id, template_id, *, name=None, x=0, y=0, **kw):
         self.created_nodes.append({"name": name, "template_id": template_id})
         node = {"node_id": f"id-{name}", "name": name, "status": "stopped"}
+        if self.docker_switches and template_id == "t-Metropolis Open vSwitch":
+            node.update(
+                {
+                    "node_type": "docker",
+                    "compute_id": "local",
+                    "properties": {
+                        "image": "metropolis/openvswitch:dev",
+                        "container_id": f"cid-{name}",
+                    },
+                }
+            )
         self._nodes.append(node)
         return Node(node["node_id"], name, "stopped")
+
+    def start_node(self, project_id, node_id):
+        self.started_nodes.append(node_id)
+        next(node for node in self._nodes if node["node_id"] == node_id)["status"] = (
+            "started"
+        )
+
+    def node(self, project_id, node_id):
+        return next((node for node in self._nodes if node["node_id"] == node_id), None)
 
     def create_link(self, project_id, first, second):
         self.created_links.append((first, second))
@@ -203,19 +250,76 @@ def test_build_creates_every_node_and_link(plan):
     assert len(result.created_links) == len(topology.links)
     assert result.reused_nodes == []
     assert result.reused_links == []
+    assert result.switch_configuration
+    assert all(
+        item["status"] == "failed" for item in result.switch_configuration.values()
+    )
 
 
 def test_build_reruns_without_duplicating(plan):
     """A second build must reuse everything, not create it again."""
     topology, _ = plan
     client = FakeClient()
-    build(client, "lab", topology, template_ids())
+    first = build(client, "lab", topology, template_ids())
     again = build(client, "lab", topology, template_ids())
 
     assert again.created_nodes == []
     assert again.created_links == []
     assert len(again.reused_nodes) == len(topology.nodes)
     assert len(again.reused_links) == len(topology.links)
+    assert again.switch_configuration == first.switch_configuration
+
+
+def test_build_configures_new_and_reused_docker_switches(plan):
+    topology, _ = plan
+    client = FakeClient()
+    client.docker_switches = True
+    calls = []
+
+    def execute(command, *, input, **_kwargs):
+        payload = json.loads(input)
+        calls.append((command, payload))
+        changed = (
+            list(expected_state(payload))
+            if len(calls) <= len([n for n in topology.nodes if n.kind == "switch"])
+            else []
+        )
+        return subprocess.CompletedProcess(
+            command,
+            0,
+            json.dumps(
+                {"verified": True, "changed": changed, "ports": expected_state(payload)}
+            ),
+            "",
+        )
+
+    first = build(
+        client,
+        "lab",
+        topology,
+        template_ids(),
+        docker_hosts={"local": "unix:///var/run/docker.sock"},
+        switch_execute=execute,
+    )
+    second = build(
+        client,
+        "lab",
+        topology,
+        template_ids(),
+        docker_hosts={"local": "unix:///var/run/docker.sock"},
+        switch_execute=execute,
+    )
+    count = len([node for node in topology.nodes if node.kind == "switch"])
+    assert len(calls) == 2 * count
+    assert len(client.started_nodes) == count
+    assert all(
+        item["status"] == "configured" for item in first.switch_configuration.values()
+    )
+    assert all(
+        item["status"] == "unchanged" for item in second.switch_configuration.values()
+    )
+    assert calls[0][0][:3] == ["docker", "--host", "unix:///var/run/docker.sock"]
+    assert second.created_nodes == []
 
 
 def test_build_sets_the_environment_of_inventoried_devices(plan):
@@ -305,6 +409,11 @@ def test_builder_rejects_wrong_existing_ports(plan):
     assert any(
         first.link_id in item and "wrong ports" in item for item in result.skipped
     )
+    switch_ends = {first.first.node, first.second.node} & set(
+        result.switch_configuration
+    )
+    for name in switch_ends:
+        assert result.switch_configuration[name]["status"] == "failed"
 
 
 # -- lifecycle ---------------------------------------------------------------

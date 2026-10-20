@@ -34,10 +34,11 @@ class ImageTemplate:
     adapters: int = DEFAULT_ADAPTERS
     console_type: str = "none"
     description: str = ""
+    start_command: str | None = None
 
     def payload(self) -> dict:
         """The GNS3 template creation body."""
-        return {
+        payload = {
             "name": self.name,
             "template_type": "docker",
             "image": self.image,
@@ -47,6 +48,9 @@ class ImageTemplate:
             "description": self.description,
             "category": "guest",
         }
+        if self.start_command is not None:
+            payload["start_command"] = self.start_command
+        return payload
 
 
 def spec(name: str, image: str, **overrides) -> ImageTemplate:
@@ -57,6 +61,13 @@ def spec(name: str, image: str, **overrides) -> ImageTemplate:
 # with the build commands in that directory's README; register_templates.py
 # reports images that are inventoried but missing here.
 TEMPLATES: tuple[ImageTemplate, ...] = (
+    spec(
+        "Metropolis Open vSwitch",
+        "metropolis/openvswitch:dev",
+        adapters=16,
+        start_command="python3 -u /opt/metropolis/switch.py serve",
+        description="Managed Metropolis switch; configured by the topology builder",
+    ),
     spec(
         "Metropolis PLC/RTU",
         "metropolis/controller:dev",
@@ -154,11 +165,10 @@ TEMPLATES: tuple[ImageTemplate, ...] = (
     ),
 )
 
-# Routers and switches are appliances, not images, so they are registered once
-# in the GNS3 controller rather than created here.
+# VyOS remains a GUI-imported appliance. Switches use the owned Docker image.
 APPLIANCES = {
     "router": "VyOS 1.3.0",
-    "switch": "Open vSwitch",
+    "switch": "Metropolis Open vSwitch",
 }
 
 
@@ -185,6 +195,7 @@ MANAGED_FIELDS = (
     "console_type",
     "environment",
     "description",
+    "start_command",
 )
 
 
@@ -197,7 +208,7 @@ def _differs(existing: dict, desired: dict) -> dict:
     return {
         key: desired[key]
         for key in MANAGED_FIELDS
-        if key in existing and existing[key] != desired[key]
+        if key in desired and key in existing and existing[key] != desired[key]
     }
 
 
