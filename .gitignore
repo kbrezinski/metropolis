@@ -16,6 +16,7 @@ logs
 data/
 models/
 artifacts/
+examples/
 
 # Generated packet captures can be large; keep dataset definitions and metadata tracked.
 testbeds/*/datasets/*/captures/**

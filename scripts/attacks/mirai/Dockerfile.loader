@@ -1,0 +1,7 @@
+# Retrieved from Gotham's examples/malware for Metropolis.
+FROM ubuntu:focal
+RUN apt update && apt install -y --no-install-recommends nano
+WORKDIR /opt
+COPY --from=iotsim/mirai-builder:latest /opt/Mirai-Source-Code/loader/bins ./bins
+COPY --from=iotsim/mirai-builder:latest /opt/Mirai-Source-Code/loader/loader.dbg ./loader.dbg
+CMD ["/bin/bash"]

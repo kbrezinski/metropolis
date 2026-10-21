@@ -1,0 +1,5 @@
+# Retrieved from Gotham's examples/malware for Metropolis.
+FROM ubuntu:focal
+WORKDIR /opt
+COPY --from=iotsim/mirai-builder:latest /opt/Mirai-Source-Code/mirai/debug/scanListen ./scanListen
+CMD ["./scanListen"]
