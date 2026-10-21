@@ -197,8 +197,7 @@ def audit_response(request: bytes, response: bytes, peer: tuple[str, int]) -> di
     token = request[4 : 4 + token_length]
     try:
         path = "/" + b"/".join(
-            part for number, part in _options(request, 4 + token_length)
-            if number == 11
+            part for number, part in _options(request, 4 + token_length) if number == 11
         ).decode(errors="replace")
     except ValueError:
         path = "<invalid-options>"

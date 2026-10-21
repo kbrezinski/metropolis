@@ -43,7 +43,9 @@ def setup_extraction(tmp_path, rows=None):
                         "declared_link_id": "user_link_47",
                         "gns3_link_id": "gns3-random-id",
                         "output_file": str(source),
-                        "output_sha256": hashlib.sha256(source.read_bytes()).hexdigest(),
+                        "output_sha256": hashlib.sha256(
+                            source.read_bytes()
+                        ).hexdigest(),
                     }
                 },
                 "failures": [],
