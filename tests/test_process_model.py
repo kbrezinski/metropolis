@@ -103,7 +103,7 @@ def test_values_stay_inside_the_documented_bounds(model):
 
 def test_quality_moves_in_both_directions(model):
     """Quality must change, or a constant would be the detector's give-away."""
-    state = model.initial(650, 120, 9500)
+    state = model.initial(650, 120, 950)
     rising = step(model, state, 60.0, True).quality
     falling = step(model, state, 60.0, False).quality
     assert rising > state.quality
@@ -137,7 +137,7 @@ def test_the_process_advances_a_fraction_at_a_time(model):
 
 def test_an_outside_write_moves_the_process_and_is_steered_back(model):
     """A write is a real perturbation, not a value the model accepts."""
-    written = model.initial(999, 120, 9500)
+    written = model.initial(999, 120, 950)
     after = step(model, written, 1.0, False)
     # The level falls from the manipulated value rather than staying put.
     assert after.level < written.level

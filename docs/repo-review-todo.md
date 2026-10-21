@@ -370,15 +370,10 @@ on its own. Use `[x]` only after verification.
     in [scripts/README.md](../scripts/README.md#L6-L12).
   - Fix: remove the stale paragraphs and point at `scripts/gns3/README.md`.
 
-- [ ] **REV-027 — README links point into the git-ignored `examples/` directory.**
-  - Evidence: [README.md](../README.md#L77) and
-    [README.md](../README.md#L328) point at `examples/build_a_topology.py` and
-    `examples/test_metropolis_import.ipynb`. The tracked files are
-    [scripts/build_a_topology.py](../scripts/build_a_topology.py) and
+- [x] **REV-027 — README links point into the git-ignored `examples/` directory.**
+  - Resolved: README, tests, and the plain-language guide now point to the
+    tracked [scripts/build_a_topology.py](../scripts/build_a_topology.py) and
     [scripts/test_metropolis_import.ipynb](../scripts/test_metropolis_import.ipynb).
-    `.gitignore` ignores `examples/`, so the links 404 in a fresh clone.
-  - Fix: update the links to `scripts/`, and update
-    [docs/understanding-the-repo.md](understanding-the-repo.md#L480) too.
 
 - [ ] **REV-028 — README status counts are stale.**
   - Evidence: [README.md](../README.md#L45) says four JSON schemas (there are
@@ -418,19 +413,13 @@ on its own. Use `[x]` only after verification.
     [docs/understanding-the-repo.md](understanding-the-repo.md#L461) says
     "twenty-one files / 313 tests";
     [docs/understanding-the-repo.md](understanding-the-repo.md#L135-L149)
-    describes `examples/` and `main.py`; section 9.7 still uses
-    `examples/build_a_topology.py`
-    ([docs/understanding-the-repo.md](understanding-the-repo.md#L1062-L1068)).
+    describes `examples/` and `main.py`.
   - Fix: one documentation reconciliation pass across `README.md`,
     `scripts/README.md`, this guide, `AGENTS.md`, and `CLAUDE.md`.
 
 - [ ] **REV-033 — AGENTS.md/CLAUDE.md are stale and must stay in step.**
-  - Evidence: both still mention `main.py` and
-    `examples/build_a_topology.py`
-    ([AGENTS.md](../AGENTS.md#L9),
-    [AGENTS.md](../AGENTS.md#L29),
-    [CLAUDE.md](../CLAUDE.md#L9),
-    [CLAUDE.md](../CLAUDE.md#L29)).
+  - Evidence: both still mention `main.py`
+    ([AGENTS.md](../AGENTS.md#L9), [CLAUDE.md](../CLAUDE.md#L9)).
   - Fix: update both together; they are intentionally near-copies.
 
 - [ ] **REV-034 — Device TLS tests grep source instead of exercising behaviour.**

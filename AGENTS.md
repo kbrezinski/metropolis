@@ -26,7 +26,7 @@ uv run python scripts/run_gotham_pipeline.py   # clean + label + prepare the CSV
 uv run python scripts/validate_metropolis_topology.py       # cross-check address/inventory/link/router/switch plans
 uv run python scripts/generate_switch_reference.py --check  # is switch/README.md current? (--write regenerates)
 uv run python -m metropolis.topology show                   # topology library CLI: show/check/render/export
-uv run python examples/build_a_topology.py --draw           # build a small topology in code
+uv run python scripts/build_a_topology.py --draw            # build a small topology in code
 python scripts/gns3/run.py build_topology --plan            # GNS3 automation; --plan/--list/--order need no server
 python scripts/attacks/run.py network_recon_scan --dry-run  # attack toolkit; real runs need METROPOLIS_LAB_ACK=yes
 ```

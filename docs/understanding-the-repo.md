@@ -472,12 +472,12 @@ behaviour and shouts if it breaks. They run in about 37 seconds and cover:
 You do not need to read these to understand the system, but if you change
 something, run them.
 
-### 4.9 `data/`, `examples/`, `dist/`
+### 4.9 `data/`, `scripts/`, `dist/`
 
 - **`data/`** — Gotham's downloaded dataset: thousands of CSV files of recorded
   traffic from Gotham's own testbed. Used only by `run_gotham_pipeline.py`.
   Git-ignored.
-- **`examples/test_metropolis_import.ipynb`** — a short notebook demonstrating
+- **`scripts/test_metropolis_import.ipynb`** — a short notebook demonstrating
   importing the package and loading the address plan.
 - **`dist/`** — built Python packages. Generated, not source.
 
@@ -1059,13 +1059,13 @@ from an installed wheel with no repository checkout.
 
 ### 9.7 A worked example
 
-`examples/build_a_topology.py` builds a small two-cell plant, checks it, and can
+`scripts/build_a_topology.py` builds a small two-cell plant, checks it, and can
 draw and write it:
 
 ```bash
-uv run python examples/build_a_topology.py --draw
-uv run python examples/build_a_topology.py --write /tmp/demo_v1
-uv run python examples/build_a_topology.py --break-it    # see the checks fire
+uv run python scripts/build_a_topology.py --draw
+uv run python scripts/build_a_topology.py --write /tmp/demo_v1
+uv run python scripts/build_a_topology.py --break-it    # see the checks fire
 ```
 
 ### 9.8 How this relates to the existing dataset

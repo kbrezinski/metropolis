@@ -74,7 +74,7 @@ A work in progress. The dates are when each piece landed; the entries marked
   folder.
 - **Design a topology in Python** — build a network, check it for contradictions,
   draw it, and write it out as the same dataset documents everything else reads.
-  Start with `examples/build_a_topology.py` or
+  Start with `scripts/build_a_topology.py` or
   `uv run python -m metropolis.topology --help`.
 
 ## What is in the repository
@@ -325,7 +325,7 @@ The loader accepts `testbed_id` and `dataset_version` for future testbeds and
 versions. Data ingestion, feature extraction, provenance modelling, and
 evaluation remain future work. For a runnable example that imports the package
 and loads the v1 plan into a pandas table, see
-[`examples/test_metropolis_import.ipynb`](examples/test_metropolis_import.ipynb).
+[`scripts/test_metropolis_import.ipynb`](scripts/test_metropolis_import.ipynb).
 The address plan ships in built distributions, so the loader works without a
 checkout.
 

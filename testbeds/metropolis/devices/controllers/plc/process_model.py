@@ -36,8 +36,8 @@ LEVEL_MIN = 500
 LEVEL_MAX = 1000
 FLOW_MIN = 0
 FLOW_MAX = 2000
-QUALITY_MIN = 8500
-QUALITY_MAX = 10000
+QUALITY_MIN = 850
+QUALITY_MAX = 1000
 
 # Inflow follows the pump, in tenths. Both values sit either side of the
 # documented example flow of 12.0 units/s, so the register stays in a plausible

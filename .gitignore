@@ -6,6 +6,7 @@
 tmp
 .tmp/
 .pytest_tmp*/
+pytest-of-*/
 .uv-cache/
 .uv-python/
 *.pth

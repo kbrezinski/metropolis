@@ -317,6 +317,8 @@ def test_modbus_actual_controller_map_and_restoration():
         second = client.read_holding_registers(0, count=3, slave=1)
         assert first.registers != second.registers, first.registers
         assert 0 <= first.registers[0] <= 1000, first.registers
+        assert 0 <= first.registers[1] <= 2000, first.registers
+        assert 0 <= first.registers[2] <= 1000, first.registers
         before_level = first.registers[0]
         result = invoke(
             "modbus/modbus_manipulation_attack.py",

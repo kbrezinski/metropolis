@@ -742,7 +742,7 @@ def load_example(name: str):
     """Import the example script, which is documentation that must keep working."""
     import importlib.util
 
-    path = ROOT / "examples/build_a_topology.py"
+    path = ROOT / "scripts/build_a_topology.py"
     spec = importlib.util.spec_from_file_location(name, path)
     module = importlib.util.module_from_spec(spec)
     sys.modules[name] = module

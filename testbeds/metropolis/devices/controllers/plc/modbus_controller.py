@@ -77,12 +77,10 @@ def main() -> None:
     role = os.getenv("DEVICE_ROLE", "PLC")
     host = os.getenv("MODBUS_HOST", "0.0.0.0")
     port = int(os.getenv("MODBUS_PORT", "502"))
-    # The PROCESS_* settings are stated in engineering units, matching the
-    # register map's "x10" column: 650 is 65.0 percent. Registers hold tenths,
-    # so they are converted here rather than seeded with the raw setting.
-    level_tenths = int(round(float(os.getenv("PROCESS_LEVEL", "650")) * 10))
-    flow_tenths = int(round(float(os.getenv("PROCESS_FLOW", "120")) * 10))
-    quality_tenths = int(round(float(os.getenv("PROCESS_QUALITY", "950")) * 10))
+    # PROCESS_* settings are already register values in tenths: 650 is 65.0%.
+    level_tenths = int(round(float(os.getenv("PROCESS_LEVEL", "650"))))
+    flow_tenths = int(round(float(os.getenv("PROCESS_FLOW", "120"))))
+    quality_tenths = int(round(float(os.getenv("PROCESS_QUALITY", "950"))))
     values = [level_tenths, flow_tenths, quality_tenths, 0]
 
     context = make_context(values)
@@ -103,18 +101,21 @@ def main() -> None:
         nonlocal state
         count = 0
         since_heartbeat = 0.0
+        last_published = state.registers()
         while True:
             time.sleep(TICK_SECONDS)
-            # Feed the process the current registers so an outside write moves
-            # it, then let it evolve from there.
+            # Preserve fractional motion between ticks. Only reload rounded
+            # register values when an outside writer has changed them.
             current = read_holding(context, 0, 3)
-            state = ProcessState(
-                level=float(current[0]),
-                flow=float(current[1]),
-                quality=float(current[2]),
-            )
+            if current != last_published:
+                state = ProcessState(
+                    level=float(current[0]),
+                    flow=float(current[1]),
+                    quality=float(current[2]),
+                )
             state = update(state, TICK_SECONDS, pump_is_on(context))
-            write_holding(context, 0, state.registers())
+            last_published = state.registers()
+            write_holding(context, 0, last_published)
             since_heartbeat += TICK_SECONDS
             if since_heartbeat >= 1.0:
                 since_heartbeat -= 1.0

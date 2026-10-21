@@ -5,8 +5,8 @@ This is the whole loop in one place: describe a network, prove it is not
 contradictory, look at it, and turn it into the dataset documents the GNS3
 builder and validator read.
 
-    uv run python examples/build_a_topology.py --draw
-    uv run python examples/build_a_topology.py --write /tmp/demo_v1
+    uv run python scripts/build_a_topology.py --draw
+    uv run python scripts/build_a_topology.py --write /tmp/demo_v1
 """
 
 from __future__ import annotations
