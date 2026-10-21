@@ -19,6 +19,10 @@ and metadata for one version of the water-treatment testbed dataset.
   router syslog for an experiment; `manifest.json` records collection and PCAP
   results, while `timeline.jsonl` holds run actions and project status. Matching
   PCAPs are in `captures/<run-id>/`. Runs are excluded from Git.
+- `runs/<run-id>/features/raw/` holds per-capture packet CSVs generated from a
+  completed `captures/<run-id>/manifest.json`; `features/extraction_report.json`
+  records their provenance, counts, and failures. See `scripts/README.md` for
+  the stage-one extraction command. No topology addresses are built into it.
 
 Keep reusable device behavior and definitions under the top-level `testbeds/metropolis/devices/`
 directory. A future dataset should get a new versioned directory under `testbeds/metropolis/datasets/`

@@ -1,0 +1,12 @@
+{
+  "fields": [
+    "frame.number", "frame.time_epoch", "frame.len", "frame.cap_len", "frame.protocols",
+    "eth.src", "eth.dst", "eth.type", "vlan.id", "arp.opcode", "arp.src.proto_ipv4", "arp.dst.proto_ipv4",
+    "ip.src", "ip.dst", "ip.version", "ip.proto", "ip.ttl", "ip.len", "ip.dsfield", "ip.flags", "ip.frag_offset",
+    "ipv6.src", "ipv6.dst", "ipv6.nxt", "ipv6.hlim",
+    "tcp.srcport", "tcp.dstport", "tcp.seq", "tcp.ack", "tcp.len", "tcp.flags", "tcp.window_size_value",
+    "udp.srcport", "udp.dstport", "udp.length", "icmp.type", "icmp.code", "icmpv6.type", "icmpv6.code",
+    "dns.qry.name", "dns.qry.type", "dns.flags.response", "http.request.method", "http.response.code",
+    "tls.record.content_type", "mqtt.msgtype", "coap.code", "modbus.func_code"
+  ]
+}
