@@ -23,6 +23,9 @@ and metadata for one version of the water-treatment testbed dataset.
   completed `captures/<run-id>/manifest.json`; `features/extraction_report.json`
   records their provenance, counts, and failures. See `scripts/README.md` for
   the stage-one extraction command. No topology addresses are built into it.
+- `runs/<run-id>/features/cleaned/` holds stage-two cleaned CSVs;
+  `features/cleaning_report.json` records the exact rules, retained fields,
+  row counts, hashes, and failures. The raw CSVs remain available.
 
 Keep reusable device behavior and definitions under the top-level `testbeds/metropolis/devices/`
 directory. A future dataset should get a new versioned directory under `testbeds/metropolis/datasets/`

@@ -20,6 +20,9 @@ dependencies = [
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = ["--import-mode=importlib", "-q"]
+markers = [
+    "slow: integration checks that build and install the wheel",
+]
 
 [tool.codespell]
 # "ot" is the operational-technology domain term; "checkin" is the control-frame
@@ -30,10 +33,18 @@ ignore-words-list = "ot,checkin"
 packages = ["src/metropolis"]
 
 [tool.hatch.build.targets.wheel.force-include]
+# The topology library loads all four documents from the package, so a wheel
+# must ship all four, not just the address plan.
 "testbeds/metropolis/datasets/water_treatment_v1/topology/address-plan.yaml" = "metropolis/data/testbeds/metropolis/water_treatment_v1/topology/address-plan.yaml"
+"testbeds/metropolis/datasets/water_treatment_v1/topology/links.yaml" = "metropolis/data/testbeds/metropolis/water_treatment_v1/topology/links.yaml"
+"testbeds/metropolis/datasets/water_treatment_v1/device_instances/initial_devices.yaml" = "metropolis/data/testbeds/metropolis/water_treatment_v1/device_instances/initial_devices.yaml"
+"testbeds/metropolis/datasets/water_treatment_v1/device_instances/infrastructure.yaml" = "metropolis/data/testbeds/metropolis/water_treatment_v1/device_instances/infrastructure.yaml"
 
 [tool.hatch.build.targets.sdist.force-include]
 "testbeds/metropolis/datasets/water_treatment_v1/topology/address-plan.yaml" = "testbeds/metropolis/datasets/water_treatment_v1/topology/address-plan.yaml"
+"testbeds/metropolis/datasets/water_treatment_v1/topology/links.yaml" = "testbeds/metropolis/datasets/water_treatment_v1/topology/links.yaml"
+"testbeds/metropolis/datasets/water_treatment_v1/device_instances/initial_devices.yaml" = "testbeds/metropolis/datasets/water_treatment_v1/device_instances/initial_devices.yaml"
+"testbeds/metropolis/datasets/water_treatment_v1/device_instances/infrastructure.yaml" = "testbeds/metropolis/datasets/water_treatment_v1/device_instances/infrastructure.yaml"
 
 [dependency-groups]
 # The experiment toolkit needs paho-mqtt, paramiko, pymodbus, and scapy. They

@@ -1,0 +1,7 @@
+{
+  "strip_whitespace": true,
+  "keep_fields": null,
+  "drop_fields": [],
+  "drop_rows_missing_fields": [],
+  "fill_missing": {}
+}

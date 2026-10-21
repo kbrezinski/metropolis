@@ -4,6 +4,10 @@
 
 # Temporary files
 tmp
+.tmp/
+.pytest_tmp*/
+.uv-cache/
+.uv-python/
 *.pth
 *.csv
 *.txt
@@ -17,6 +21,8 @@ data/
 models/
 artifacts/
 examples/
+paper/
+!paper/main.pdf
 
 # Generated packet captures can be large; keep dataset definitions and metadata tracked.
 testbeds/*/datasets/*/captures/**

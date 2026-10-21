@@ -62,3 +62,37 @@ raw TShark field values; missing protocol fields stay blank, and no cleaning,
 filtering, labeling, deduplication, or sampling happens in this stage. Captures
 on different links can observe the same packet, so rows across files should
 not be assumed unique.
+
+### Metropolis feature cleaning (stage 2)
+
+After extraction, clean the raw CSVs with:
+
+```bash
+uv run python scripts/clean_metropolis_features.py testbeds/metropolis/datasets/water_treatment_v1/runs/<run-id>/features/extraction_report.json
+```
+
+This reads only the extraction report's successful outputs, verifies each raw
+CSV hash, and writes `features/cleaned/<capture-point>.csv` plus
+`features/cleaning_report.json`. The report records retained/dropped fields,
+input/output row counts, missing-value counts, hashes, UTC times, and failures.
+It keeps working on other captures if one fails, and exits nonzero for an
+incomplete run. The raw CSVs are never changed.
+
+The default [`features/cleaning_rules.json`](features/cleaning_rules.json)
+trims surrounding whitespace and turns whitespace-only cells into blanks. It
+keeps all rows and fields, including missing protocol fields and repeated
+packets. It rejects malformed CSV rows rather than silently discarding them.
+For a different analysis, copy the rules file and pass `--rules PATH`:
+
+- `keep_fields`: selected field names in output order, or `null` for all fields.
+- `drop_fields`: fields to remove after selection.
+- `drop_rows_missing_fields`: remove a row when any named field is blank.
+- `fill_missing`: replace blank values in named fields with specified strings.
+- `strip_whitespace`: trim surrounding whitespace when `true`.
+
+Rules reference field names from the extraction report, so there are no fixed
+IP addresses, nodes, or network ranges. Row removal and missing-value filling
+are opt-in because blank fields often mean that a protocol does not apply to a
+packet. No statistical feature pruning, deduplication, sampling, labeling, or
+cross-capture merging occurs at this stage. `--output-dir` selects a different
+cleaned-output/report directory.
