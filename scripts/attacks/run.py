@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Single entry point for the Metropolis experiment toolkit.
 
-Every other tool in this directory is a Python module. This dispatcher names
+Every attack family has its own directory. This dispatcher names
 the module, forwards the remaining arguments to it, and returns the module's
 own exit code::
 
@@ -9,10 +9,9 @@ own exit code::
 
 It exists so a lab host needs one documented path to every tool, and so the
 interpreter that carries the research dependencies can be chosen in one place
-instead of eleven shell shims. The per-tool ``.sh`` launchers remain for
-compatibility; both routes resolve to the same module.
+instead of requiring a separate launcher for each attack.
 
-The tool list is discovered from the directory, so a new module appears here
+The tool list is discovered from the family directories, so a new module appears here
 automatically.
 """
 
@@ -41,12 +40,15 @@ def is_entry_point(path: Path) -> bool:
 
 
 def tools() -> dict[str, Path]:
-    """Map tool name to module for every runnable module in this directory."""
-    return {
-        path.stem: path
-        for path in sorted(DIRECTORY.glob("*.py"))
-        if path.name != Path(__file__).name and is_entry_point(path)
-    }
+    """Map each runnable script in an attack family to its command name."""
+    found: dict[str, Path] = {}
+    for path in sorted(DIRECTORY.glob("*/*.py")):
+        if not is_entry_point(path):
+            continue
+        if path.stem in found:
+            raise RuntimeError(f"Duplicate attack command: {path.stem}")
+        found[path.stem] = path
+    return found
 
 
 def usage(stream) -> None:

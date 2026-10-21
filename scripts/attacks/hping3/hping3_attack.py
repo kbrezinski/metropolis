@@ -1,9 +1,5 @@
 #!/usr/bin/env python3
-<<<<<<< HEAD
-"""Send bounded service probes or raw hping3-style packets inside the lab.
-=======
 """Generate bounded packet patterns based on Gotham's hping3 recipes.
->>>>>>> 5e23f21557b30ec53f0429a17cc6561c89992a71
 
 Raw modes model Gotham's generic UDP, Source Engine query, TCP SYN, TCP ACK,
 and TCP ACK+PSH patterns. They require raw-socket privileges. The older
@@ -13,14 +9,6 @@ Every run stops at --max-packets or --duration, whichever comes first. Those
 are ceilings rather than quotas: the tool never catches up after a slow probe,
 so a slow target sends fewer packets than you asked for.
 
-<<<<<<< HEAD
-The raw profiles model Gotham's UDP, UDP VSE, TCP SYN, TCP ACK, and TCP ACK+PSH
-packet shapes. TCP profiles advance the destination port on every packet.
-``--flood`` removes the pacing delay but still stops at the packet and time
-ceilings. Raw modes need privileges to send IP packets. They do not spoof a
-source address or establish that a service was disrupted; confirm their shape
-and count in a capture.
-=======
 Raw modes are restricted to the selected node's inventoried address. No source
 spoofing is used. The low ceilings yield the packet patterns in a capture, not
 Gotham's unbounded --flood volume or a service-exhaustion test. The --flood
@@ -29,7 +17,6 @@ Measure availability separately before making a DoS claim.
 
 Gotham's recipe file lists these commands; its run_merlin.py uploads and makes
 hping3 executable but does not invoke the flood recipes.
->>>>>>> 5e23f21557b30ec53f0429a17cc6561c89992a71
 """
 
 from __future__ import annotations
@@ -39,22 +26,20 @@ import time
 from os import urandom
 from secrets import randbelow
 
-from _common import Run, address_of, cli, inventory, ipv4, parser, positive, schedule
+from _common import (
+    Run,
+    cli,
+    endpoint,
+    inventory,
+    ipv4,
+    parser,
+    positive,
+    schedule,
+    select_device,
+)
 
 # Hard ceilings. These are deliberately modest: a lab availability experiment
 # needs a repeatable, bounded stimulus, not a genuine flood.
-<<<<<<< HEAD
-MAX_PACKET_CEILING = 200_000
-MAX_RATE = 2000.0
-MAX_DURATION = 600.0
-RAW_MAX_PACKETS = 3_000
-RAW_MAX_RATE = 100.0
-RAW_MAX_DURATION = 30.0
-RAW_MODES = frozenset({"udp-raw", "udp-vse", "tcp-syn", "tcp-ack", "tcp-ack-psh"})
-TCP_RAW_MODES = frozenset({"tcp-syn", "tcp-ack", "tcp-ack-psh"})
-DEFAULT_PAYLOAD = b"metropolis-bounded-probe"
-VSE_QUERY = b"\xff\xff\xff\xffTSource Engine Query\x00"
-=======
 MAX_PACKET_CEILING = 3000
 MAX_RATE = 100.0
 MAX_DURATION = 30.0
@@ -101,7 +86,6 @@ def flood_schedule(duration: float, maximum: int):
         if time.monotonic() >= deadline:
             return
         yield index
->>>>>>> 5e23f21557b30ec53f0429a17cc6561c89992a71
 
 
 def connect_probe(host: str, port: int, timeout: float) -> str:
@@ -133,51 +117,12 @@ def udp_probe(host: str, port: int, timeout: float, size: int) -> str:
             return "no-reply"
 
 
-def raw_packet(mode: str, host: str, port: int, index: int, size: int):
-    """Build one unspoofed IP packet with the selected profile."""
-    from scapy.all import IP, TCP, UDP, Raw
-
-    if mode in TCP_RAW_MODES:
-        flags = {"tcp-syn": "S", "tcp-ack": "A", "tcp-ack-psh": "PA"}[mode]
-        destination = (port - 1 + index) % 65535 + 1
-        packet = IP(dst=host) / TCP(
-            sport=40000 + index % 20000,
-            dport=destination,
-            flags=flags,
-            seq=index + 1,
-        )
-        if mode == "tcp-ack-psh":
-            packet /= Raw(
-                load=(DEFAULT_PAYLOAD * (size // len(DEFAULT_PAYLOAD) + 1))[:size]
-            )
-        return packet
-    payload = (
-        VSE_QUERY
-        if mode == "udp-vse"
-        else (DEFAULT_PAYLOAD * (size // len(DEFAULT_PAYLOAD) + 1))[:size]
-    )
-    return (
-        IP(dst=host) / UDP(sport=40000 + index % 20000, dport=port) / Raw(load=payload)
-    )
-
-
-def send_raw(packet) -> None:
-    """Send a layer-three packet without waiting for a response."""
-    from scapy.all import send
-
-    send(packet, verbose=False)
-
-
 def main() -> int:
     options = parser(__doc__, "MET-PLC-INTAKE-01")
     options.add_argument(
-<<<<<<< HEAD
-        "--mode", choices=["connect", "udp", *sorted(RAW_MODES)], default="connect"
-=======
         "--mode",
         choices=["syn", "udp-generic", "udp-vse", "ack", "stomp", "connect", "udp"],
         default="syn",
->>>>>>> 5e23f21557b30ec53f0429a17cc6561c89992a71
     )
     options.add_argument("--rate", type=positive, default=20)
     options.add_argument("--duration", type=positive, default=10)
@@ -186,20 +131,12 @@ def main() -> int:
     options.add_argument(
         "--flood",
         action="store_true",
-<<<<<<< HEAD
-        help="Send raw packets without pacing; packet and duration limits still apply",
-=======
         help="Send raw profile packets without pacing, still capped by count and time",
->>>>>>> 5e23f21557b30ec53f0429a17cc6561c89992a71
     )
     args = options.parse_args()
 
     if not 1 <= args.max_packets <= MAX_PACKET_CEILING:
-<<<<<<< HEAD
-        raise ValueError(f"max-packets must not exceed {MAX_PACKET_CEILING}")
-=======
         raise ValueError(f"max-packets must be 1..{MAX_PACKET_CEILING}")
->>>>>>> 5e23f21557b30ec53f0429a17cc6561c89992a71
     if args.rate > MAX_RATE:
         raise ValueError(f"rate must not exceed {MAX_RATE}/s")
     if args.duration > MAX_DURATION:
@@ -207,31 +144,40 @@ def main() -> int:
     if not 1 <= args.payload_size <= 1024:
         raise ValueError("payload-size must be 1..1024 bytes")
     if args.flood and args.mode not in RAW_MODES:
-<<<<<<< HEAD
-        raise ValueError("--flood requires a raw packet mode")
-    if args.mode in RAW_MODES:
-        if args.max_packets > RAW_MAX_PACKETS:
-            raise ValueError(f"raw modes allow at most {RAW_MAX_PACKETS} packets")
-        if args.duration > RAW_MAX_DURATION:
-            raise ValueError(f"raw modes allow at most {RAW_MAX_DURATION}s")
-        if not args.flood and args.rate > RAW_MAX_RATE:
-            raise ValueError(f"raw modes allow at most {RAW_MAX_RATE} packets/s")
-
-    # TCP load targets an OT listener; UDP load targets the CoAP sensor, so the
-    # target node changes with the mode unless the caller named one.
-    if args.mode == "connect" or args.mode in TCP_RAW_MODES:
-=======
         raise ValueError("--flood is only available for the five raw packet modes")
 
     # Raw profiles use a single inventoried destination, independent of which
     # application protocols that node happens to expose.
     if args.mode in RAW_MODES:
-        device = next(
-            (item for item in inventory(args.inventory) if item["name"] == args.node),
-            None,
-        )
-        if device is None:
-            raise ValueError(f"{args.node} is not an inventoried node")
+        records = inventory(args.inventory)
+        if args.node:
+            device = next((item for item in records if item["name"] == args.node), None)
+            if device is None:
+                raise ValueError(f"{args.node} is not in the inventory")
+        elif args.host:
+            device = next(
+                (
+                    item
+                    for item in records
+                    if item["address"].split("/")[0] == ipv4(args.host)
+                ),
+                None,
+            )
+            if device is None:
+                if args.port is None:
+                    raise ValueError(
+                        "Raw modes require an inventoried --host or an explicit --port"
+                    )
+                device = {"name": args.host, "address": ipv4(args.host)}
+        else:
+            try:
+                device = select_device(args, "modbus-tcp", service_env="DEVICE_ROLE")
+            except ValueError:
+                if len(records) != 1:
+                    raise ValueError(
+                        "Select an inventoried target with --node or --host"
+                    ) from None
+                device = records[0]
         host = ipv4(device["address"].split("/")[0])
         if args.host and ipv4(args.host) != host:
             raise ValueError(
@@ -247,47 +193,9 @@ def main() -> int:
         if args.mode == "udp-vse" and port != 27015:
             raise ValueError("Gotham's Source Engine query uses UDP port 27015")
     elif args.mode == "connect":
->>>>>>> 5e23f21557b30ec53f0429a17cc6561c89992a71
-        protocol, prefix, port_key, default_node, default_port = (
-            "modbus-tcp",
-            "PLC",
-            "MODBUS_PORT",
-            "MET-PLC-INTAKE-01",
-            502,
-        )
+        _, host, port = endpoint(args, "modbus-tcp", "PLC", 502)
     else:
-        protocol, prefix, port_key, default_node, default_port = (
-            "coap",
-            "COAP",
-            "COAP_PORT",
-            "MET-SENSOR-INTAKE-01",
-            5683,
-        )
-<<<<<<< HEAD
-    node = args.node if args.node != "MET-PLC-INTAKE-01" else default_node
-    record, host, port = address_of(
-        args,
-        node,
-        protocol,
-        f"METROPOLIS_{prefix}_HOST",
-        port_key,
-        default_port,
-    )
-    ipv4(host)
-    if args.mode in RAW_MODES and host != record["address"].split("/", 1)[0]:
-        raise ValueError("raw packet modes must target the inventoried node address")
-=======
-    if args.mode not in RAW_MODES:
-        node = args.node if args.node != "MET-PLC-INTAKE-01" else default_node
-        _, host, port = address_of(
-            args,
-            node,
-            protocol,
-            f"METROPOLIS_{prefix}_HOST",
-            port_key,
-            default_port,
-        )
->>>>>>> 5e23f21557b30ec53f0429a17cc6561c89992a71
+        _, host, port = endpoint(args, "coap", "COAP", 5683)
 
     with Run(
         args,
@@ -299,40 +207,16 @@ def main() -> int:
         flood=args.flood,
         duration=args.duration,
         max_packets=args.max_packets,
-<<<<<<< HEAD
-        payload_size=args.payload_size if args.mode in {"udp", "udp-raw"} else None,
-        destination_ports="incrementing" if args.mode in TCP_RAW_MODES else "fixed",
-=======
         payload_size=args.payload_size if args.mode == "udp" else None,
         destination_port_policy=(
             "incrementing" if args.mode in {"syn", "ack", "stomp"} else "fixed"
         ),
->>>>>>> 5e23f21557b30ec53f0429a17cc6561c89992a71
     ) as run:
         if args.dry_run:
             return 0
         outcomes: dict[str, int] = {}
         sent = 0
         started = time.monotonic()
-<<<<<<< HEAD
-        if args.mode in RAW_MODES:
-            deadline = started + args.duration
-            indexes = (
-                range(args.max_packets)
-                if args.flood
-                else schedule(args.rate, args.duration, args.max_packets)
-            )
-            for index in indexes:
-                if time.monotonic() >= deadline:
-                    break
-                send_raw(raw_packet(args.mode, host, port, index, args.payload_size))
-                sent += 1
-        else:
-            for _ in schedule(args.rate, args.duration, args.max_packets):
-                result = probe()
-                outcomes[result] = outcomes.get(result, 0) + 1
-                sent += 1
-=======
         indices = (
             flood_schedule(args.duration, args.max_packets)
             if args.flood
@@ -347,7 +231,6 @@ def main() -> int:
                 result = udp_probe(host, port, args.timeout, args.payload_size)
             outcomes[result] = outcomes.get(result, 0) + 1
             sent += 1
->>>>>>> 5e23f21557b30ec53f0429a17cc6561c89992a71
         elapsed = time.monotonic() - started
         run.emit(
             "summary",

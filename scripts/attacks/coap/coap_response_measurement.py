@@ -18,8 +18,16 @@ PROFILES = {
     "sustained": (5, 120, 600),
 }
 MIXED_RESOURCES = (
-    "/.well-known/core", "/status", "/level", "/flow", "/quality",
-    "/pressure", "/temperature", "/turbidity", "/pump", "/missing",
+    "/.well-known/core",
+    "/status",
+    "/level",
+    "/flow",
+    "/quality",
+    "/pressure",
+    "/temperature",
+    "/turbidity",
+    "/pump",
+    "/missing",
 )
 
 
@@ -33,7 +41,9 @@ def nibble(value: int):
     raise ValueError("CoAP option is too long")
 
 
-def build_get(path: str, token: bytes, message_id: int, confirmable: bool = False) -> bytes:
+def build_get(
+    path: str, token: bytes, message_id: int, confirmable: bool = False
+) -> bytes:
     if not 1 <= len(token) <= 8 or not path.startswith("/"):
         raise ValueError("Use an absolute resource path and a 1–8 byte token")
     options = bytearray()
@@ -47,7 +57,9 @@ def build_get(path: str, token: bytes, message_id: int, confirmable: bool = Fals
         previous = 11
     return (
         bytes([(0x40 if confirmable else 0x50) | len(token), 1])
-        + struct.pack("!H", message_id) + token + options
+        + struct.pack("!H", message_id)
+        + token
+        + options
     )
 
 
@@ -61,7 +73,9 @@ def valid_response(data: bytes, token: bytes) -> bool:
     )
 
 
-def response_code(data: bytes, token: bytes, message_id: int, confirmable: bool) -> int | None:
+def response_code(
+    data: bytes, token: bytes, message_id: int, confirmable: bool
+) -> int | None:
     """Match this sensor's piggybacked ACK or NON reply to one request."""
     if len(data) < 4 + len(token) or data[0] >> 6 != 1:
         return None
@@ -87,7 +101,9 @@ def settings(args) -> None:
     limits(args)
     if args.experiment_id is None:
         if args.mode == "spoof":
-            raise ValueError("Spoof mode needs --experiment-id to correlate receiver logs")
+            raise ValueError(
+                "Spoof mode needs --experiment-id to correlate receiver logs"
+            )
         args.experiment_id = secrets.token_hex(2)
     if not re.fullmatch(r"[0-9a-fA-F]{4}", args.experiment_id):
         raise ValueError("experiment-id must be four hexadecimal characters")
@@ -105,19 +121,25 @@ def request_choice(args, index: int) -> tuple[str, bool]:
 def main():
     options = parser(__doc__, "MET-SENSOR-INTAKE-01")
     options.add_argument("--mode", choices=["measure", "spoof"], default="measure")
-    options.add_argument("--resource", help="Use one resource instead of the mixed resource sequence")
-    options.add_argument("--message-type", choices=["con", "non", "mixed"], default="mixed")
+    options.add_argument(
+        "--resource", help="Use one resource instead of the mixed resource sequence"
+    )
+    options.add_argument(
+        "--message-type", choices=["con", "non", "mixed"], default="mixed"
+    )
     options.add_argument("--profile", choices=tuple(PROFILES), default="custom")
     options.add_argument("--rate", type=positive)
     options.add_argument("--duration", type=positive)
     options.add_argument("--max-messages", type=int)
-    options.add_argument("--experiment-id", help="Four hex digits shared by sender, sensor and receiver")
+    options.add_argument(
+        "--experiment-id", help="Four hex digits shared by sender, sensor and receiver"
+    )
     options.add_argument("--spoof-src", help="Separate private lab receiver address")
     options.add_argument("--receiver-port", type=int, default=56830)
     args = options.parse_args()
     _, host, port = endpoint(args, "coap", "COAP", 5683)
     settings(args)
-    for path in ((args.resource,) if args.resource else MIXED_RESOURCES):
+    for path in (args.resource,) if args.resource else MIXED_RESOURCES:
         build_get(path, b"test", 1)
     if not 1 <= args.receiver_port <= 65535:
         raise ValueError("Invalid receiver port")

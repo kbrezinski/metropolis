@@ -12,7 +12,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 ATTACKS = ROOT / "scripts/attacks"
 sys.path.insert(0, str(ATTACKS))
-import ssh_bruteforce_attack as attack  # noqa: E402
+from ssh import ssh_bruteforce_attack as attack  # noqa: E402
 
 
 def test_default_candidates_are_distinct_and_success_is_last(tmp_path):
@@ -34,7 +34,7 @@ def test_dry_run_reports_limits_without_credential_or_lab_ack():
     env = os.environ.copy()
     env.pop("METROPOLIS_LAB_ACK", None)
     result = subprocess.run(
-        [sys.executable, str(ATTACKS / "ssh_bruteforce_attack.py"), "--dry-run"],
+        [sys.executable, str(ATTACKS / "run.py"), "ssh_bruteforce_attack", "--dry-run"],
         env=env,
         capture_output=True,
         text=True,
@@ -48,10 +48,20 @@ def test_dry_run_reports_limits_without_credential_or_lab_ack():
     assert "LabOnly_Engineering_2026" not in result.stdout
 
 
-@pytest.mark.parametrize("option,value", [("--rate", "101"), ("--duration", "601"), ("--max-attempts", "1001")])
+@pytest.mark.parametrize(
+    "option,value",
+    [("--rate", "101"), ("--duration", "601"), ("--max-attempts", "1001")],
+)
 def test_hard_ceiling_rejects_oversized_dry_run(option, value):
     result = subprocess.run(
-        [sys.executable, str(ATTACKS / "ssh_bruteforce_attack.py"), "--dry-run", option, value],
+        [
+            sys.executable,
+            str(ATTACKS / "run.py"),
+            "ssh_bruteforce_attack",
+            "--dry-run",
+            option,
+            value,
+        ],
         capture_output=True,
         text=True,
         timeout=10,

@@ -32,7 +32,7 @@ def invoke(name, *args, ack=True):
     if ack:
         env["METROPOLIS_LAB_ACK"] = "yes"
     return subprocess.run(
-        [sys.executable, str(ATTACKS / name), *map(str, args)],
+        [sys.executable, str(ATTACKS / "run.py"), Path(name).stem, *map(str, args)],
         env=env,
         capture_output=True,
         text=True,
@@ -194,8 +194,8 @@ def test_merlin_cnc_listener_and_upload_lifecycle():
 @pytest.mark.parametrize(
     "name,args",
     [
-        ("run_mirai_choreography.py", []),
-        ("run_merlin.py", []),
+        ("mirai/run_mirai_choreography.py", []),
+        ("merlin/run_merlin.py", []),
     ],
 )
 def test_choreography_dry_runs_resolve_inventory(name, args):
@@ -204,7 +204,7 @@ def test_choreography_dry_runs_resolve_inventory(name, args):
     assert result.returncode == 0, result.stdout + result.stderr
     start = records(result)[0]
     assert start["dry_run"] is True
-    if name == "run_mirai_choreography.py":
+    if name == "mirai/run_mirai_choreography.py":
         assert start["cnc"] == "10.99.10.10:23"
         assert start["listener"] == "10.99.10.11:48101"
         assert start["loader"] == "10.99.10.13:80"
@@ -216,14 +216,14 @@ def test_choreography_dry_runs_resolve_inventory(name, args):
 
 def test_choreography_requires_the_lab_acknowledgement():
     """Neither driver sends traffic without the explicit lab acknowledgement."""
-    assert invoke("run_mirai_choreography.py", ack=False).returncode == 2
-    assert invoke("run_merlin.py", ack=False).returncode == 2
+    assert invoke("mirai/run_mirai_choreography.py", ack=False).returncode == 2
+    assert invoke("merlin/run_merlin.py", ack=False).returncode == 2
 
 
 def test_choreography_rejects_unknown_nodes():
     """An unknown node name fails during resolution, before any traffic."""
     result = invoke(
-        "run_mirai_choreography.py", "--cnc-node", "MET-NOPE-01", "--dry-run"
+        "mirai/run_mirai_choreography.py", "--cnc-node", "MET-NOPE-01", "--dry-run"
     )
     assert result.returncode == 2
     assert "not in the inventory" in result.stdout

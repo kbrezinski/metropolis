@@ -56,9 +56,19 @@ def bot_checkin(
 
 def main() -> int:
     options = parser(__doc__, "MET-MIRAI-CNC-01")
-    options.add_argument("--cnc-node", default="MET-MIRAI-CNC-01")
-    options.add_argument("--listener-node", default="MET-MIRAI-LISTENER-01")
-    options.add_argument("--loader-node", default="MET-MIRAI-LOADER-WGET-01")
+    options.add_argument(
+        "--cnc-node", help="Mirai control node (auto-selected by role)"
+    )
+    options.add_argument(
+        "--listener-node", help="Mirai report listener (auto-selected by role)"
+    )
+    options.add_argument(
+        "--loader-node", help="HTTP payload loader (auto-selected by role)"
+    )
+    options.add_argument("--listener-host", help="Override the listener IPv4 address")
+    options.add_argument("--loader-host", help="Override the loader IPv4 address")
+    options.add_argument("--listener-port", type=int)
+    options.add_argument("--loader-port", type=int)
     options.add_argument("--bots", type=int, default=3)
     options.add_argument("--max-bots", type=int, default=16)
     options.add_argument("--interval", type=positive, default=1.0)
@@ -73,14 +83,40 @@ def main() -> int:
     if not 1 <= args.bots <= args.max_bots <= 64:
         raise ValueError("bots must be 1..max-bots and max-bots at most 64")
 
-    _, cnc_host, cnc_port = address_of(
-        args, args.cnc_node, "mirai-cnc", "METROPOLIS_MIRAI_CNC_HOST"
+    cnc, cnc_host, cnc_port = address_of(
+        args,
+        args.cnc_node,
+        "mirai-cnc",
+        "METROPOLIS_MIRAI_CNC_HOST",
+        "MIRAI_CNC_PORT",
+        23,
+        use_common_overrides=True,
     )
     _, listener_host, listener_port = address_of(
-        args, args.listener_node, "mirai-report", "METROPOLIS_MIRAI_LISTENER_HOST"
+        args,
+        args.listener_node,
+        "mirai-report",
+        "METROPOLIS_MIRAI_LISTENER_HOST",
+        "MIRAI_REPORT_PORT",
+        48101,
+        exclude={cnc["name"]},
+        host_override=args.listener_host,
+        port_override=args.listener_port,
+        use_args_node=False,
+        selection_option="--listener-node",
     )
     _, loader_host, loader_port = address_of(
-        args, args.loader_node, "payload-delivery", "METROPOLIS_MIRAI_LOADER_HOST"
+        args,
+        args.loader_node,
+        "payload-delivery",
+        "METROPOLIS_MIRAI_LOADER_HOST",
+        "LOADER_PORT",
+        80,
+        env_equals=("LOADER_KIND", "wget"),
+        host_override=args.loader_host,
+        port_override=args.loader_port,
+        use_args_node=False,
+        selection_option="--loader-node",
     )
     ipv4(cnc_host)
     ipv4(listener_host)

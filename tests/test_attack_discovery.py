@@ -16,7 +16,6 @@ import subprocess
 import sys
 import threading
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 
@@ -33,7 +32,7 @@ def invoke(name, *args, ack=True):
     if ack:
         env["METROPOLIS_LAB_ACK"] = "yes"
     return subprocess.run(
-        [sys.executable, str(ATTACKS / name), *map(str, args)],
+        [sys.executable, str(ATTACKS / "run.py"), Path(name).stem, *map(str, args)],
         env=env,
         capture_output=True,
         text=True,
@@ -82,19 +81,19 @@ def tcp_listener():
 
 def test_bounded_probe_resolves_ot_nodes():
     """Raw profiles target the inventory; legacy UDP targets CoAP."""
-    syn = records(invoke("run_bounded_hping3.py", "--dry-run", ack=False))[0]
+    syn = records(invoke("hping3/hping3_attack.py", "--dry-run", ack=False))[0]
     assert syn["host"] == "10.20.10.10"
     assert syn["port"] == 0
     assert syn["mode"] == "syn"
     assert syn["destination_port_policy"] == "incrementing"
 
     vse = records(
-        invoke("run_bounded_hping3.py", "--mode", "udp-vse", "--dry-run", ack=False)
+        invoke("hping3/hping3_attack.py", "--mode", "udp-vse", "--dry-run", ack=False)
     )[0]
     assert vse["port"] == 27015
 
     udp = records(
-        invoke("run_bounded_hping3.py", "--mode", "udp", "--dry-run", ack=False)
+        invoke("hping3/hping3_attack.py", "--mode", "udp", "--dry-run", ack=False)
     )[0]
     assert udp["host"] == "10.20.10.20"
     assert udp["port"] == 5683
@@ -102,153 +101,49 @@ def test_bounded_probe_resolves_ot_nodes():
 
 def test_bounded_probe_refuses_unbounded_settings():
     """Every ceiling is enforced before any traffic is sent."""
-    assert invoke("run_bounded_hping3.py", "--rate", "99999").returncode == 2
-    assert invoke("run_bounded_hping3.py", "--duration", "99999").returncode == 2
-    assert invoke("run_bounded_hping3.py", "--max-packets", "99999999").returncode == 2
-    assert invoke("run_bounded_hping3.py", "--payload-size", "0").returncode == 2
-    assert invoke("run_bounded_hping3.py", "--max-packets", "0").returncode == 2
+    assert invoke("hping3/hping3_attack.py", "--rate", "99999").returncode == 2
+    assert invoke("hping3/hping3_attack.py", "--duration", "99999").returncode == 2
+    assert (
+        invoke("hping3/hping3_attack.py", "--max-packets", "99999999").returncode == 2
+    )
+    assert invoke("hping3/hping3_attack.py", "--payload-size", "0").returncode == 2
+    assert invoke("hping3/hping3_attack.py", "--max-packets", "0").returncode == 2
     assert (
         invoke(
-            "run_bounded_hping3.py", "--flood", "--max-packets", "99999999"
+            "hping3/hping3_attack.py", "--flood", "--max-packets", "99999999"
         ).returncode
         == 2
     )
     assert (
         invoke(
-            "run_bounded_hping3.py", "--mode", "connect", "--flood", "--dry-run"
+            "hping3/hping3_attack.py", "--mode", "connect", "--flood", "--dry-run"
         ).returncode
         == 2
     )
     assert (
         invoke(
-            "run_bounded_hping3.py", "--mode", "udp-vse", "--port", "53", "--dry-run"
+            "hping3/hping3_attack.py", "--mode", "udp-vse", "--port", "53", "--dry-run"
         ).returncode
         == 2
     )
     assert (
-        invoke("run_bounded_hping3.py", "--host", "10.20.10.11", "--dry-run").returncode
+        invoke(
+            "hping3/hping3_attack.py", "--host", "10.20.10.11", "--dry-run"
+        ).returncode
         == 2
     )
     # A public target is refused by the private-address check.
     assert (
-        invoke("run_bounded_hping3.py", "--host", "8.8.8.8", "--dry-run").returncode
+        invoke("hping3/hping3_attack.py", "--host", "8.8.8.8", "--dry-run").returncode
         == 2
     )
-    assert invoke("run_bounded_hping3.py", ack=False).returncode == 2
-
-
-@pytest.mark.parametrize(
-    ("mode", "host", "port"),
-    [
-        ("udp-raw", "10.20.10.20", 5683),
-        ("udp-vse", "10.20.10.20", 5683),
-        ("tcp-syn", "10.20.10.10", 502),
-        ("tcp-ack", "10.20.10.10", 502),
-        ("tcp-ack-psh", "10.20.10.10", 502),
-    ],
-)
-def test_raw_profiles_resolve_inventoried_targets(mode, host, port):
-    result = invoke("run_bounded_hping3.py", "--mode", mode, "--dry-run", ack=False)
-    assert result.returncode == 0, result.stdout + result.stderr
-    start = records(result)[0]
-    assert (start["host"], start["port"]) == (host, port)
-
-
-def test_raw_packet_shapes_and_rotating_tcp_ports():
-    from scapy.layers.inet import IP, TCP, UDP
-    from scapy.packet import Raw
-
-    driver = load_driver("raw_hping_driver", "run_bounded_hping3.py")
-    syn = driver.raw_packet("tcp-syn", "10.20.10.10", 502, 1, 64)
-    ack = driver.raw_packet("tcp-ack", "10.20.10.10", 502, 2, 64)
-    psh = driver.raw_packet("tcp-ack-psh", "10.20.10.10", 502, 3, 64)
-    vse = driver.raw_packet("udp-vse", "10.20.10.20", 5683, 0, 64)
-    assert syn[IP].dst == "10.20.10.10"
-    assert (syn[TCP].flags, syn[TCP].dport) == ("S", 503)
-    assert (ack[TCP].flags, ack[TCP].dport) == ("A", 504)
-    assert (psh[TCP].flags, psh[TCP].dport) == ("PA", 505)
-    assert len(bytes(psh[Raw].load)) == 64
-    assert vse[UDP].dport == 5683
-    assert bytes(vse[Raw].load) == driver.VSE_QUERY
-
-
-def test_raw_flood_remains_bounded_and_inventory_scoped():
-    tool = "run_bounded_hping3.py"
-    assert invoke(tool, "--mode", "tcp-syn", "--max-packets", "3001").returncode == 2
-    assert invoke(tool, "--mode", "tcp-syn", "--duration", "31").returncode == 2
-    assert invoke(tool, "--mode", "tcp-syn", "--rate", "101").returncode == 2
-    assert invoke(tool, "--mode", "connect", "--flood").returncode == 2
-    assert invoke(tool, "--mode", "tcp-syn", "--max-packets", "0").returncode == 2
-    assert invoke(tool, "--mode", "tcp-syn", "--host", "10.20.10.99").returncode == 2
-    flood = invoke(tool, "--mode", "tcp-syn", "--flood", "--dry-run", ack=False)
-    assert flood.returncode == 0, flood.stdout + flood.stderr
-    assert records(flood)[0]["flood"] is True
-
-
-def test_raw_flood_stops_after_the_packet_ceiling(monkeypatch, capsys):
-    driver = load_driver("raw_flood_driver", "run_bounded_hping3.py")
-    sent = []
-    monkeypatch.setattr(driver, "raw_packet", lambda *args: args)
-    monkeypatch.setattr(driver, "send_raw", sent.append)
-    monkeypatch.setenv("METROPOLIS_LAB_ACK", "yes")
-    monkeypatch.setattr(
-        sys,
-        "argv",
-        [
-            "run_bounded_hping3.py",
-            "--mode",
-            "tcp-syn",
-            "--flood",
-            "--duration",
-            "1",
-            "--max-packets",
-            "3",
-        ],
-    )
-    assert driver.main() == 0
-    summary = next(
-        item
-        for item in (json.loads(line) for line in capsys.readouterr().out.splitlines())
-        if item["event"] == "summary"
-    )
-    assert len(sent) == summary["packets"] == 3
-
-
-def test_raw_flood_stops_at_duration(monkeypatch, capsys):
-    driver = load_driver("raw_flood_time_driver", "run_bounded_hping3.py")
-    sent = []
-    ticks = iter((0.0, 0.1, 1.1, 1.2))
-    monkeypatch.setattr(driver, "time", SimpleNamespace(monotonic=lambda: next(ticks)))
-    monkeypatch.setattr(driver, "raw_packet", lambda *args: args)
-    monkeypatch.setattr(driver, "send_raw", sent.append)
-    monkeypatch.setenv("METROPOLIS_LAB_ACK", "yes")
-    monkeypatch.setattr(
-        sys,
-        "argv",
-        [
-            "run_bounded_hping3.py",
-            "--mode",
-            "tcp-syn",
-            "--flood",
-            "--duration",
-            "1",
-            "--max-packets",
-            "100",
-        ],
-    )
-    assert driver.main() == 0
-    summary = next(
-        item
-        for item in (json.loads(line) for line in capsys.readouterr().out.splitlines())
-        if item["event"] == "summary"
-    )
-    assert len(sent) == summary["packets"] == 1
+    assert invoke("hping3/hping3_attack.py", ack=False).returncode == 2
 
 
 def test_bounded_probe_reaches_a_live_listener(tcp_listener):
     """The availability probe reports a real listening socket as open."""
     port, _ = tcp_listener
-    probe = load_driver("bounded_probe_driver", "run_bounded_hping3.py")
+    probe = load_driver("bounded_probe_driver", "hping3/hping3_attack.py")
     assert probe.connect_probe("127.0.0.1", port, 2.0) == "open"
     # Nothing listens on the reserved port below, so it must not report open.
     assert probe.connect_probe("127.0.0.1", 1, 0.5) != "open"
@@ -261,7 +156,7 @@ def test_bounded_probe_counts_stay_within_the_cap():
     slow target legitimately yields fewer packets than the cap.
     """
     result = invoke(
-        "run_bounded_hping3.py",
+        "hping3/hping3_attack.py",
         "--mode",
         "connect",
         "--host",
@@ -287,7 +182,7 @@ def test_raw_profiles_match_gotham_packet_shapes(monkeypatch):
     monkeypatch.setenv("XDG_CACHE_HOME", str(ROOT / ".venv"))
     from scapy.all import IP, TCP, UDP, Raw
 
-    probe = load_driver("raw_profile_driver", "run_bounded_hping3.py")
+    probe = load_driver("raw_profile_driver", "hping3/hping3_attack.py")
     host = "10.20.10.10"
     syn = probe.raw_packet("syn", host, 0, 2)
     assert syn[IP].dst == host
@@ -318,10 +213,12 @@ def test_raw_profiles_match_gotham_packet_shapes(monkeypatch):
 
 def test_flood_mode_has_no_pacing_and_still_has_hard_caps(monkeypatch):
     """A dry run announces flood mode; count and deadline both stop it."""
-    run = records(invoke("run_bounded_hping3.py", "--flood", "--dry-run", ack=False))[0]
+    run = records(invoke("hping3/hping3_attack.py", "--flood", "--dry-run", ack=False))[
+        0
+    ]
     assert run["flood"] is True
     assert run["rate"] is None
-    driver = load_driver("flood_driver", "run_bounded_hping3.py")
+    driver = load_driver("flood_driver", "hping3/hping3_attack.py")
     assert list(driver.flood_schedule(1, 4)) == [0, 1, 2, 3]
     ticks = iter([0.0, 0.1, 0.5])
     monkeypatch.setattr(driver.time, "monotonic", lambda: next(ticks))
@@ -332,7 +229,7 @@ def test_discovery_defaults_to_inventory_and_documented_ports():
     """The sweep covers inventoried hosts and the documented listener set."""
     start = records(
         invoke(
-            "run_iot_discovery_simulation.py",
+            "scanner/iot_discovery.py",
             "--dry-run",
             ack=False,
         )
@@ -352,7 +249,7 @@ def test_discovery_defaults_to_inventory_and_documented_ports():
 def test_discovery_probe_helpers_observe_a_live_listener(tcp_listener):
     """TCP opens are reported; a closed reserved port is not."""
     port, _ = tcp_listener
-    discovery = load_driver("discovery_driver", "run_iot_discovery_simulation.py")
+    discovery = load_driver("discovery_driver", "scanner/iot_discovery.py")
     assert discovery.tcp_probe("127.0.0.1", port, 2.0) == "open"
     assert discovery.tcp_probe("127.0.0.1", 1, 0.5) in {"closed", "no-response"}
 
@@ -373,7 +270,7 @@ def test_discovery_reports_complete_and_partial_coverage(tcp_listener):
         "--workers",
         "2",
     )
-    complete = invoke("run_iot_discovery_simulation.py", *arguments)
+    complete = invoke("scanner/iot_discovery.py", *arguments)
     assert complete.returncode == 0, complete.stdout + complete.stderr
     summary = next(row for row in records(complete) if row["event"] == "summary")
     assert summary["complete"] is True
@@ -381,7 +278,7 @@ def test_discovery_reports_complete_and_partial_coverage(tcp_listener):
     assert summary["live_services"] == {"127.0.0.1": [f"tcp/{port}"]}
     assert len(accepted) >= 2
 
-    partial = invoke("run_iot_discovery_simulation.py", *arguments, "--max-probes", "1")
+    partial = invoke("scanner/iot_discovery.py", *arguments, "--max-probes", "1")
     assert partial.returncode == 1
     summary = next(row for row in records(partial) if row["event"] == "summary")
     assert summary["complete"] is False
@@ -391,7 +288,7 @@ def test_discovery_reports_complete_and_partial_coverage(tcp_listener):
 def test_discovery_coap_probe_uses_real_sensor_response():
     sensor_path = ROOT / "testbeds/metropolis/devices/field/sensors/coap_sensor.py"
     sensor = load_driver("coap_for_discovery", sensor_path)
-    discovery = load_driver("coap_discovery_driver", "run_iot_discovery_simulation.py")
+    discovery = load_driver("coap_discovery_driver", "scanner/iot_discovery.py")
 
     class Handler(socketserver.BaseRequestHandler):
         def handle(self):
@@ -418,7 +315,7 @@ def test_discovery_coap_probe_uses_real_sensor_response():
 
 
 def test_discovery_accepts_tftp_transfer_port_reply():
-    discovery = load_driver("tftp_discovery_driver", "run_iot_discovery_simulation.py")
+    discovery = load_driver("tftp_discovery_driver", "scanner/iot_discovery.py")
 
     class Handler(socketserver.BaseRequestHandler):
         def handle(self):
@@ -446,9 +343,7 @@ def test_discovery_accepts_tftp_transfer_port_reply():
 
 @pytest.mark.parametrize("kind", ["dns", "ntp"])
 def test_discovery_recognizes_dns_and_ntp_replies(kind):
-    discovery = load_driver(
-        f"{kind}_discovery_driver", "run_iot_discovery_simulation.py"
-    )
+    discovery = load_driver(f"{kind}_discovery_driver", "scanner/iot_discovery.py")
 
     class Handler(socketserver.BaseRequestHandler):
         def handle(self):
@@ -481,36 +376,34 @@ def test_discovery_refuses_public_and_oversized_ranges():
     """Explicit ranges must stay private and no larger than 256 addresses."""
     assert (
         invoke(
-            "run_iot_discovery_simulation.py", "--cidr", "8.8.8.0/24", "--dry-run"
+            "scanner/iot_discovery.py", "--cidr", "8.8.8.0/24", "--dry-run"
         ).returncode
         == 2
     )
     assert (
         invoke(
-            "run_iot_discovery_simulation.py", "--cidr", "10.20.0.0/16", "--dry-run"
+            "scanner/iot_discovery.py", "--cidr", "10.20.0.0/16", "--dry-run"
         ).returncode
         == 2
     )
     assert (
         invoke(
-            "run_iot_discovery_simulation.py", "--max-probes", "99999999", "--dry-run"
+            "scanner/iot_discovery.py", "--max-probes", "99999999", "--dry-run"
         ).returncode
         == 2
     )
     assert (
-        invoke(
-            "run_iot_discovery_simulation.py", "--max-probes", "0", "--dry-run"
-        ).returncode
+        invoke("scanner/iot_discovery.py", "--max-probes", "0", "--dry-run").returncode
         == 2
     )
-    assert invoke("run_iot_discovery_simulation.py", ack=False).returncode == 2
+    assert invoke("scanner/iot_discovery.py", ack=False).returncode == 2
 
 
 def test_discovery_node_selection_narrows_the_sweep():
     """--node narrows the sweep to one inventoried host."""
     start = records(
         invoke(
-            "run_iot_discovery_simulation.py",
+            "scanner/iot_discovery.py",
             "--node",
             "MET-PLC-INTAKE-01",
             "--dry-run",
@@ -521,8 +414,6 @@ def test_discovery_node_selection_narrows_the_sweep():
 
 
 def test_discovery_rejects_an_unknown_node():
-    result = invoke(
-        "run_iot_discovery_simulation.py", "--node", "MET-NOPE-01", "--dry-run"
-    )
+    result = invoke("scanner/iot_discovery.py", "--node", "MET-NOPE-01", "--dry-run")
     assert result.returncode == 2
     assert "not in the inventory" in result.stdout

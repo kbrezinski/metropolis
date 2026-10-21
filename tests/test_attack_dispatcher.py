@@ -25,22 +25,17 @@ HELPERS = {"_common", "_mqtt", "_telnet", "_c2", "run"}
 
 EXPECTED_TOOLS = {
     "coap_response_measurement",
-<<<<<<< HEAD
-    "gotham_merlin_setup",
-    "gotham_mirai_setup",
-=======
     "coap_experiment_report",
     "coap_reflection_receiver",
     "gotham_mirai_setup",
     "gotham_merlin_setup",
->>>>>>> 5e23f21557b30ec53f0429a17cc6561c89992a71
     "mirai_infection_sim",
     "modbus_manipulation_attack",
     "mqtt_bruteforce_attack",
     "mqtt_flood_attack",
     "network_recon_scan",
-    "run_bounded_hping3",
-    "run_iot_discovery_simulation",
+    "hping3_attack",
+    "iot_discovery",
     "run_merlin",
     "run_mirai_choreography",
     "ssh_bruteforce_attack",
@@ -83,7 +78,7 @@ def test_dispatcher_lists_every_tool_and_no_helpers():
     assert not (listed & HELPERS)
     # Every listed tool exists as a module.
     for name in listed:
-        assert (ATTACKS / f"{name}.py").is_file()
+        assert len(list(ATTACKS.glob(f"*/{name}.py"))) == 1
 
 
 def test_dispatcher_forwards_arguments_to_the_module():
@@ -97,7 +92,7 @@ def test_dispatcher_forwards_arguments_to_the_module():
 
 def test_dispatcher_forwards_flagged_arguments():
     """Positional and flagged arguments reach the target module intact."""
-    result = invoke("run_bounded_hping3", "--mode", "udp", "--dry-run")
+    result = invoke("hping3_attack", "--mode", "udp", "--dry-run")
     assert result.returncode == 0, result.stdout + result.stderr
     start = records(result)[0]
     assert start["mode"] == "udp"
@@ -145,7 +140,7 @@ def test_gotham_mirai_setup_starts_only_the_inert_bot(monkeypatch, capsys):
     if str(ATTACKS) not in sys.path:
         sys.path.insert(0, str(ATTACKS))
     spec = importlib.util.spec_from_file_location(
-        "gotham_mirai_setup_test", ATTACKS / "gotham_mirai_setup.py"
+        "gotham_mirai_setup_test", ATTACKS / "mirai/gotham_mirai_setup.py"
     )
     adapter = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(adapter)
@@ -165,6 +160,17 @@ def test_gotham_mirai_setup_starts_only_the_inert_bot(monkeypatch, capsys):
                     "status": "started",
                     "node_id": "telnet",
                 },
+                {"name": "MET-MIRAI-CNC-01", "status": "started", "node_id": "cnc"},
+                {
+                    "name": "MET-MIRAI-LISTENER-01",
+                    "status": "started",
+                    "node_id": "listener",
+                },
+                {
+                    "name": "MET-MIRAI-LOADER-WGET-01",
+                    "status": "started",
+                    "node_id": "loader",
+                },
                 {"name": "MET-MIRAI-BOT-01", "status": "stopped", "node_id": "bot"},
             ]
 
@@ -174,7 +180,9 @@ def test_gotham_mirai_setup_starts_only_the_inert_bot(monkeypatch, capsys):
     client = Client()
     monkeypatch.setattr(adapter, "gns3_client", lambda: client)
     monkeypatch.setenv("METROPOLIS_LAB_ACK", "yes")
-    monkeypatch.setattr(sys, "argv", ["gotham_mirai_setup.py", "--start-inert-bot"])
+    monkeypatch.setattr(
+        sys, "argv", ["mirai/gotham_mirai_setup.py", "--start-inert-bot"]
+    )
     assert adapter.main() == 0
     assert client.started == [("lab", "bot")]
     events = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
@@ -214,7 +222,7 @@ def test_gotham_merlin_setup_starts_only_the_example_agent(monkeypatch, capsys):
     if str(ATTACKS) not in sys.path:
         sys.path.insert(0, str(ATTACKS))
     spec = importlib.util.spec_from_file_location(
-        "gotham_merlin_setup_test", ATTACKS / "gotham_merlin_setup.py"
+        "gotham_merlin_setup_test", ATTACKS / "merlin/gotham_merlin_setup.py"
     )
     adapter = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(adapter)
@@ -243,7 +251,9 @@ def test_gotham_merlin_setup_starts_only_the_example_agent(monkeypatch, capsys):
     client = Client()
     monkeypatch.setattr(adapter, "gns3_client", lambda: client)
     monkeypatch.setenv("METROPOLIS_LAB_ACK", "yes")
-    monkeypatch.setattr(sys, "argv", ["gotham_merlin_setup.py", "--start-inert-agent"])
+    monkeypatch.setattr(
+        sys, "argv", ["merlin/gotham_merlin_setup.py", "--start-inert-agent"]
+    )
     assert adapter.main() == 0
     assert client.started == [("lab", "agent")]
     events = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
@@ -279,41 +289,71 @@ def test_dispatcher_passes_through_help():
     assert "--action" in result.stdout
 
 
-@pytest.mark.parametrize(
-    ("tool", "choice", "endpoint_key", "endpoint"),
-    [
-        ("gotham_mirai_setup", "--external-bot", "telnet_target", "10.20.10.30:23"),
-        (
-            "gotham_merlin_setup",
-            "--external-agent",
-            "agent_url",
-            "http://10.99.10.20:8443",
-        ),
-    ],
-)
-def test_external_setup_dry_run_shows_inventory_contract(
-    tool, choice, endpoint_key, endpoint
-):
-    result = invoke(tool, choice, "--dry-run")
-    assert result.returncode == 0, result.stdout + result.stderr
-    started = records(result)[0]
-    assert started["agent_source"] == "user_supplied"
-    assert started[endpoint_key] == endpoint
+@pytest.mark.parametrize("name", sorted(EXPECTED_TOOLS - {"coap_experiment_report"}))
+def test_attack_commands_offer_explicit_gotham_script(name):
+    result = invoke(name, "--help")
+    assert result.returncode == 0
+    assert "--gotham-script" in result.stdout
 
 
-@pytest.mark.parametrize(
-    ("tool", "external", "inert"),
-    [
-        ("gotham_mirai_setup", "--external-bot", "--start-inert-bot"),
-        ("gotham_merlin_setup", "--external-agent", "--start-inert-agent"),
-    ],
-)
-def test_external_setup_requires_one_agent_source(tool, external, inert):
-    assert invoke(tool, "--dry-run").returncode == 2
-    assert invoke(tool, external, inert, "--dry-run").returncode == 2
-    result = invoke(tool, inert, "--dry-run")
+def test_gotham_script_dry_run_does_not_execute(tmp_path):
+    script = tmp_path / "gotham.sh"
+    script.write_text("exit 9\n", encoding="utf-8")
+    result = invoke("hping3_attack", "--gotham-script", script, "--dry-run")
     assert result.returncode == 0, result.stdout + result.stderr
-    assert records(result)[0]["agent_source"] == "repository_example"
+    start = records(result)[0]
+    assert start["tool"] == "gotham_shell"
+    assert start["script"] == str(script)
+    assert start["dry_run"] is True
+
+
+def test_gotham_script_keeps_acknowledgement_gate(tmp_path):
+    script = tmp_path / "gotham.sh"
+    script.write_text("exit 9\n", encoding="utf-8")
+    result = invoke("hping3_attack", "--gotham-script", script)
+    assert result.returncode == 2
+    assert "METROPOLIS_LAB_ACK" in result.stdout
+
+
+def test_gotham_script_requires_an_existing_shell_file(tmp_path):
+    result = invoke(
+        "hping3_attack", "--gotham-script", tmp_path / "missing.sh", "--dry-run"
+    )
+    assert result.returncode == 2
+    other = tmp_path / "other.py"
+    other.write_text("pass\n", encoding="utf-8")
+    assert (
+        invoke("hping3_attack", "--gotham-script", other, "--dry-run").returncode == 2
+    )
+
+
+def test_gotham_script_args_require_selection():
+    assert invoke("hping3_attack", "--gotham-arg", "value", "--dry-run").returncode == 2
+
+
+def test_selected_gotham_script_runs_once_and_returns_its_status(tmp_path, monkeypatch):
+    if str(ATTACKS) not in sys.path:
+        sys.path.insert(0, str(ATTACKS))
+    from _common import AttackArgumentParser
+
+    script = tmp_path / "gotham.sh"
+    script.write_text("exit 7\n", encoding="utf-8")
+    calls = []
+    monkeypatch.setenv("METROPOLIS_LAB_ACK", "yes")
+    monkeypatch.setattr("_common.shutil.which", lambda name: "/bin/bash")
+
+    def fake_run(command, cwd, check):
+        calls.append((command, cwd, check))
+        return SimpleNamespace(returncode=7)
+
+    monkeypatch.setattr("_common.subprocess.run", fake_run)
+    options = AttackArgumentParser()
+    options.add_argument("--dry-run", action="store_true")
+    options.add_argument("--output", type=Path)
+    with pytest.raises(SystemExit) as stopped:
+        options.parse_args(["--gotham-script", str(script), "--gotham-arg", "target"])
+    assert stopped.value.code == 7
+    assert calls == [(["/bin/bash", str(script), "target"], script.parent, False)]
 
 
 @pytest.mark.parametrize("name", sorted(EXPECTED_TOOLS))

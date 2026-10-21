@@ -662,35 +662,42 @@ things make it reasonable:
 
 1. They are pointed at a **simulated** plant, on a **private** address range,
    and they refuse public addresses.
-2. The malicious payloads are **simulated**. Nothing downloads or executes
-   malware. Section 7.3 explains exactly how far each one goes.
+2. The default Python payloads are **simulated**. They do not download or
+   execute malware. A user-supplied Gotham `.sh` file selected with
+   `--gotham-script` runs on the invoking host and must be reviewed separately.
+   Section 7.3 explains exactly how far the bundled Python tools go.
 
 `scripts/attacks/` holds two kinds of thing. **Tools** are individual attacks you
 run one at a time. **Drivers** replay a whole attack life cycle. All are launched
-through one entry point, `run.py`:
+through one entry point, `run.py`. Their files are grouped by attack family:
 
 ```bash
 python scripts/attacks/run.py --help
 python scripts/attacks/run.py network_recon_scan --dry-run
 ```
 
-Everything resolves its targets from the device inventory, so you never type an
-address. Everything refuses to run without `METROPOLIS_LAB_ACK=yes`, a deliberate
-speed bump so nothing fires by accident.
+The bundled Python attacks resolve targets from the selected dataset inventory.
+Use `--dataset` or `METROPOLIS_DATASET` for a user-defined topology, and `--node`
+when several nodes offer the same service. An explicit private `--host` and
+`--port` can target a service outside the end-device inventory. Live attacks
+require `METROPOLIS_LAB_ACK=yes`, a deliberate
+speed bump so nothing fires by accident. The optional Gotham shell path follows
+the same gate, but its own target selection and traffic limits come from that
+shell script.
 
 ### 7.1 The individual tools
 
 | Tool | The attack it performs |
 |---|---|
 | `network_recon_scan.py` | Looks for open services across the lab. The reconnaissance an attacker does first. |
-| `run_iot_discovery_simulation.py` | A lighter version of the same, probing a fixed list of ports. |
+| `iot_discovery.py` | A lighter version of the same, probing a fixed list of ports. |
 | `mqtt_bruteforce_attack.py` | Guesses MQTT passwords from a short list. |
 | `mqtt_flood_attack.py` | Sends many MQTT messages; can also plant or clear a *retained* message (one the broker keeps and delivers to future subscribers). |
 | `ssh_bruteforce_attack.py` | Guesses SSH passwords, then runs one harmless command to prove access. |
 | `mirai_infection_sim.py` | Guesses Telnet passwords, then runs one harmless command. |
 | `coap_response_measurement.py` | Measures bounded CoAP response sizes and optional private-lab reflection traffic. |
 | `modbus_manipulation_attack.py` | Writes to the PLC's registers and coils — changing the water level the plant believes it has. |
-| `run_bounded_hping3.py` | Generates bounded packet traffic for availability experiments. Its supported profiles and safety limits are documented with the attack toolkit. |
+| `hping3_attack.py` | Generates bounded packet traffic for availability experiments. Its supported profiles and safety limits are documented with the attack toolkit. |
 
 ### 7.2 The two drivers
 

@@ -33,7 +33,6 @@ def main():
     options.add_argument("--unit-id", type=int, default=1)
     options.add_argument(
         "--action",
-        required=True,
         choices=[
             "set-level",
             "set-flow",
@@ -52,6 +51,8 @@ def main():
     options.add_argument("--period", type=positive, default=1)
     options.add_argument("--max-messages", type=int, default=100)
     args = options.parse_args()
+    if args.action is None:
+        options.error("--action is required")
     _, host, port = endpoint(args, "modbus-tcp", "PLC", 502)
     if not 0 <= args.value <= 65535 or not 0 <= args.unit_id <= 255:
         raise ValueError("Value must be 0–65535 and unit ID 0–255")

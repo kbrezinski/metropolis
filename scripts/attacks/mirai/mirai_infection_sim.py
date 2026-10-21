@@ -32,12 +32,12 @@ def main():
     hosts = [ipv4(item) for item in args.targets] if args.targets else [host]
     if len(hosts) > 16:
         raise ValueError("Use at most 16 targets per run")
-    candidates = passwords(
-        args.wordlist,
-        os.getenv("METROPOLIS_TELNET_PASSWORD")
-        or device["environment"]["LEGACY_ROOT_PASSWORD"],
-        args.max_attempts,
-    )
+    known_good = os.getenv("METROPOLIS_TELNET_PASSWORD") or device.get(
+        "environment", {}
+    ).get("LEGACY_ROOT_PASSWORD")
+    if not known_good and not args.wordlist:
+        raise ValueError("Provide --wordlist or configure METROPOLIS_TELNET_PASSWORD")
+    candidates = passwords(args.wordlist, known_good or "", args.max_attempts)
     with Run(
         args,
         "telnet_login",

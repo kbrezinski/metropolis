@@ -48,8 +48,16 @@ def http(
 
 def main() -> int:
     options = parser(__doc__, "MET-MERLIN-CNC-01")
-    options.add_argument("--cnc-node", default="MET-MERLIN-CNC-01")
-    options.add_argument("--agent-node", default="MET-MERLIN-AGENT-01")
+    options.add_argument(
+        "--cnc-node", help="Merlin control node (auto-selected by role)"
+    )
+    options.add_argument(
+        "--agent-node", help="Merlin agent node (auto-selected by role)"
+    )
+    options.add_argument("--agent-host", help="Override the agent IPv4 address")
+    options.add_argument(
+        "--http-port", type=int, help="Override the CNC agent-channel port"
+    )
     options.add_argument("--listener-scheme", default="https")
     options.add_argument("--max-agents", type=int, default=4)
     options.add_argument("--interval", type=positive, default=1.0)
@@ -71,13 +79,30 @@ def main() -> int:
     if not 1 <= args.upload_bytes <= 4096:
         raise ValueError("upload-bytes must be 1..4096")
 
-    _, cnc_host, cnc_port = address_of(
-        args, args.cnc_node, "merlin-control", "METROPOLIS_MERLIN_CNC_HOST"
+    cnc, cnc_host, cnc_port = address_of(
+        args,
+        args.cnc_node,
+        "merlin-control",
+        "METROPOLIS_MERLIN_CNC_HOST",
+        "MERLIN_CONTROL_PORT",
+        23,
+        use_common_overrides=True,
     )
     _, agent_host = host_of(
-        args, args.agent_node, "merlin-agent", "METROPOLIS_MERLIN_AGENT_HOST"
+        args,
+        args.agent_node,
+        "merlin-agent",
+        "METROPOLIS_MERLIN_AGENT_HOST",
+        exclude={cnc["name"]},
+        host_override=args.agent_host,
+        use_args_node=False,
+        selection_option="--agent-node",
     )
-    http_port = int(os.getenv("METROPOLIS_MERLIN_HTTP_PORT") or args.port or 8443)
+    http_port = int(
+        args.http_port
+        or os.getenv("METROPOLIS_MERLIN_HTTP_PORT")
+        or cnc.get("environment", {}).get("MERLIN_HTTP_PORT", 8443)
+    )
     if not 1 <= http_port <= 65535:
         raise ValueError("Merlin HTTP port is out of range")
     ipv4(cnc_host)

@@ -1,49 +1,4 @@
 #!/usr/bin/env python3
-<<<<<<< HEAD
-"""Check the Metropolis lab setup for a researcher supplied inert Merlin agent."""
-
-from __future__ import annotations
-
-from _common import Run, cli
-from _external_setup import (
-    device,
-    host,
-    live_nodes,
-    options,
-    require_inventory_name,
-    require_running,
-)
-
-
-def main() -> int:
-    parser = options(__doc__, "--external-agent", "--start-inert-agent")
-    args = parser.parse_args()
-    cnc = device(args, "MET-MERLIN-CNC-01", "merlin-control")
-    example = require_inventory_name(args, "MET-MERLIN-AGENT-01")
-    source = "user_supplied" if args.external_agent else "repository_example"
-    with Run(
-        args,
-        "gotham_merlin_setup",
-        agent_source=source,
-        project=args.project,
-        control=f"{host(cnc)}:{cnc['environment']['MERLIN_CONTROL_PORT']}",
-        agent_url=f"http://{host(cnc)}:{cnc['environment']['MERLIN_HTTP_PORT']}",
-        example_agent=example["name"],
-    ) as run:
-        if args.dry_run:
-            return 0
-        client, project_id, nodes = live_nodes(args.project)
-        require_running(nodes, cnc["name"])
-        if args.start_inert_agent:
-            if example["name"] not in nodes:
-                raise ValueError(f"GNS3 node {example['name']} is missing")
-            if nodes[example["name"]].get("status") != "started":
-                client.start_node(project_id, nodes[example["name"]]["node_id"])
-            run.emit("example_started", node=example["name"])
-        else:
-            run.emit("external_ready", note="Start your own inert agent on a lab node")
-    return 0
-=======
 """Check the Metropolis roles needed for a user-supplied inert Merlin agent.
 
 Gotham's run_merlin.py starts a listener and runs a Merlin agent executable in
@@ -55,50 +10,67 @@ repository's example inert agent is optional.
 
 from __future__ import annotations
 
-from _common import Run, cli, gns3_client, inventory, ipv4, parser
-
-DEFAULT_PROJECT = "metropolis_water_treatment_v1"
+from _common import (
+    Run,
+    cli,
+    gns3_client,
+    inventory,
+    ipv4,
+    parser,
+    project_name_for,
+    select_device,
+)
 
 DEFAULT_CNC = "MET-MERLIN-CNC-01"
 DEFAULT_AGENT = "MET-MERLIN-AGENT-01"
 
 
-def configured_port(device: dict, key: str) -> int:
-    value = int(device.get("environment", {}).get(key, 0))
+def configured_port(device: dict, key: str, override: int | None = None) -> int:
+    value = int(override or device.get("environment", {}).get(key, 0))
     if not 1 <= value <= 65535:
         raise ValueError(f"{device['name']} needs a valid {key}")
     return value
 
 
 def resolve_roles(
-    devices: list[dict], cnc_name: str, agent_name: str, require_example: bool
+    devices: list[dict],
+    cnc_name: str,
+    agent_name: str | None,
+    require_example: bool,
+    control_override: int | None = None,
+    http_override: int | None = None,
 ):
     by_name = {item["name"]: item for item in devices}
     cnc = by_name.get(cnc_name)
     agent = by_name.get(agent_name)
-    if cnc is None or not {"merlin-control", "merlin-agent"}.issubset(cnc["protocols"]):
+    if cnc is None or "merlin-control" not in cnc["protocols"]:
         raise ValueError(f"{cnc_name} is not an inventoried Merlin C2 node")
     if require_example and agent is None:
         raise ValueError(f"{agent_name} is not an inventoried inert Merlin agent")
     if agent is not None and "merlin-agent" not in agent["protocols"]:
         raise ValueError(f"{agent_name} is not an inventoried inert Merlin agent")
-    control_port = configured_port(cnc, "MERLIN_CONTROL_PORT")
-    agent_port = configured_port(cnc, "MERLIN_HTTP_PORT")
+    control_port = configured_port(cnc, "MERLIN_CONTROL_PORT", control_override)
+    agent_port = configured_port(cnc, "MERLIN_HTTP_PORT", http_override)
     host = ipv4(cnc["address"].split("/")[0])
     expected_url = f"http://{host}:{agent_port}"
-    if (
-        agent is not None
-        and agent.get("environment", {}).get("MERLIN_CNC_URL") != expected_url
-    ):
-        raise ValueError(f"{agent_name} MERLIN_CNC_URL must be {expected_url}")
+    if agent is not None:
+        configured_url = agent.get("environment", {}).get("MERLIN_CNC_URL")
+        if configured_url and configured_url != expected_url:
+            raise ValueError(f"{agent_name} MERLIN_CNC_URL must be {expected_url}")
+        if require_example and not configured_url:
+            raise ValueError(f"{agent_name} needs MERLIN_CNC_URL to start")
     agent_host = ipv4(agent["address"].split("/")[0]) if agent else None
     return cnc, agent, host, agent_host, control_port, agent_port
 
 
 def main() -> int:
     options = parser(__doc__, DEFAULT_CNC)
-    options.add_argument("--project", default=DEFAULT_PROJECT)
-    options.add_argument("--example-agent-node", default=DEFAULT_AGENT)
+    options.add_argument(
+        "--project", help="GNS3 project (defaults to the selected dataset)"
+    )
+    options.add_argument("--example-agent-node", help="Inert Merlin agent node")
+    options.add_argument("--control-port", type=int)
+    options.add_argument("--http-port", type=int)
     agent_choice = options.add_mutually_exclusive_group()
     agent_choice.add_argument(
         "--start-inert-agent",
@@ -114,16 +86,44 @@ def main() -> int:
         ),
     )
     args = options.parse_args()
+    args.project = args.project or project_name_for(args)
     if args.host or args.port is not None:
         raise ValueError(
             "Use inventoried node addresses; --host/--port are unsupported"
         )
 
+    records = inventory(args.inventory)
+    cnc_name = select_device(args, "merlin-control", preferred=DEFAULT_CNC)["name"]
+    agent_candidates = [
+        item["name"]
+        for item in records
+        if "merlin-agent" in item.get("protocols", []) and item["name"] != cnc_name
+    ]
+    if args.start_inert_agent:
+        agent_name = select_device(
+            args,
+            "merlin-agent",
+            name=args.example_agent_node,
+            preferred=DEFAULT_AGENT,
+            exclude={cnc_name},
+            use_args_node=False,
+            selection_option="--example-agent-node",
+        )["name"]
+    else:
+        agent_name = args.example_agent_node or (
+            DEFAULT_AGENT
+            if DEFAULT_AGENT in agent_candidates
+            else agent_candidates[0]
+            if len(agent_candidates) == 1
+            else None
+        )
     cnc, agent, host, agent_host, control_port, agent_port = resolve_roles(
-        inventory(args.inventory),
-        args.node,
-        args.example_agent_node,
+        records,
+        cnc_name,
+        agent_name,
         args.start_inert_agent,
+        args.control_port,
+        args.http_port,
     )
     with Run(
         args,
@@ -189,7 +189,6 @@ def main() -> int:
             ),
         )
         return 0
->>>>>>> 5e23f21557b30ec53f0429a17cc6561c89992a71
 
 
 if __name__ == "__main__":

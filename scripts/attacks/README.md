@@ -4,9 +4,8 @@ Tools that generate labelled attack traffic against the Metropolis lab so you
 can capture it.
 
 Use them to produce pcap traffic for the detection research: pick an experiment,
-run the tool against the lab, capture on the relevant link. Every tool resolves
-its targets from the [device inventory](../../testbeds/metropolis/datasets/water_treatment_v1/device_instances/initial_devices.yaml),
-so you never hardcode addresses.
+run the tool against the lab, capture on the relevant link. By default, attacks
+select targets from the active dataset's device inventory.
 
 **These tools send hostile traffic. Run them only inside your isolated lab.**
 
@@ -21,15 +20,82 @@ export METROPOLIS_LAB_ACK=yes
 python scripts/attacks/run.py network_recon_scan
 ```
 
-Every tool takes `--dry-run` and `--help`. Nothing is sent until you set
+Every attack command takes `--dry-run` and `--help`. Nothing is sent until you set
 `METROPOLIS_LAB_ACK=yes`.
+
+## Files and entry point
+
+Keep using `scripts/attacks/run.py` to start an attack. The Python commands
+are grouped under `coap/`, `hping3/`, `merlin/`, `mirai/`, `modbus/`, `mqtt/`,
+`scanner/`, and `ssh/`. The Gotham Dockerfiles sit beside their related
+Python commands; the Metasploit Dockerfile remains in `metasploit/`. Shared
+helpers, dependencies, and this guide stay at the toolkit root.
+
+The bounded Metropolis implementations are the defaults. The hping3 command
+is `hping3_attack`; the discovery command is `iot_discovery`. All runnable
+attack commands expose `--gotham-script` for an explicit, existing `.sh` file.
+For example, after supplying a Gotham shell script locally:
+
+```bash
+python scripts/attacks/run.py hping3_attack --dry-run \
+  --gotham-script /path/to/Gotham/hping3_attacks.sh
+METROPOLIS_LAB_ACK=yes python scripts/attacks/run.py hping3_attack \
+  --gotham-script /path/to/Gotham/hping3_attacks.sh
+```
+
+The selected script runs through Bash on the machine invoking the Python
+runner, with the script's directory as its working directory. Repeat
+`--gotham-arg VALUE` for shell arguments (use
+`--gotham-arg=-x` when a value starts with `-`). This option bypasses the
+Python attack's target selection and bounds, so inspect the shell script and
+its own requirements before selecting it. No Gotham `.sh` files are bundled
+here. `coap_experiment_report` is an offline report command and does not run
+shell attacks.
+
+## Use a custom testbed
+
+Point every command at the dataset used to build the GNS3 project:
+
+```bash
+python scripts/attacks/run.py modbus_manipulation_attack \
+  --dataset testbeds/my_lab/datasets/my_version --action set-level --dry-run
+```
+
+Set `METROPOLIS_DATASET` to that directory to avoid repeating `--dataset`, or
+pass `--inventory PATH` for a standalone `initial_devices.yaml`. Each targetable
+end device needs a `name`, private IPv4 `address`, and relevant `protocols` in
+that file. Keep `environment.NODE_IP` in sync with `address` when it is set;
+the runner rejects a mismatch. The scripts use current inventory addresses
+and service port settings.
+The bundled node names remain preferred for the bundled dataset; they are not
+required in a custom dataset. If several nodes offer the same service, choose
+one with `--node NAME`. If the service is absent, the command reports it.
+
+For a service on an appliance outside the end-device inventory, provide both
+`--host PRIVATE_IP` and `--port PORT`. Supply that service's credentials via
+the documented environment variables or a wordlist. A host and port outside
+the inventory never inherit another node's stored credentials; use `--node`
+as well when you intentionally override a known node's address. The hping3 raw profiles
+also accept an explicit private host and port. Scanners use inventory end
+devices by default; use `--host` or `--cidr` to include router interfaces or
+other infrastructure addresses. Set `--tcp-ports` and `--udp-ports` if the
+custom services listen on different ports.
+
+Mirai and Merlin choreography commands select each declared role separately.
+Use `--cnc-node`, `--listener-node`, `--loader-node`, or `--agent-node` when a
+role has multiple matches. Their role-specific host and port options override
+inventory values. The GNS3 setup checks infer the conventional project name
+from the selected dataset; pass `--project` if your project has another name.
+These choreographies still require services compatible with the repository's
+synthetic Mirai and Merlin control protocols. Declaring a matching role alone
+does not make an unrelated image compatible.
 
 ## Pick an experiment
 
 | Experiment | Tool | What it sends |
 |---|---|---|
 | Scan the lab | `network_recon_scan` | Nmap service scan of inventoried hosts |
-| Find live services | `run_iot_discovery_simulation` | Complete TCP/UDP inventory pass by default; protocol-aware UDP probes |
+| Find live services | `iot_discovery` | Complete TCP/UDP inventory pass by default; protocol-aware UDP probes |
 | Guess MQTT passwords | `mqtt_bruteforce_attack` | A short list of MQTT logins via Paho or Metasploit |
 | Flood an MQTT topic | `mqtt_flood_attack` | Many publishes; can also plant or clear a retained message |
 | Guess SSH passwords | `ssh_bruteforce_attack` | Bounded SSH login sequence and read-only shell checks |
@@ -38,11 +104,7 @@ Every tool takes `--dry-run` and `--help`. Nothing is sent until you set
 | Count reflected CoAP replies | `coap_reflection_receiver` | Bounded listener on a separate private receiver |
 | Combine CoAP observations | `coap_experiment_report` | Offline sender/sensor/receiver report beside a pcap |
 | Write to the PLC | `modbus_manipulation_attack` | Modbus register and coil writes |
-<<<<<<< HEAD
-| Generate packet load | `run_bounded_hping3` | Capped TCP connections, UDP datagrams, or five raw packet profiles |
-=======
-| Generate hping3-style traffic | `run_bounded_hping3` | Five bounded Gotham packet profiles; SYN by default |
->>>>>>> 5e23f21557b30ec53f0429a17cc6561c89992a71
+| Generate hping3-style traffic | `hping3_attack` | Five bounded Gotham packet profiles; SYN by default |
 | Play out a Mirai infection | `run_mirai_choreography` | Bot check-in, reports, C2 commands, payload fetch |
 | Set up Gotham-style Mirai roles | `gotham_mirai_setup` | Verify inventoried Telnet targets; optionally start the inert bot node |
 | Set up Gotham-style Merlin roles | `gotham_merlin_setup` | Verify the synthetic C2 node and connection contract; optionally start the inert agent node |
@@ -54,7 +116,7 @@ The Mirai and Merlin choreography tools need the attack-lab nodes running first 
 [Run the fake botnet](#run-the-fake-botnet).
 
 The Gotham CoAP amplification recipe is retained separately at
-`coap_amplification_attack/Dockerfile`. It is a Dockerfile, not a Python attack
+`coap/Dockerfile`. It is a Dockerfile, not a Python attack
 entry point, and is not discovered or run by `scripts/attacks/run.py`.
 
 ## Install
@@ -102,40 +164,6 @@ python scripts/attacks/run.py run_mirai_choreography --bots 3
 python scripts/attacks/run.py run_merlin
 ```
 
-<<<<<<< HEAD
-### Bring your own inert bot or agent
-
-The setup commands make the researcher-supplied choice explicit. Dry runs read
-the inventory without contacting GNS3:
-
-```bash
-python scripts/attacks/run.py gotham_mirai_setup --external-bot --dry-run
-python scripts/attacks/run.py gotham_merlin_setup --external-agent --dry-run
-```
-
-For a live check, set `METROPOLIS_LAB_ACK=yes` and omit `--dry-run`. The commands
-then verify that the named GNS3 project and required service nodes exist and are
-started. They do not accept, upload, or execute a researcher-supplied file. Put
-your inert bot or agent on your own connected lab node and start it yourself.
-Use `--project NAME` if your GNS3 project has a different name. To start the
-repository example instead, choose `--start-inert-bot` or
-`--start-inert-agent`; each is mutually exclusive with the external option.
-
-The Mirai bot should check in with `MET-MIRAI-CNC-01` at `10.99.10.10:48101`
-using `CHECKIN <bot-ip> <arch>\n`, and send newline-delimited JSON reports to
-`MET-MIRAI-LISTENER-01` at `10.99.10.11:48101`. The Telnet target is
-`MET-LEGACY-GATEWAY-01` at `10.20.10.30:23`; its lab root credential comes from
-the inventory's `LEGACY_ROOT_PASSWORD` setting. The loader at
-`http://10.99.10.13:80` serves an inert text marker.
-
-The Merlin agent should use plain HTTP at `http://10.99.10.20:8443`. It sends
-`POST /checkin` with JSON `{"address":"<agent-ip>","arch":"<arch>"}` and keeps the
-returned `agent_id`. It can then `GET /commands/<agent_id>` and
-`POST /upload/<agent_id>` with a small synthetic body. The console records
-commands; the supplied agent controls how it handles them. The setup check
-confirms GNS3 node state, not end-to-end reachability or successful agent
-check-in. Capture and verify those flows in the running lab.
-=======
 ### Gotham Mirai setup adapter
 
 `gotham_mirai_setup` maps the two active stages of Gotham's `run_mirai.py` to
@@ -218,7 +246,6 @@ Merlin executable inside a selected container and uploads an `hping3` tool
 through its console. This adapter provides the role and protocol setup, not
 those executable or file-transfer behaviors. Verify reachability and capture
 traffic in the running GNS3 lab before drawing experimental conclusions.
->>>>>>> 5e23f21557b30ec53f0429a17cc6561c89992a71
 
 ## What is actually simulated
 
@@ -435,30 +462,7 @@ source address. Its sender cannot observe the replies directly.
 after a successful login; otherwise it only runs a fixed challenge. A successful
 login is not a Mirai infection.
 
-<<<<<<< HEAD
-`run_bounded_hping3` has five raw packet profiles: `udp-raw`, `udp-vse`,
-`tcp-syn`, `tcp-ack`, and `tcp-ack-psh`. The TCP profiles increment the destination
-port for each packet, as in Gotham's hping3 recipes. `udp-vse` sends a Source
-Engine query shaped datagram; the OT devices do not implement that protocol, so
-no application response is expected. The existing `connect` and `udp` modes
-remain useful for service load checks.
-
-```bash
-python scripts/attacks/run.py run_bounded_hping3 --mode tcp-syn --dry-run
-METROPOLIS_LAB_ACK=yes python scripts/attacks/run.py run_bounded_hping3 --mode tcp-syn --rate 100 --duration 30 --max-packets 3000
-METROPOLIS_LAB_ACK=yes python scripts/attacks/run.py run_bounded_hping3 --mode udp-vse --flood --duration 10 --max-packets 3000
-```
-
-Raw modes need permission to send IP packets, such as root in a Linux lab node.
-They only target the selected inventoried node. Normal raw runs are limited to
-100 packets per second, 30 seconds, and 3,000 packets. `--flood` removes the
-pacing delay but retains the 30 second and 3,000 packet ceilings. The output
-records send calls, elapsed time, and achieved rate. Use the PCAP to confirm
-which packets reached the capture point; the script does not measure service
-disruption. The caps are ceilings, not quotas: a slow send can produce fewer
-packets than `--max-packets`.
-=======
-`run_bounded_hping3` uses Scapy to model Gotham's five `hping3_attacks.sh`
+`hping3_attack` uses Scapy to model Gotham's five `hping3_attacks.sh`
 recipes on an inventoried node. The raw modes need root or raw-socket
 privileges and do not spoof source addresses:
 
@@ -486,24 +490,23 @@ header needed for a standard A2S_INFO query.
 Measure the target before, during, and after if availability is the outcome.
 
 ```bash
-python scripts/attacks/run.py run_bounded_hping3 --dry-run
+python scripts/attacks/run.py hping3_attack --dry-run
 export METROPOLIS_LAB_ACK=yes
 sudo --preserve-env=METROPOLIS_LAB_ACK,METROPOLIS_PYTHON \
-  python scripts/attacks/run.py run_bounded_hping3 \
+  python scripts/attacks/run.py hping3_attack \
   --rate 20 --duration 10 --max-packets 200 --output runs/syn-experiment.jsonl
 
 # Short bounded burst using the same SYN packet profile
 sudo --preserve-env=METROPOLIS_LAB_ACK,METROPOLIS_PYTHON \
-  python scripts/attacks/run.py run_bounded_hping3 \
+  python scripts/attacks/run.py hping3_attack \
   --mode syn --flood --duration 5 --max-packets 500 \
   --output runs/syn-burst.jsonl
 ```
->>>>>>> 5e23f21557b30ec53f0429a17cc6561c89992a71
 
-`network_recon_scan` and `run_iot_discovery_simulation` default to inventoried
+`network_recon_scan` and `iot_discovery` default to inventoried
 hosts. `--cidr` accepts a private range of at most 256 addresses.
 
-`run_iot_discovery_simulation` uses the scanner's current port lists and checks
+`iot_discovery` uses the scanner's current port lists and checks
 both transports by default. It completes one pass across every selected
 host/port unless you set a shorter `--duration` or `--max-probes` limit.
 `--passes 2` repeats the full sweep; `--rate` and `--workers` control the

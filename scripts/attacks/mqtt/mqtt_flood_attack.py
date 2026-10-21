@@ -43,9 +43,11 @@ def main():
     username = (
         args.username
         or os.getenv("METROPOLIS_MQTT_USERNAME")
-        or env["MQTT_OPERATOR_USERNAME"]
+        or env.get("MQTT_OPERATOR_USERNAME")
     )
-    password = os.getenv(args.password_env) or env["MQTT_OPERATOR_PASSWORD"]
+    password = os.getenv(args.password_env) or env.get("MQTT_OPERATOR_PASSWORD")
+    if not username or not password:
+        raise ValueError("Configure the selected broker's MQTT username and password")
     with Run(
         args,
         "mqtt_traffic",
@@ -76,7 +78,7 @@ def main():
                 )
                 payload = json.dumps(
                     {
-                        "device": "MET-SENSOR-INTAKE-01",
+                        "device": "metropolis-attack-tool",
                         "sensor": "level",
                         "value": 65 + index % 10,
                     }

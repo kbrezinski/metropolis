@@ -13,17 +13,29 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 ATTACKS = ROOT / "scripts/attacks"
 sys.path.insert(0, str(ATTACKS))
-import mqtt_bruteforce_attack as attack  # noqa: E402
+from mqtt import mqtt_bruteforce_attack as attack  # noqa: E402
 
 
 @pytest.mark.parametrize(
     "console,status,code",
     [
-        ("[+] MQTT Login Successful: admin/secret\n[*] Auxiliary module execution completed", "credential_accepted", 0),
-        ("[+] Does not require authentication\n[*] Auxiliary module execution completed", "anonymous_access", 0),
+        (
+            "[+] MQTT Login Successful: admin/secret\n[*] Auxiliary module execution completed",
+            "credential_accepted",
+            0,
+        ),
+        (
+            "[+] Does not require authentication\n[*] Auxiliary module execution completed",
+            "anonymous_access",
+            0,
+        ),
         ("[*] Auxiliary module execution completed", "no_credential_accepted", 1),
         ("[-] MQTT LOGIN FAILED: admin/secret", "execution_error", 2),
-        ("[-] Auxiliary failed: scanner error\n[*] Auxiliary module execution completed", "execution_error", 2),
+        (
+            "[-] Auxiliary failed: scanner error\n[*] Auxiliary module execution completed",
+            "execution_error",
+            2,
+        ),
     ],
 )
 def test_metasploit_resource_is_bounded_and_console_secrets_are_hidden(
@@ -44,7 +56,9 @@ def test_metasploit_resource_is_bounded_and_console_secrets_are_hidden(
         assert "set SSL false" in resource
         assert "set READ_TIMEOUT 3" in resource
         assert "secret" not in resource
-        line = next(line for line in resource.splitlines() if line.startswith("set PASS_FILE "))
+        line = next(
+            line for line in resource.splitlines() if line.startswith("set PASS_FILE ")
+        )
         path = Path(line.removeprefix('set PASS_FILE "').removesuffix('"'))
         seen_paths.append(path)
         assert path.read_text(encoding="utf-8") == "wrong\nsecret\n"
@@ -54,10 +68,24 @@ def test_metasploit_resource_is_bounded_and_console_secrets_are_hidden(
 
     monkeypatch.setattr(attack.shutil, "which", lambda _: "/usr/bin/msfconsole")
     monkeypatch.setattr(attack.subprocess, "run", fake_run)
-    args = SimpleNamespace(tls=False, tls_ca=None, tls_insecure=False, timeout=3, metasploit_speed=3, metasploit_timeout=180)
+    args = SimpleNamespace(
+        tls=False,
+        tls_ca=None,
+        tls_insecure=False,
+        timeout=3,
+        metasploit_speed=3,
+        metasploit_timeout=180,
+    )
     run = SimpleNamespace(emit=lambda event, **fields: events.append((event, fields)))
-    assert attack.metasploit_scan(args, run, "10.20.23.10", 1883, "admin", ["wrong", "secret"]) == code
-    assert events == [("summary", {"engine": "metasploit", "module": attack.MODULE, "status": status})]
+    assert (
+        attack.metasploit_scan(
+            args, run, "10.20.23.10", 1883, "admin", ["wrong", "secret"]
+        )
+        == code
+    )
+    assert events == [
+        ("summary", {"engine": "metasploit", "module": attack.MODULE, "status": status})
+    ]
     assert "secret" not in str(events)
     assert not seen_paths[0].exists()
 
@@ -66,7 +94,14 @@ def test_metasploit_dry_run_needs_no_binary_or_lab_ack():
     env = os.environ.copy()
     env.pop("METROPOLIS_LAB_ACK", None)
     result = subprocess.run(
-        [sys.executable, str(ATTACKS / "mqtt_bruteforce_attack.py"), "--engine", "metasploit", "--dry-run"],
+        [
+            sys.executable,
+            str(ATTACKS / "run.py"),
+            "mqtt_bruteforce_attack",
+            "--engine",
+            "metasploit",
+            "--dry-run",
+        ],
         env=env,
         capture_output=True,
         text=True,
@@ -86,10 +121,15 @@ def test_default_candidates_have_failures_then_lab_success(tmp_path):
     assert all(value != candidates[-1] for value in candidates[:-1])
 
     args.max_attempts = 10
-    assert attack.password_candidates(args, "LabOnly_MQTT_2026") == candidates[:9] + [candidates[-1]]
+    assert attack.password_candidates(args, "LabOnly_MQTT_2026") == candidates[:9] + [
+        candidates[-1]
+    ]
 
     args.engine = "paho"
-    assert attack.password_candidates(args, "LabOnly_MQTT_2026") == ["incorrect-lab-password", "LabOnly_MQTT_2026"]
+    assert attack.password_candidates(args, "LabOnly_MQTT_2026") == [
+        "incorrect-lab-password",
+        "LabOnly_MQTT_2026",
+    ]
 
     wordlist = tmp_path / "custom.txt"
     wordlist.write_text("guess1\nguess2\n", encoding="utf-8")
@@ -106,8 +146,17 @@ def test_metasploit_timeout_is_recorded_without_console_text(monkeypatch):
 
     monkeypatch.setattr(attack.shutil, "which", lambda _: "/usr/bin/msfconsole")
     monkeypatch.setattr(attack.subprocess, "run", timeout)
-    args = SimpleNamespace(tls=False, tls_ca=None, tls_insecure=False, timeout=3, metasploit_speed=3, metasploit_timeout=1)
+    args = SimpleNamespace(
+        tls=False,
+        tls_ca=None,
+        tls_insecure=False,
+        timeout=3,
+        metasploit_speed=3,
+        metasploit_timeout=1,
+    )
     run = SimpleNamespace(emit=lambda event, **fields: events.append((event, fields)))
-    assert attack.metasploit_scan(args, run, "10.20.23.10", 1883, "admin", ["secret"]) == 2
+    assert (
+        attack.metasploit_scan(args, run, "10.20.23.10", 1883, "admin", ["secret"]) == 2
+    )
     assert events[0][1]["status"] == "timeout"
     assert "secret" not in str(events)

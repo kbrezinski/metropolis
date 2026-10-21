@@ -29,7 +29,7 @@ def invoke(name, *args, ack=True):
     if ack:
         env["METROPOLIS_LAB_ACK"] = "yes"
     return subprocess.run(
-        [sys.executable, str(TOOLS / name), *map(str, args)],
+        [sys.executable, str(TOOLS / "run.py"), Path(name).stem, *map(str, args)],
         env=env,
         capture_output=True,
         text=True,
@@ -46,13 +46,13 @@ def records(result):
 @pytest.mark.parametrize(
     "name,args",
     [
-        ("coap_response_measurement.py", []),
-        ("mqtt_bruteforce_attack.py", []),
-        ("mqtt_flood_attack.py", []),
-        ("modbus_manipulation_attack.py", ["--action", "set-level"]),
-        ("network_recon_scan.py", []),
-        ("ssh_bruteforce_attack.py", []),
-        ("mirai_infection_sim.py", []),
+        ("coap/coap_response_measurement.py", []),
+        ("mqtt/mqtt_bruteforce_attack.py", []),
+        ("mqtt/mqtt_flood_attack.py", []),
+        ("modbus/modbus_manipulation_attack.py", ["--action", "set-level"]),
+        ("scanner/network_recon_scan.py", []),
+        ("ssh/ssh_bruteforce_attack.py", []),
+        ("mirai/mirai_infection_sim.py", []),
     ],
 )
 def test_dry_runs_resolve_inventory_without_ack(name, args):
@@ -60,11 +60,11 @@ def test_dry_runs_resolve_inventory_without_ack(name, args):
     assert result.returncode == 0, result.stdout + result.stderr
     start = records(result)[0]
     assert start["dry_run"] is True
-    if name == "ssh_bruteforce_attack.py":
+    if name == "ssh/ssh_bruteforce_attack.py":
         assert start["host"] == "10.20.21.10"
-    if name == "mirai_infection_sim.py":
+    if name == "mirai/mirai_infection_sim.py":
         assert start["hosts"] == ["10.20.10.30"]
-    if name == "network_recon_scan.py":
+    if name == "scanner/network_recon_scan.py":
         assert start["protocol"] == "both"
         ports = start["command"][start["command"].index("-p") + 1]
         assert ports == (
@@ -74,26 +74,28 @@ def test_dry_runs_resolve_inventory_without_ack(name, args):
 
 
 def test_missing_ack_and_invalid_settings_fail_before_network():
-    assert invoke("mqtt_bruteforce_attack.py", ack=False).returncode == 2
+    assert invoke("mqtt/mqtt_bruteforce_attack.py", ack=False).returncode == 2
     assert (
         invoke(
-            "coap_response_measurement.py", "--host", "8.8.8.8", "--dry-run"
-        ).returncode
-        == 2
-    )
-    assert (
-        invoke("coap_response_measurement.py", "--rate", "nan", "--dry-run").returncode
-        == 2
-    )
-    assert (
-        invoke(
-            "coap_response_measurement.py", "--mode", "spoof", "--dry-run"
+            "coap/coap_response_measurement.py", "--host", "8.8.8.8", "--dry-run"
         ).returncode
         == 2
     )
     assert (
         invoke(
-            "network_recon_scan.py", "--cidr", "10.20.0.0/16", "--dry-run"
+            "coap/coap_response_measurement.py", "--rate", "nan", "--dry-run"
+        ).returncode
+        == 2
+    )
+    assert (
+        invoke(
+            "coap/coap_response_measurement.py", "--mode", "spoof", "--dry-run"
+        ).returncode
+        == 2
+    )
+    assert (
+        invoke(
+            "scanner/network_recon_scan.py", "--cidr", "10.20.0.0/16", "--dry-run"
         ).returncode
         == 2
     )
@@ -111,11 +113,12 @@ def test_future_inventory_supplies_addresses_and_ports(tmp_path):
         item for item in data["devices"] if item["name"] == "MET-SENSOR-INTAKE-01"
     )
     sensor["address"] = "10.20.10.25/24"
+    sensor["environment"]["NODE_IP"] = "10.20.10.25/24"
     sensor["environment"]["COAP_PORT"] = "5684"
     alternate = tmp_path / "inventory.yaml"
     alternate.write_text(yaml.safe_dump(data), encoding="utf-8")
     result = invoke(
-        "coap_response_measurement.py", "--inventory", alternate, "--dry-run"
+        "coap/coap_response_measurement.py", "--inventory", alternate, "--dry-run"
     )
     assert result.returncode == 0, result.stdout + result.stderr
     assert records(result)[0]["host"] == "10.20.10.25"
@@ -153,7 +156,7 @@ def test_coap_uses_the_real_sensor_on_loopback():
     worker.start()
     try:
         result = invoke(
-            "coap_response_measurement.py",
+            "coap/coap_response_measurement.py",
             "--host",
             "127.0.0.1",
             "--port",
@@ -248,7 +251,9 @@ def test_mqtt_rejections_and_pubacks(tcp_peer):
 
     port = tcp_peer(Handler)
     result = invoke(
-        "mqtt_bruteforce_attack.py",
+        "mqtt/mqtt_bruteforce_attack.py",
+        "--node",
+        "MET-MQTT-BROKER-01",
         "--host",
         "127.0.0.1",
         "--port",
@@ -261,7 +266,9 @@ def test_mqtt_rejections_and_pubacks(tcp_peer):
     assert [item["status"] for item in attempts] == ["rejected", "accepted"]
     assert "LabOnly_MQTT_2026" not in result.stdout
     result = invoke(
-        "mqtt_flood_attack.py",
+        "mqtt/mqtt_flood_attack.py",
+        "--node",
+        "MET-MQTT-BROKER-01",
         "--host",
         "127.0.0.1",
         "--port",
@@ -312,7 +319,7 @@ def test_modbus_actual_controller_map_and_restoration():
         assert 0 <= first.registers[0] <= 1000, first.registers
         before_level = first.registers[0]
         result = invoke(
-            "modbus_manipulation_attack.py",
+            "modbus/modbus_manipulation_attack.py",
             "--host",
             "127.0.0.1",
             "--port",
@@ -331,7 +338,7 @@ def test_modbus_actual_controller_map_and_restoration():
         assert after_level != 700
         assert abs(after_level - before_level) <= 400
         result = invoke(
-            "modbus_manipulation_attack.py",
+            "modbus/modbus_manipulation_attack.py",
             "--host",
             "127.0.0.1",
             "--port",
@@ -374,7 +381,9 @@ def test_telnet_negotiation_and_challenge(tcp_peer):
 
     port = tcp_peer(Handler)
     result = invoke(
-        "mirai_infection_sim.py",
+        "mirai/mirai_infection_sim.py",
+        "--node",
+        "MET-LEGACY-GATEWAY-01",
         "--host",
         "127.0.0.1",
         "--port",
@@ -405,7 +414,7 @@ def test_telnet_echo_alone_does_not_prove_execution(tcp_peer, tmp_path):
     wordlist = tmp_path / "passwords.txt"
     wordlist.write_text("LabOnly_Legacy_2026\n", encoding="utf-8")
     result = invoke(
-        "mirai_infection_sim.py",
+        "mirai/mirai_infection_sim.py",
         "--host",
         "127.0.0.1",
         "--port",
@@ -489,7 +498,9 @@ def test_ssh_rejection_and_fixed_command(tcp_peer):
 
     port = tcp_peer(Handler)
     result = invoke(
-        "ssh_bruteforce_attack.py",
+        "ssh/ssh_bruteforce_attack.py",
+        "--node",
+        "MET-ENGINEERING-01",
         "--host",
         "127.0.0.1",
         "--port",
@@ -504,6 +515,6 @@ def test_ssh_rejection_and_fixed_command(tcp_peer):
     assert attempts[0]["status"] == "rejected"
     assert attempts[1]["command_verified"] is True
     assert attempts[1]["post_login_commands_verified"] == 3
-    assert [item["command"] for item in records(result) if item["event"] == "command"] == [
-        "id -un", "uname -s", "pwd"
-    ]
+    assert [
+        item["command"] for item in records(result) if item["event"] == "command"
+    ] == ["id -un", "uname -s", "pwd"]

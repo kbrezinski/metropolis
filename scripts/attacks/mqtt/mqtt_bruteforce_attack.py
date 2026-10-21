@@ -52,10 +52,14 @@ METASPLOIT_WRONG_PASSWORDS = (
 )
 
 
-def password_candidates(args, known_good: str) -> list[str]:
+def password_candidates(args, known_good: str | None) -> list[str]:
     """Use a reproducible failure sequence before lab success in MSF mode."""
+    if not known_good and not args.wordlist:
+        raise ValueError(
+            "Provide --wordlist or configure METROPOLIS_MQTT_PASSWORD for this broker"
+        )
     if args.wordlist or args.engine != "metasploit":
-        return passwords(args.wordlist, known_good, args.max_attempts)
+        return passwords(args.wordlist, known_good or "", args.max_attempts)
     # Reuse the shared validation for --max-attempts. The configured lab
     # password is excluded from the failure fixtures if a future testbed
     # happens to use one of them.
@@ -64,10 +68,14 @@ def password_candidates(args, known_good: str) -> list[str]:
     return wrong[: args.max_attempts - 1] + [known_good]
 
 
-def metasploit_scan(args, run, host: str, port: int, username: str, candidates: list[str]) -> int:
+def metasploit_scan(
+    args, run, host: str, port: int, username: str, candidates: list[str]
+) -> int:
     """Run Rapid7's MQTT scanner, retaining only credential-free evidence."""
     if args.tls_ca or args.tls_insecure:
-        raise ValueError("Metasploit mode supports --tls, but not --tls-ca/--tls-insecure")
+        raise ValueError(
+            "Metasploit mode supports --tls, but not --tls-ca/--tls-insecure"
+        )
     if not re.fullmatch(r"[A-Za-z0-9_.@-]{1,64}", username):
         raise ValueError("Metasploit username must be 1–64 simple ASCII characters")
     executable = shutil.which("msfconsole")
@@ -77,7 +85,9 @@ def metasploit_scan(args, run, host: str, port: int, username: str, candidates: 
     with tempfile.TemporaryDirectory(prefix="metropolis_msf_") as directory:
         password_file = Path(directory) / "passwords.txt"
         if any(character in str(password_file) for character in ('"', "\n", "\r")):
-            raise ValueError("Temporary path cannot be represented in a Metasploit resource")
+            raise ValueError(
+                "Temporary path cannot be represented in a Metasploit resource"
+            )
         password_file.write_text("\n".join(candidates) + "\n", encoding="utf-8")
         if os.name == "posix":
             password_file.chmod(0o600)
@@ -161,10 +171,14 @@ def main():
     username = (
         args.username
         or os.getenv("METROPOLIS_MQTT_USERNAME")
-        or env["MQTT_OPERATOR_USERNAME"]
+        or env.get("MQTT_OPERATOR_USERNAME")
     )
+    if not username:
+        raise ValueError(
+            "Provide --username or configure MQTT_OPERATOR_USERNAME for this broker"
+        )
     candidates = password_candidates(
-        args, os.getenv("METROPOLIS_MQTT_PASSWORD") or env["MQTT_OPERATOR_PASSWORD"]
+        args, os.getenv("METROPOLIS_MQTT_PASSWORD") or env.get("MQTT_OPERATOR_PASSWORD")
     )
     with Run(
         args,

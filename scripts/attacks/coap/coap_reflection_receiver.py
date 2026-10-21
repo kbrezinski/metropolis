@@ -19,12 +19,16 @@ def matching_reply(packet: bytes, prefix: bytes) -> int | None:
 
 def main() -> int:
     options = parser(__doc__, "MET-SENSOR-INTAKE-01")
-    options.add_argument("--experiment-id", required=True, help="Four hex digits also passed to the sender")
+    options.add_argument(
+        "--experiment-id", help="Four hex digits also passed to the sender"
+    )
     options.add_argument("--listen-host", default="0.0.0.0")
     options.add_argument("--listen-port", type=int, default=56830)
     options.add_argument("--duration", type=positive, default=150)
     options.add_argument("--max-responses", type=int, default=10000)
     args = options.parse_args()
+    if args.experiment_id is None:
+        options.error("--experiment-id is required")
     _, sensor_host, sensor_port = endpoint(args, "coap", "COAP", 5683)
     if args.listen_host != "0.0.0.0":
         ipv4(args.listen_host)
@@ -39,9 +43,15 @@ def main() -> int:
     except ValueError as exc:
         raise ValueError("experiment-id must be four hexadecimal characters") from exc
     with Run(
-        args, "coap_receiver", sensor=sensor_host, sensor_port=sensor_port, listen_host=args.listen_host,
-        listen_port=args.listen_port, experiment_id=args.experiment_id.lower(),
-        duration=args.duration, max_responses=args.max_responses,
+        args,
+        "coap_receiver",
+        sensor=sensor_host,
+        sensor_port=sensor_port,
+        listen_host=args.listen_host,
+        listen_port=args.listen_port,
+        experiment_id=args.experiment_id.lower(),
+        duration=args.duration,
+        max_responses=args.max_responses,
     ) as run:
         if args.dry_run:
             return 0
@@ -56,7 +66,11 @@ def main() -> int:
                     packet, peer = sock.recvfrom(65535)
                 except socket.timeout:
                     continue
-                code = matching_reply(packet, prefix) if peer == (sensor_host, sensor_port) else None
+                code = (
+                    matching_reply(packet, prefix)
+                    if peer == (sensor_host, sensor_port)
+                    else None
+                )
                 if code is None:
                     ignored += 1
                     continue
@@ -64,8 +78,11 @@ def main() -> int:
                 response_bytes += len(packet)
                 codes[f"{code >> 5}.{code & 31:02d}"] += 1
         run.emit(
-            "summary", experiment_id=args.experiment_id.lower(),
-            received=received, ignored=ignored, response_bytes=response_bytes,
+            "summary",
+            experiment_id=args.experiment_id.lower(),
+            received=received,
+            ignored=ignored,
+            response_bytes=response_bytes,
             response_codes=dict(codes),
         )
         return 0 if received else 1

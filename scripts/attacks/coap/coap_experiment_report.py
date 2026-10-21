@@ -9,8 +9,16 @@ from pathlib import Path
 
 
 def summary(path: Path, tool: str) -> dict:
-    records = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.startswith("{")]
-    matches = [item for item in records if item.get("tool") == tool and item.get("event") == "summary"]
+    records = [
+        json.loads(line)
+        for line in path.read_text(encoding="utf-8").splitlines()
+        if line.startswith("{")
+    ]
+    matches = [
+        item
+        for item in records
+        if item.get("tool") == tool and item.get("event") == "summary"
+    ]
     if len(matches) != 1:
         raise ValueError(f"{path} must contain exactly one {tool} summary")
     return matches[0]
@@ -35,8 +43,10 @@ def sensor_counts(path: Path, experiment_id: str) -> dict:
         codes[record["response_code"]] += 1
         resources[record["resource"]] += 1
     return {
-        "responses": count, "request_bytes": request_bytes,
-        "response_bytes": response_bytes, "response_codes": dict(codes),
+        "responses": count,
+        "request_bytes": request_bytes,
+        "response_bytes": response_bytes,
+        "response_codes": dict(codes),
         "resources": dict(resources),
     }
 
@@ -62,20 +72,42 @@ def main() -> int:
     report = {
         "experiment_id": experiment_id,
         "pcap": str(args.pcap) if args.pcap else None,
-        "sender": {"sent": sent["sent"], "request_bytes": sent["request_bytes"], "resources_sent": sent["resources_sent"]},
+        "sender": {
+            "sent": sent["sent"],
+            "request_bytes": sent["request_bytes"],
+            "resources_sent": sent["resources_sent"],
+        },
         "sensor": sensor,
-        "receiver": {"received": received["received"], "response_bytes": received["response_bytes"], "response_codes": received["response_codes"]},
+        "receiver": {
+            "received": received["received"],
+            "response_bytes": received["response_bytes"],
+            "response_codes": received["response_codes"],
+        },
         "observed_payload_ratio": (
-            received["response_bytes"] / sent["request_bytes"] if sent["request_bytes"] else None
+            received["response_bytes"] / sent["request_bytes"]
+            if sent["request_bytes"]
+            else None
         ),
         "sensor_payload_ratio": (
-            sensor["response_bytes"] / sensor["request_bytes"] if sensor["request_bytes"] else None
+            sensor["response_bytes"] / sensor["request_bytes"]
+            if sensor["request_bytes"]
+            else None
         ),
         "notes": "Counts are independent observations; missing packets and capture gaps can make them differ.",
     }
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    print(json.dumps({"event": "report_written", "path": str(args.output), "experiment_id": experiment_id}))
+    args.output.write_text(
+        json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+    print(
+        json.dumps(
+            {
+                "event": "report_written",
+                "path": str(args.output),
+                "experiment_id": experiment_id,
+            }
+        )
+    )
     return 0
 
 

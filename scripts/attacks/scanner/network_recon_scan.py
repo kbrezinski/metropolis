@@ -15,12 +15,26 @@ TCP_PORTS = (22, 23, 53, 80, 443, 502, 1883, 8080, 8443, 8883, 48101)
 UDP_PORTS = (53, 69, 123, 5683)
 
 
+def parse_ports(value: str) -> tuple[int, ...]:
+    try:
+        ports = tuple(int(item) for item in value.split(","))
+    except ValueError as exc:
+        raise ValueError("Ports must be comma-separated numbers") from exc
+    if not 1 <= len(ports) <= 32 or any(not 1 <= port <= 65535 for port in ports):
+        raise ValueError("Select 1–32 ports in the range 1–65535")
+    if len(set(ports)) != len(ports):
+        raise ValueError("Port lists must not contain duplicates")
+    return ports
+
+
 def main():
     options = parser(__doc__, "all")
     options.add_argument(
         "--cidr", help="Optional private IPv4 range, maximum 256 addresses"
     )
     options.add_argument("--protocol", choices=["tcp", "udp", "both"], default="both")
+    options.add_argument("--tcp-ports", default=",".join(map(str, TCP_PORTS)))
+    options.add_argument("--udp-ports", default=",".join(map(str, UDP_PORTS)))
     options.add_argument("--out", type=Path, help="Nmap XML result file")
     args = options.parse_args()
     if args.port is not None:
@@ -38,6 +52,8 @@ def main():
         devices = inventory(args.inventory)
         if args.node != "all":
             devices = [item for item in devices if item["name"] == args.node]
+            if not devices:
+                raise ValueError(f"{args.node} is not in the inventory")
         hosts = sorted({ipv4(item["address"].split("/")[0]) for item in devices})
     if not 1 <= len(hosts) <= 256:
         raise ValueError("Select 1–256 inventoried or private lab hosts")
@@ -48,9 +64,9 @@ def main():
         command.append("-sU")
     ports = []
     if args.protocol in {"tcp", "both"}:
-        ports.append("T:" + ",".join(map(str, TCP_PORTS)))
+        ports.append("T:" + ",".join(map(str, parse_ports(args.tcp_ports))))
     if args.protocol in {"udp", "both"}:
-        ports.append("U:" + ",".join(map(str, UDP_PORTS)))
+        ports.append("U:" + ",".join(map(str, parse_ports(args.udp_ports))))
     command.extend(["-p", ",".join(ports)])
     if args.out:
         command.extend(["-oX", str(args.out)])

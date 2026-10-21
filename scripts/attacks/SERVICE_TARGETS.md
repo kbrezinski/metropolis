@@ -7,6 +7,9 @@ The [experiment toolkit README](README.md) covers the tools. This page covers
 the targets. Every address here comes from the
 [device inventory](../../testbeds/metropolis/datasets/water_treatment_v1/device_instances/initial_devices.yaml)
 and the [address plan](../../testbeds/metropolis/datasets/water_treatment_v1/topology/address-plan.yaml).
+These are examples for the bundled `water_treatment_v1` dataset. For a
+user-defined dataset, use its inventory and the selection options in the
+[attack toolkit guide](README.md#use-a-custom-testbed).
 
 Start the nodes and confirm normal responses before you build an experiment on
 top of them.
