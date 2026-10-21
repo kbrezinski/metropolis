@@ -121,11 +121,39 @@ def render(
 
     target = Path(out)
 
-    # A force-directed layout, fixed by the seed. A node with no links has no
-    # forces acting on it, so networkx places it apart from the rest. ``k`` is
-    # the ideal edge length; raising it separates nodes that are mostly leaves,
-    # which is what a device-heavy topology looks like.
-    positions = nx.spring_layout(graph, seed=seed, k=1.0, iterations=400, scale=1.0)
+    # Lay out the cabled network on its own. Disconnected nodes otherwise drift
+    # toward the edge of the spring layout and leave a large empty canvas.
+    components = sorted(nx.connected_components(graph), key=lambda nodes: -len(nodes))
+    main = graph.subgraph(components[0])
+    positions = nx.spring_layout(main, seed=seed, k=1.0, iterations=400, scale=1.0)
+    if len(components) > 1:
+        xs = [point[0] for point in positions.values()]
+        ys = [point[1] for point in positions.values()]
+        center_x = (min(xs) + max(xs)) / 2
+        center_y = (min(ys) + max(ys)) / 2
+        quadrants = [(-1, 1), (1, 1), (-1, -1), (1, -1)]
+        side_x, side_y = min(
+            quadrants,
+            key=lambda side: sum(
+                (x - center_x) * side[0] >= 0 and (y - center_y) * side[1] >= 0
+                for x, y in positions.values()
+            ),
+        )
+        width = max(xs) - min(xs)
+        height = max(ys) - min(ys)
+        rows = min(6, len(components) - 1)
+        for index, nodes in enumerate(components[1:]):
+            column, row = divmod(index, rows)
+            group_x = center_x + side_x * width * (0.37 + column * 0.1)
+            group_y = center_y + side_y * height * (0.12 + 0.36 * (row + 0.5) / rows)
+            if len(nodes) == 1:
+                positions[next(iter(nodes))] = (group_x, group_y)
+            else:
+                local = nx.spring_layout(
+                    graph.subgraph(nodes), seed=seed, iterations=400, scale=0.1
+                )
+                for node, point in local.items():
+                    positions[node] = (group_x + point[0], group_y + point[1])
 
     # Scale the canvas and the nodes together. A force layout spreads over
     # [0, 1] however few nodes there are, and node sizes are in points, so a
@@ -133,7 +161,11 @@ def render(
     scale = min(1.0, max(0.42, len(graph) / 30))
     node_size = 1200 * scale
     font_size = 8.0 * scale
-    figure, axes = plt.subplots(figsize=(16 * scale, 12 * scale))
+    # Give large testbeds room for labels without stretching the drawing.
+    canvas_scale = min(1.6, max(1.0, len(graph) / 30))
+    figure, axes = plt.subplots(
+        figsize=(16 * scale * canvas_scale, 12 * scale * canvas_scale)
+    )
 
     nx.draw_networkx_edges(
         graph,

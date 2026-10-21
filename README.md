@@ -26,41 +26,6 @@ described in [“Gotham Testbed: A Reproducible IoT Testbed for Security Experim
 If you build on Gotham's work, follow its license and cite the paper as
 appropriate.
 
-## Where things stand
-
-A work in progress. The dates are when each piece landed; the entries marked
-⬜ are not built yet.
-
-| | Item | Date |
-|---|---|---|
-| ✅ | Reproducibility scaffolding: seed and device configuration, directory helpers, address-plan loader | 2026-04-22 |
-| ✅ | Gotham data pipeline: feature cleaning, labelling, per-device preparation | 2026-09-19 |
-| ✅ | Metropolis testbed design: Purdue-informed zones, address plan, device inventory | 2026-09-27 |
-| ✅ | Router and switch specifications: six VyOS scripts and the switch VLAN plan | 2026-09-27 |
-| ✅ | Device models: PLC/RTU, sensor, broker, SCADA, HMI, historian, engineering workstation, control client, legacy gateway, DNS, NTP | 2026-10-01 |
-| ✅ | Topology validator: cross-checks the address plan, inventory, router interfaces, static routes, and switch VLANs | 2026-10-06 |
-| ✅ | MQTT over TLS: lab certificate authority, broker listener, verification by real handshake | 2026-10-06 |
-| ✅ | Link plan: 42 links as data, with the schema and validator to check them | 2026-10-09 |
-| ✅ | Infrastructure inventory: six routers, eight switches, and ten access segments | 2026-10-09 |
-| ✅ | Four JSON schemas, enforced by the validator rather than decorative | 2026-10-09 |
-| ✅ | Attack toolkit: CoAP, MQTT, Modbus, scanning, discovery, SSH, Telnet, bounded load | 2026-10-09 |
-| ✅ | Synthetic Mirai chain and Merlin C2, with whole-lifecycle drivers | 2026-10-09 |
-| ✅ | GNS3 automation: API client, template registration, topology builder, lifecycle, capture control | 2026-10-09 |
-| ✅ | Router configuration: each VyOS script loaded onto its node and verified from the running config | 2026-10-09 |
-| ✅ | Light process model: coupled PLC registers, so telemetry moves and the sensor agrees with the controller | 2026-10-09 |
-| ✅ | Shared device TLS: sensor, SCADA, HMI, and historian can all encrypt, plus the toolkit's `--tls` | 2026-10-09 |
-| ✅ | Topology library: build, check, write, and draw topologies in Python, with round-trip coverage of the dataset | 2026-10-09 |
-| ✅ | Documentation pass: a plain-language guide, 313 tests, lint and spelling in CI | 2026-10-09 |
-| ⬜ | Deploy and capture on a live GNS3 server | Future work |
-| ⬜ | Captured packet data — `captures/` is empty | Future work |
-| ⬜ | Firewall policy and IPsec, so routing restricts rather than merely reaches | Future work |
-| ⬜ | CoAP over DTLS — CoAP is plaintext | Future work |
-| ⬜ | More device families: Gotham has twelve, this has three | Future work |
-| ⬜ | Protocol profiles — documented per-protocol settings | Future work |
-| ⬜ | Scenarios — scripted experiment playback | Future work |
-| ⬜ | Dataset labelling for Metropolis captures | Future work |
-| ⬜ | Provenance modelling, training, and evaluation | Future work |
-
 ## What you can do today
 
 - **Build the device images** and create the topology from the inventory with one
@@ -100,6 +65,19 @@ A work in progress. The dates are when each piece landed; the entries marked
   the separately downloaded Gotham dataset. It does not build or run Metropolis.
 
 ## Network design
+
+The diagram below is generated from the versioned Metropolis topology data.
+Select it to view the full-size SVG. Isolated nodes are declared in the dataset
+but have no link in the current plan; this diagram does not verify live GNS3
+cabling.
+
+[![Metropolis water-treatment topology showing routers, switches, segments, devices, and links](docs/images/metropolis-topology.svg)](docs/images/metropolis-topology.svg)
+
+Regenerate it after changing the topology:
+
+```bash
+uv run python -m metropolis.topology --dataset testbeds/metropolis/datasets/water_treatment_v1 draw --out docs/images/metropolis-topology.svg --title "Metropolis water-treatment testbed" --note "Generated from water_treatment_v1 topology data"
+```
 
 The plan uses separate sites and routed zones, following Purdue concepts as a
 guide:
