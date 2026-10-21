@@ -110,7 +110,7 @@ def test_the_bundled_topology_has_the_expected_scale(bundled):
         "switches": 8,
         "segments": 13,
         "devices": 21,
-        "links": 40,
+        "links": 42,
     }
 
 

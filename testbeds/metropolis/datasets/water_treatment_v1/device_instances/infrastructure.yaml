@@ -159,6 +159,8 @@ switches:
     attachment_points:
       - router-uplink
       - attack-host-1
+      - attack-host-2
+      - attack-host-3
 
   - name: sw-reservoir-access
     kind: ethernet-switch

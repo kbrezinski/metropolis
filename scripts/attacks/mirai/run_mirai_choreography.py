@@ -54,6 +54,86 @@ def bot_checkin(
         return sock.recv(256).decode("utf-8", errors="replace").strip()
 
 
+def play_choreography(
+    run,
+    *,
+    cnc_host: str,
+    cnc_port: int,
+    listener_host: str,
+    listener_port: int,
+    loader_host: str,
+    loader_port: int,
+    bot_targets: list[tuple[str, int]],
+    max_bots: int,
+    interval: float,
+    command: str,
+    payload_path: str,
+    timeout: float,
+) -> int:
+    """Generate the inert control sequence for the supplied simulated identities."""
+    with Console(cnc_host, cnc_port, timeout) as console:
+        run.emit("cnc_banner", banner=console.read_line())
+        run.emit("cnc_registry_initial", bots=console.command("bots"))
+
+    with socket.create_connection((listener_host, listener_port), timeout=timeout):
+        run.emit("listener_reachable", host=listener_host, port=listener_port)
+
+    new_bot_ids = []
+    for index, (address, target_port) in enumerate(bot_targets):
+        acknowledgement = bot_checkin(
+            cnc_host, cnc_port, address, "linux-x64-synthetic", timeout
+        )
+        if not acknowledgement.startswith("ACK "):
+            raise RuntimeError(f"Control service rejected simulated bot {index + 1}")
+        bot_id = acknowledgement.removeprefix("ACK ").strip()
+        if not bot_id:
+            raise RuntimeError("Control service returned an empty bot ID")
+        new_bot_ids.append(bot_id)
+        run.emit("bot_checkin", bot=index + 1, address=address, reply=acknowledgement)
+        report = {
+            "bot_id": bot_id,
+            "vulnerable": f"{address}:{target_port}",
+            "method": "synthetic-choreography",
+        }
+        with socket.create_connection(
+            (listener_host, listener_port), timeout=timeout
+        ) as sock:
+            sock.sendall((json.dumps(report) + "\n").encode())
+        run.emit("bot_report", bot=index + 1, address=address)
+        if index + 1 < len(bot_targets):
+            time.sleep(interval)
+
+    with Console(cnc_host, cnc_port, timeout) as console:
+        console.read_line()
+        registry = [line for line in console.command("bots") if line != "END"]
+        registered = set()
+        for line in registry:
+            try:
+                registered.add(json.loads(line)["bot_id"])
+            except (json.JSONDecodeError, KeyError):
+                continue
+        run.emit("cnc_registry_final", count=len(registered))
+        missing = set(new_bot_ids) - registered
+        if missing:
+            raise RuntimeError(
+                "New simulated bots were absent from the control registry"
+            )
+        dispatched = 0
+        for bot_id in new_bot_ids[:max_bots]:
+            console.command(f"use {bot_id}", sentinel="")
+            console.command(f"run {command}", sentinel="")
+            console.command("back", sentinel="")
+            dispatched += 1
+    run.emit("commands_dispatched", count=dispatched)
+
+    body = fetch_stub(loader_host, loader_port, payload_path, timeout)
+    inert = body.lstrip().startswith(STUB_MARKER)
+    run.emit("payload_delivery", bytes=len(body), inert_stub=inert)
+    if not inert:
+        raise RuntimeError("Loader did not return the expected inert stub")
+    return dispatched
+
+
 def main() -> int:
     options = parser(__doc__, "MET-MIRAI-CNC-01")
     options.add_argument(
@@ -132,70 +212,21 @@ def main() -> int:
     ) as run:
         if args.dry_run:
             return 0
-
-        # 1. Reach the control console and the scan listener.
-        with Console(cnc_host, cnc_port, args.timeout) as console:
-            banner = console.read_line()
-            run.emit("cnc_banner", banner=banner)
-            enrolled = console.command("bots")
-        run.emit("cnc_registry_initial", bots=enrolled)
-
-        with socket.create_connection(
-            (listener_host, listener_port), timeout=args.timeout
-        ):
-            run.emit("listener_reachable", host=listener_host, port=listener_port)
-
-        # 2. Let each bot check in and report.
-        for index in range(args.bots):
-            address = f"10.99.10.{100 + index}"
-            acknowledgement = bot_checkin(
-                cnc_host, cnc_port, address, "linux-x64-synthetic", args.timeout
-            )
-            run.emit(
-                "bot_checkin", bot=index + 1, address=address, reply=acknowledgement
-            )
-            report = {
-                "bot_id": acknowledgement.split(" ", 1)[-1],
-                "vulnerable": f"{address}:23",
-                "method": "synthetic-choreography",
-            }
-            with socket.create_connection(
-                (listener_host, listener_port), timeout=args.timeout
-            ) as sock:
-                sock.sendall((json.dumps(report) + "\n").encode())
-            run.emit("bot_report", bot=index + 1, address=address)
-            time.sleep(args.interval)
-
-        # 3. Read the registry back, then dispatch a bounded command.
-        with Console(cnc_host, cnc_port, args.timeout) as console:
-            console.read_line()
-            registry = [line for line in console.command("bots") if line != "END"]
-            enrolled_ids = []
-            for line in registry:
-                try:
-                    enrolled_ids.append(json.loads(line)["bot_id"])
-                except (json.JSONDecodeError, KeyError):
-                    continue
-            run.emit("cnc_registry_final", count=len(enrolled_ids))
-            dispatched = 0
-            for bot_id in enrolled_ids[: args.max_bots]:
-                console.command(f"use {bot_id}", sentinel="")
-                console.command(f"run {args.command}", sentinel="")
-                console.command("back", sentinel="")
-                dispatched += 1
-        run.emit("commands_dispatched", count=dispatched)
-
-        # 4. Confirm the loader serves an inert stub, not an executable.
-        body = fetch_stub(loader_host, loader_port, args.payload_path, args.timeout)
-        inert = body.lstrip().startswith(STUB_MARKER)
-        run.emit(
-            "payload_delivery",
-            node=args.loader_node,
-            bytes=len(body),
-            inert_stub=inert,
+        dispatched = play_choreography(
+            run,
+            cnc_host=cnc_host,
+            cnc_port=cnc_port,
+            listener_host=listener_host,
+            listener_port=listener_port,
+            loader_host=loader_host,
+            loader_port=loader_port,
+            bot_targets=[(f"10.99.10.{100 + index}", 23) for index in range(args.bots)],
+            max_bots=args.max_bots,
+            interval=args.interval,
+            command=args.command,
+            payload_path=args.payload_path,
+            timeout=args.timeout,
         )
-        if not inert:
-            raise RuntimeError("Loader did not return the expected inert stub")
 
         run.emit(
             "summary",

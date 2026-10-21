@@ -347,7 +347,7 @@ folder, so old captures stay explainable.
 | Path | Contains |
 |---|---|
 | `topology/address-plan.yaml` | Every network: its name, purpose, address range, gateway, and VLAN. |
-| `topology/links.yaml` | Every cable: 40 of them, each naming its two endpoints. |
+| `topology/links.yaml` | Every cable: 42 of them, each naming its two endpoints. |
 | `topology/validation-report.md` | A generated report showing the design checks passed. |
 | `device_instances/initial_devices.yaml` | Every device: its name, address, and settings. 21 entries. |
 | `device_instances/infrastructure.yaml` | The routers, switches, and access segments. |
@@ -772,7 +772,7 @@ purpose, plus a couple of shared helpers.
 | Command | What it does |
 |---|---|
 | `register_templates.py` | Tells GNS3 about each Docker image, once, so nodes can be created from them. Safe to rerun. |
-| `build_topology.py` | Creates the project, all 48 nodes, all 40 cables, and optionally loads each router's configuration. |
+| `build_topology.py` | Creates the project, all 48 nodes, all 42 cables, and optionally loads each router's configuration. |
 | `lab_lifecycle.py` | Starts and stops the lab in a sensible order, and reports status. |
 | `capture_traffic.py` | Checks capture coverage and records packets on chosen links for a chosen duration, then downloads and verifies the PCAPs. |
 | `collect_device_logs.py` | Collects Docker device logs and router syslog for a run. |
@@ -1106,7 +1106,7 @@ a web interface and a desktop client.
 
 What it *is not* is a program that pretends to be a network. It does not invent
 fake packets, and it does not simulate an operating system. It is a **manager**:
-you tell it "here are 48 nodes, here are 40 cables", and its job is to create
+you tell it "here are 48 nodes, here are 42 cables", and its job is to create
 those things and wire them up using facilities the real operating system already
 has.
 
@@ -1307,7 +1307,7 @@ python scripts/gns3/run.py lab_lifecycle --stop
 1. The validator reads four YAML files and cross-checks them.
 2. Docker builds 19 images.
 3. GNS3 learns about those images as templates.
-4. The builder reads the YAML, resolves 48 nodes and 40 cables, assigns switch
+4. The builder reads the YAML, resolves 48 nodes and 42 cables, assigns switch
    port numbers, creates the project, the nodes, and the cables, and sets each
    node's network settings.
 5. Starting brings containers up tier by tier.

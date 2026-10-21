@@ -30,6 +30,8 @@ EXPECTED_TOOLS = {
     "gotham_mirai_setup",
     "gotham_merlin_setup",
     "mirai_infection_sim",
+    "mirai_scenario",
+    "merlin_scenario",
     "modbus_manipulation_attack",
     "mqtt_bruteforce_attack",
     "mqtt_flood_attack",

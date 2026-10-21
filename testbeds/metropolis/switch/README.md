@@ -76,7 +76,9 @@ Dedicated Layer 2 segment for attack-generation nodes.
 | Port | Role | Mode | VLANs | Far end |
 |---|---|---|---|---|
 | 0 | `router-uplink` | access | untagged | `MET-OT-DMZ` eth3 — OT/DMZ router to the isolated attack-test switch |
-| 1 | `attack-host-1` | access | untagged | `MET-MIRAI-CNC-01` — Synthetic Mirai and Merlin nodes on the attack-test segment |
+| 1 | `attack-host-1` | access | untagged | `MET-MIRAI-CNC-01` — Synthetic Mirai control node on the attack-test segment |
+| 2 | `attack-host-2` | access | untagged | `MET-MERLIN-CNC-01` — Merlin control node on the attack-test segment |
+| 3 | `attack-host-3` | access | untagged | `MET-MERLIN-AGENT-01` — Merlin agent on the attack-test segment |
 
 ## `sw-reservoir-access`
 

@@ -132,11 +132,11 @@ def run_command(command: str) -> tuple[bool, str]:
     return True, f"simulated: {command}"
 
 
-def upload(host: str, port: int, agent_id: str, timeout: float) -> None:
+def upload(host: str, port: int, agent_id: str, timeout: float) -> bool:
     """Upload a synthetic artefact so the transfer path is observable."""
     body = f"metropolis-merlin-artefact {agent_id}\n".encode()
     try:
-        request(
+        reply = request(
             host,
             port,
             "POST",
@@ -144,9 +144,36 @@ def upload(host: str, port: int, agent_id: str, timeout: float) -> None:
             body,
             timeout,
         )
-        emit("upload", agent_id=agent_id, bytes=len(body))
+        stored = reply.get("stored") is True
+        emit("upload", agent_id=agent_id, bytes=len(body), stored=stored)
+        return stored
     except OSError as exc:
         LOG.warning("upload failed: %s", exc)
+        return False
+
+
+def report_result(
+    host: str,
+    port: int,
+    agent_id: str,
+    command: str,
+    ok: bool,
+    detail: str,
+    timeout: float,
+) -> bool:
+    try:
+        reply = request(
+            host,
+            port,
+            "POST",
+            f"/result/{agent_id}",
+            json.dumps({"command": command, "ok": ok, "detail": detail}).encode(),
+            timeout,
+        )
+    except OSError as exc:
+        LOG.warning("command result report failed: %s", exc)
+        return False
+    return reply.get("stored") is True
 
 
 def main() -> None:
@@ -180,7 +207,12 @@ def main() -> None:
             continue
         for command in reply.get("commands", []):
             ok, detail = run_command(command)
+            if ok and command.strip().split(" ", 1)[0] == "upload":
+                ok = upload(host, port, agent_id, timeout)
+                detail = "synthetic artefact uploaded" if ok else "upload failed"
             emit("command", agent_id=agent_id, command=command, ok=ok, detail=detail)
+            reported = report_result(host, port, agent_id, command, ok, detail, timeout)
+            emit("command_result_report", agent_id=agent_id, reported=reported)
         if upload_once and not uploaded:
             upload(host, port, agent_id, timeout)
             uploaded = True

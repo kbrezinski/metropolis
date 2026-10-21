@@ -40,7 +40,7 @@ A work in progress. The dates are when each piece landed; the entries marked
 | ✅ | Device models: PLC/RTU, sensor, broker, SCADA, HMI, historian, engineering workstation, control client, legacy gateway, DNS, NTP | 2026-10-01 |
 | ✅ | Topology validator: cross-checks the address plan, inventory, router interfaces, static routes, and switch VLANs | 2026-10-06 |
 | ✅ | MQTT over TLS: lab certificate authority, broker listener, verification by real handshake | 2026-10-06 |
-| ✅ | Link plan: 40 links as data, with the schema and validator to check them | 2026-10-09 |
+| ✅ | Link plan: 42 links as data, with the schema and validator to check them | 2026-10-09 |
 | ✅ | Infrastructure inventory: six routers, eight switches, and ten access segments | 2026-10-09 |
 | ✅ | Four JSON schemas, enforced by the validator rather than decorative | 2026-10-09 |
 | ✅ | Attack toolkit: CoAP, MQTT, Modbus, scanning, discovery, SSH, Telnet, bounded load | 2026-10-09 |

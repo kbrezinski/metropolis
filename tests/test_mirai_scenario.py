@@ -1,0 +1,116 @@
+"""The Mirai scenario gates synthetic control traffic on verified Telnet access."""
+
+from __future__ import annotations
+
+import importlib.util
+import json
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+ATTACKS = ROOT / "scripts/attacks"
+sys.path.insert(0, str(ATTACKS))
+sys.path.insert(0, str(ATTACKS / "mirai"))
+
+spec = importlib.util.spec_from_file_location(
+    "mirai_scenario_test", ATTACKS / "mirai/mirai_scenario.py"
+)
+scenario = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(scenario)
+
+
+def events(output):
+    return [json.loads(line) for line in output.splitlines() if line.startswith("{")]
+
+
+def test_dry_run_is_one_command_and_needs_no_gns3():
+    env = os.environ.copy()
+    env.pop("METROPOLIS_LAB_ACK", None)
+    result = subprocess.run(
+        [sys.executable, str(ATTACKS / "run.py"), "mirai_scenario", "--dry-run"],
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=15,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    started = events(result.stdout)[0]
+    assert started["targets"] == ["MET-LEGACY-GATEWAY-01"]
+    assert started["cnc"] == "10.99.10.10:23"
+    assert started["dry_run"] is True
+
+
+def test_verified_telnet_target_drives_only_its_simulated_identity(
+    monkeypatch, capsys, tmp_path
+):
+    attempts = []
+    played = []
+
+    class FakeSession:
+        def __init__(self, host, port, timeout):
+            assert host == "10.20.10.30"
+            attempts.append(port)
+
+        def login(self, username, password):
+            assert username == "root"
+            if len(attempts) == 1:
+                raise scenario.Rejected("wrong")
+
+        def prove_command(self, token, write_marker):
+            assert not write_marker
+            return True
+
+        def close(self):
+            pass
+
+    def fake_choreography(run, **kwargs):
+        played.append(kwargs)
+        run.emit("bot_checkin", address=kwargs["bot_targets"][0][0])
+        return 1
+
+    output = tmp_path / "scenario.jsonl"
+    monkeypatch.setattr(scenario, "Session", FakeSession)
+    monkeypatch.setattr(scenario, "play_choreography", fake_choreography)
+    monkeypatch.setattr(scenario.time, "sleep", lambda _: None)
+    monkeypatch.setenv("METROPOLIS_LAB_ACK", "yes")
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["mirai_scenario.py", "--output", str(output)],
+    )
+    assert scenario.main() == 0
+    records = events(capsys.readouterr().out)
+    assert len(attempts) == 2
+    assert played[0]["bot_targets"] == [("10.20.10.30", 23)]
+    assert any(row["event"] == "simulation_transition" for row in records)
+    assert events(output.read_text(encoding="utf-8")) == records
+    assert "LabOnly_Legacy_2026" not in output.read_text(encoding="utf-8")
+
+
+def test_failed_telnet_stage_skips_control_traffic(monkeypatch, capsys):
+    class RejectingSession:
+        def __init__(self, host, port, timeout):
+            pass
+
+        def login(self, username, password):
+            raise scenario.Rejected("wrong")
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(scenario, "Session", RejectingSession)
+    monkeypatch.setattr(
+        scenario,
+        "play_choreography",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("called")),
+    )
+    monkeypatch.setattr(scenario.time, "sleep", lambda _: None)
+    monkeypatch.setenv("METROPOLIS_LAB_ACK", "yes")
+    monkeypatch.setattr(sys, "argv", ["mirai_scenario.py"])
+    assert scenario.main() == 1
+    summary = next(
+        row for row in events(capsys.readouterr().out) if row["event"] == "summary"
+    )
+    assert summary["control_stage"] == "skipped"

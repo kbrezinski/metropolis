@@ -76,7 +76,7 @@ def test_every_node_becomes_a_graph_node(bundled):
 
 def test_every_link_becomes_a_graph_edge(bundled):
     graph, _, _ = _graphs(bundled)
-    assert graph.number_of_edges() == 40
+    assert graph.number_of_edges() == 42
 
 
 def test_node_kinds_come_from_the_topology(bundled):

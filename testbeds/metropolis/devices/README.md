@@ -313,9 +313,11 @@ Two properties keep these safe to run:
   bot probes only the private addresses listed in `BOT_TARGETS`.
 
 Both consoles record delivered commands without running them, so a capture shows
-the control conversation while the testbed stays inert. To drive the whole
-lifecycle, see the experiment toolkit's `run_mirai_choreography` and
-`run_merlin` tools. To connect a user-supplied inert Merlin agent, see the
+the control conversation while the testbed stays inert. To drive the integrated
+scenarios, see the experiment toolkit's `mirai_scenario` and
+`merlin_scenario` tools. Merlin's scenario uses the actual inert agent node;
+rebuild both Merlin images after changing their model code. To connect a
+user-supplied inert Merlin agent, see the
 [Merlin setup contract](../../../scripts/attacks/README.md#gotham-merlin-setup-adapter).
 
 ## Encrypted traffic

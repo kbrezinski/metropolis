@@ -105,10 +105,12 @@ does not make an unrelated image compatible.
 | Combine CoAP observations | `coap_experiment_report` | Offline sender/sensor/receiver report beside a pcap |
 | Write to the PLC | `modbus_manipulation_attack` | Modbus register and coil writes |
 | Generate hping3-style traffic | `hping3_attack` | Five bounded Gotham packet profiles; SYN by default |
-| Play out a Mirai infection | `run_mirai_choreography` | Bot check-in, reports, C2 commands, payload fetch |
+| Run the Mirai scenario | `mirai_scenario` | Telnet attempts, then simulated bot check-ins, reports, C2 commands, and inert payload fetch for verified targets |
+| Study Mirai control traffic alone | `run_mirai_choreography` | Synthetic bot check-ins, reports, C2 commands, inert payload fetch |
 | Set up Gotham-style Mirai roles | `gotham_mirai_setup` | Verify inventoried Telnet targets; optionally start the inert bot node |
 | Set up Gotham-style Merlin roles | `gotham_merlin_setup` | Verify the synthetic C2 node and connection contract; optionally start the inert agent node |
-| Play out Merlin C2 | `run_merlin` | C2 listener, agent check-in, command, upload |
+| Run the Merlin scenario | `merlin_scenario` | Control the running inert agent; verify its command result and upload |
+| Study Merlin control traffic alone | `run_merlin` | One-shot synthetic check-in, command, and upload sent from the runner |
 | Check external Mirai bot setup | `gotham_mirai_setup` | Inventory and GNS3 prerequisite checks; no bot traffic |
 | Check external Merlin agent setup | `gotham_merlin_setup` | Inventory and GNS3 prerequisite checks; no agent traffic |
 
@@ -157,12 +159,47 @@ Then create the attack-lab nodes from the inventory and start them. The
 [attack lab section](../../testbeds/metropolis/devices/README.md#attack-lab)
 lists every node, its address, and what it does.
 
-Once they are up:
+Once they are up, the integrated Mirai scenario is the main entry point:
 
 ```bash
-python scripts/attacks/run.py run_mirai_choreography --bots 3
-python scripts/attacks/run.py run_merlin
+python scripts/attacks/run.py mirai_scenario --dry-run
+export METROPOLIS_LAB_ACK=yes
+python scripts/attacks/run.py mirai_scenario --output runs/mirai-scenario.jsonl
+python scripts/attacks/run.py merlin_scenario --output runs/merlin-scenario.jsonl
 ```
+
+`mirai_scenario` selects the inventoried Telnet targets, control service,
+report listener, and HTTP loader. It tries a short credential fixture on each
+Telnet target and checks that an accepted login can run a fixed `printf`
+challenge. Only verified targets proceed to synthetic check-in, report,
+recorded control command, and inert text marker fetch. If none verify, the
+control stage is skipped and the command exits 1. The sender's JSONL uses one
+run record, and `--output` retains it. Start PCAP and device log collection
+separately before the command if those observations are needed.
+
+The control service receives a target address as a **simulated identity**;
+the attack runner sends that traffic from its own host. A PCAP will therefore
+show the runner as the network source, not the Telnet target. The target never
+runs a bot or receives a payload. `--target-node NAME` selects
+specific Telnet targets and can be repeated. `--wordlist PATH`,
+`--max-attempts`, and `--attempt-interval` control the login stage.
+`--cnc-node`, `--listener-node`, and `--loader-node` select the control stage
+roles from a custom inventory. The older `mirai_infection_sim` and
+`run_mirai_choreography` remain available for isolated stage experiments.
+
+`merlin_scenario` requires both the synthetic Merlin CNC and agent nodes to be
+running. It starts the CNC's labelled listener, waits for the selected agent to
+check in from its declared address, queues the default inert `chmod` command,
+waits for the agent's result report, then requests and verifies a nonempty
+synthetic upload. The agent node sends the check-in, poll, result, and upload
+traffic; the runner only uses the operator console and reads status. The
+default agent polls every 20 seconds, so the scenario allows 90 seconds per
+stage. Use `--agent-node`, `--cnc-node`, and `--dataset` for a custom lab.
+`--command` changes the simulated command, and `--wait-seconds` changes the
+wait per stage. A timeout or failed result fails the run. The older
+`run_merlin` remains a one-shot control-protocol experiment whose agent traffic
+comes from the runner, not the agent node. Start PCAP and log collection
+separately if they are needed for the experiment.
 
 ### Gotham Mirai setup adapter
 
@@ -236,12 +273,14 @@ agent must be placed on a lab node that can route to that address and implement:
 | `POST /checkin` | JSON `{"address":"<agent-ip>","arch":"<arch>"}` | JSON `{"agent_id":"<uuid>"}` |
 | `GET /commands/<agent_id>` | Empty | JSON `{"commands":[...]}`; polling consumes queued commands |
 | `POST /upload/<agent_id>` | Small artefact bytes | JSON `{"stored":true}` |
+| `POST /result/<agent_id>` | JSON command outcome | JSON `{"stored":true}` |
+| `GET /status/<agent_id>` | Empty | JSON command results and upload metadata |
 
 Set `Content-Length` for POST requests. The supplied agent should treat
 received commands as inert test data; the C2 only queues them. The repository's
 example `MET-MERLIN-AGENT-01` shows the protocol. `run_merlin` performs its own
-synthetic check-in, so use either that one-shot choreography or a separate
-agent-driven experiment when interpreting captures. Gotham instead starts a
+synthetic check-in, so use `merlin_scenario` for the agent-driven experiment
+when interpreting captures. Gotham instead starts a
 Merlin executable inside a selected container and uploads an `hping3` tool
 through its console. This adapter provides the role and protocol setup, not
 those executable or file-transfer behaviors. Verify reachability and capture

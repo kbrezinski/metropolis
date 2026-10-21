@@ -417,7 +417,7 @@ links:
   # Attack-lab nodes share the isolated attack-test segment.
   - id: attach-attack-lab
     kind: access
-    description: Synthetic Mirai and Merlin nodes on the attack-test segment
+    description: Synthetic Mirai control node on the attack-test segment
     network_id: attack-lab
     cidr: 10.99.10.0/24
     endpoints:
@@ -425,6 +425,25 @@ links:
       - node: sw-attack-test
         port_role: attack-host-1
     notes: >-
-      Representative attachment for the attack-lab subnet. The individual
-      nodes (listener, loaders, bot, Merlin CNC and agent) share this switch
-      and are enumerated in the device inventory.
+      Other attack-lab nodes require their own declared physical links before
+      they can participate in a built GNS3 topology.
+
+  - id: attach-merlin-cnc
+    kind: access
+    description: Merlin control node on the attack-test segment
+    network_id: attack-lab
+    cidr: 10.99.10.0/24
+    endpoints:
+      - node: MET-MERLIN-CNC-01
+      - node: sw-attack-test
+        port_role: attack-host-2
+
+  - id: attach-merlin-agent
+    kind: access
+    description: Merlin agent on the attack-test segment
+    network_id: attack-lab
+    cidr: 10.99.10.0/24
+    endpoints:
+      - node: MET-MERLIN-AGENT-01
+      - node: sw-attack-test
+        port_role: attack-host-3

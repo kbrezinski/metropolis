@@ -55,7 +55,10 @@ class Agent:
     address: str
     arch: str
     last_seen: float
+    peer_address: str | None = None
     commands: list[str] = field(default_factory=list)
+    results: list[dict] = field(default_factory=list)
+    result_sequence: int = 0
 
 
 class State:
@@ -66,6 +69,7 @@ class State:
         self.listener = {"state": "stopped", "scheme": None, "interface": None}
         self._agents: dict[str, Agent] = {}
         self.uploads: list[dict] = []
+        self._upload_sequence = 0
 
     def start_listener(self, scheme: str, interface: str) -> None:
         with self._lock:
@@ -80,7 +84,9 @@ class State:
         with self._lock:
             return dict(self.listener)
 
-    def check_in(self, address: str, arch: str) -> Agent:
+    def check_in(
+        self, address: str, arch: str, peer_address: str | None = None
+    ) -> Agent:
         with self._lock:
             agent = next(
                 (item for item in self._agents.values() if item.address == address),
@@ -89,12 +95,15 @@ class State:
             if agent is None:
                 if len(self._agents) >= MAX_AGENTS:
                     raise ValueError("Agent registry is full")
-                agent = Agent(str(uuid.uuid4()), address, arch, time.time())
+                agent = Agent(
+                    str(uuid.uuid4()), address, arch, time.time(), peer_address
+                )
                 self._agents[agent.agent_id] = agent
                 LOG.info("agent %s checked in from %s", agent.agent_id, address)
             else:
                 agent.last_seen = time.time()
                 agent.arch = arch
+                agent.peer_address = peer_address
             return agent
 
     def get(self, agent_id: str) -> Agent | None:
@@ -107,6 +116,7 @@ class State:
                 {
                     "agent_id": agent.agent_id,
                     "address": agent.address,
+                    "peer_address": agent.peer_address,
                     "arch": agent.arch,
                     "commands": len(agent.commands),
                 }
@@ -127,16 +137,56 @@ class State:
 
     def add_upload(self, agent_id: str, name: str, body: bytes) -> None:
         with self._lock:
+            self._upload_sequence += 1
             if len(self.uploads) >= MAX_UPLOADS:
                 self.uploads.pop(0)
             self.uploads.append(
                 {
                     "agent_id": agent_id,
+                    "sequence": self._upload_sequence,
                     "name": name,
                     "bytes": len(body),
                     "preview": body[:200].decode("utf-8", errors="replace"),
                 }
             )
+
+    def add_result(self, agent_id: str, command: str, ok: bool, detail: str) -> bool:
+        with self._lock:
+            agent = self._agents.get(agent_id)
+            if agent is None:
+                return False
+            agent.result_sequence += 1
+            agent.results.append(
+                {
+                    "sequence": agent.result_sequence,
+                    "command": command,
+                    "ok": ok,
+                    "detail": detail,
+                }
+            )
+            del agent.results[:-64]
+            return True
+
+    def status(self, agent_id: str) -> dict | None:
+        with self._lock:
+            agent = self._agents.get(agent_id)
+            if agent is None:
+                return None
+            return {
+                "agent_id": agent_id,
+                "address": agent.address,
+                "peer_address": agent.peer_address,
+                "results": list(agent.results),
+                "uploads": [
+                    {
+                        "sequence": item["sequence"],
+                        "name": item["name"],
+                        "bytes": item["bytes"],
+                    }
+                    for item in self.uploads
+                    if item["agent_id"] == agent_id
+                ],
+            }
 
 
 def send_line(stream, text: str) -> None:
@@ -270,6 +320,7 @@ def handle_agent(state: State, connection: socket.socket, peer) -> None:
                 agent = state.check_in(
                     str(payload.get("address", peer[0])),
                     str(payload.get("arch", "unknown")),
+                    peer[0],
                 )
             except ValueError as exc:
                 http_response(
@@ -287,6 +338,30 @@ def handle_agent(state: State, connection: socket.socket, peer) -> None:
                 connection,
                 "200 OK",
                 json.dumps({"commands": state.take_commands(agent_id)}).encode(),
+            )
+        elif verb == b"GET" and path.startswith(b"/status/"):
+            agent_id = path.decode().rsplit("/", 1)[-1]
+            status = state.status(agent_id)
+            http_response(
+                connection,
+                "200 OK" if status else "404 Not Found",
+                json.dumps(status or {"error": "unknown agent"}).encode(),
+            )
+        elif verb == b"POST" and path.startswith(b"/result/"):
+            agent_id = path.decode().rsplit("/", 1)[-1]
+            payload = json.loads(body or b"{}")
+            if not isinstance(payload, dict):
+                raise ValueError("Result must be an object")
+            stored = state.add_result(
+                agent_id,
+                str(payload.get("command", "")),
+                bool(payload.get("ok", False)),
+                str(payload.get("detail", "")),
+            )
+            http_response(
+                connection,
+                "202 Accepted" if stored else "404 Not Found",
+                json.dumps({"stored": stored}).encode(),
             )
         elif verb == b"POST" and path.startswith(b"/upload/"):
             agent_id = path.decode().split("/")[2]

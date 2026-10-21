@@ -127,6 +127,25 @@ def test_router_interfaces_become_adapter_numbers(plan):
     assert ends == {"MET-OT-CORE": 0, "MET-PLANT": 0}
 
 
+def test_merlin_nodes_have_distinct_built_switch_ports(plan):
+    topology, _ = plan
+    links = {item.link_id: item for item in topology.links}
+    assert {
+        links["attach-merlin-cnc"].first.node: links["attach-merlin-cnc"].first.adapter,
+        links["attach-merlin-cnc"].second.node: links[
+            "attach-merlin-cnc"
+        ].second.adapter,
+    } == {"MET-MERLIN-CNC-01": 0, "sw-attack-test": 2}
+    assert {
+        links["attach-merlin-agent"].first.node: links[
+            "attach-merlin-agent"
+        ].first.adapter,
+        links["attach-merlin-agent"].second.node: links[
+            "attach-merlin-agent"
+        ].second.adapter,
+    } == {"MET-MERLIN-AGENT-01": 0, "sw-attack-test": 3}
+
+
 def test_environment_string_quotes_values():
     rendered = environment_string(
         {"NODE_IP": "10.20.10.10/24", "NODE_HOSTNAME": "MET-PLC"}
