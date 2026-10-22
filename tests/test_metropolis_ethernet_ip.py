@@ -110,6 +110,17 @@ def test_cyclic_io_uses_udp_and_closes_to_safe_state() -> None:
             while time.monotonic() < deadline and client.snapshot()[0]:
                 time.sleep(0.02)
             assert client.snapshot() == (False, True)
+            state.faulted = True
+            deadline = time.monotonic() + 2
+            while time.monotonic() < deadline and not client.faulted:
+                time.sleep(0.02)
+            assert client.faulted
+            assert client.snapshot() == (False, True)
+            state.faulted = False
+            deadline = time.monotonic() + 2
+            while time.monotonic() < deadline and client.faulted:
+                time.sleep(0.02)
+            assert not client.faulted
         finally:
             client.close()
             deadline = time.monotonic() + 2

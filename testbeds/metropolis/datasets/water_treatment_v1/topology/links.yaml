@@ -294,9 +294,8 @@ links:
       - node: sw-operations-services
         port_role: aggregation-uplink
 
-  # Host attachments to the access segments the lab actually populates. The
-  # process cells without modelled devices (11-13, 51-53) keep their trunk
-  # capacity at the aggregation switch but have no attachment entries yet.
+  # Host attachments to the populated access segments. Disinfection retains
+  # trunk capacity but has no modelled hosts yet.
   - id: attach-intake-plc
     kind: access
     description: Intake PLC on the plant intake segment
@@ -350,6 +349,78 @@ links:
     endpoints:
       - node: MET-LEGACY-GATEWAY-01
       - node: sw-plant-cell-intake
+
+  - id: attach-dosing-plc
+    kind: access
+    description: Dosing PLC on the plant dosing segment
+    network_id: plant-dosing
+    cidr: 10.20.11.0/24
+    endpoints:
+      - node: MET-PLC-DOSING-01
+      - node: sw-plant-cell-dosing
+
+  - id: attach-dosing-analyzer
+    kind: access
+    description: Networked dosing analyzer on the plant dosing segment
+    network_id: plant-dosing
+    cidr: 10.20.11.0/24
+    endpoints:
+      - node: MET-ANALYZER-DOSING-01
+      - node: sw-plant-cell-dosing
+
+  - id: attach-dosing-duty-drive
+    kind: access
+    description: Dosing duty pump drive on the plant dosing segment
+    network_id: plant-dosing
+    cidr: 10.20.11.0/24
+    endpoints:
+      - node: MET-PUMP-DRIVE-DOSING-DUTY-01
+      - node: sw-plant-cell-dosing
+
+  - id: attach-dosing-standby-drive
+    kind: access
+    description: Dosing standby pump drive on the plant dosing segment
+    network_id: plant-dosing
+    cidr: 10.20.11.0/24
+    endpoints:
+      - node: MET-PUMP-DRIVE-DOSING-STANDBY-01
+      - node: sw-plant-cell-dosing
+
+  - id: attach-filtration-plc
+    kind: access
+    description: Filtration PLC on the plant filtration segment
+    network_id: plant-filtration
+    cidr: 10.20.12.0/24
+    endpoints:
+      - node: MET-PLC-FILTRATION-01
+      - node: sw-plant-cell-filtration
+
+  - id: attach-filtration-dp
+    kind: access
+    description: Differential-pressure instrument on the plant filtration segment
+    network_id: plant-filtration
+    cidr: 10.20.12.0/24
+    endpoints:
+      - node: MET-DP-FILTRATION-01
+      - node: sw-plant-cell-filtration
+
+  - id: attach-filtration-backwash-pump
+    kind: access
+    description: Backwash pump drive on the plant filtration segment
+    network_id: plant-filtration
+    cidr: 10.20.12.0/24
+    endpoints:
+      - node: MET-PUMP-DRIVE-FILTRATION-BACKWASH-01
+      - node: sw-plant-cell-filtration
+
+  - id: attach-filtration-backwash-valve
+    kind: access
+    description: Backwash valve controller on the plant filtration segment
+    network_id: plant-filtration
+    cidr: 10.20.12.0/24
+    endpoints:
+      - node: MET-VALVE-CTRL-FILTRATION-BACKWASH-01
+      - node: sw-plant-cell-filtration
 
   - id: attach-reservoir-rtu
     kind: access
@@ -440,6 +511,24 @@ links:
     endpoints:
       - node: MET-HMI-INTAKE-01
       - node: sw-plant-hmi
+
+  - id: attach-hmi-dosing
+    kind: access
+    description: Dosing HMI on the dosing HMI segment
+    network_id: dosing-hmi
+    cidr: 10.20.51.0/24
+    endpoints:
+      - node: MET-HMI-DOSING-01
+      - node: sw-plant-dosing-hmi
+
+  - id: attach-hmi-filtration
+    kind: access
+    description: Filtration HMI on the filtration HMI segment
+    network_id: filtration-hmi
+    cidr: 10.20.52.0/24
+    endpoints:
+      - node: MET-HMI-FILTRATION-01
+      - node: sw-plant-filtration-hmi
 
   # Attack-lab nodes share the isolated attack-test segment.
   - id: attach-attack-lab

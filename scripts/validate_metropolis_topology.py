@@ -839,11 +839,31 @@ def _validate_device_targets(devices: list[dict]) -> list[str]:
     known_addresses = {ip_interface(device["address"]).ip for device in devices}
     problems = []
     for device in devices:
-        for key, target in device.get("environment", {}).items():
+        environment = device.get("environment", {})
+        for key, target in environment.items():
             if key.endswith("_HOST") and IPv4Address(target) not in known_addresses:
                 problems.append(
                     f"{device['name']}: {key} target {target} is not inventoried"
                 )
+        if targets_text := environment.get("SCADA_TARGETS"):
+            try:
+                targets = json.loads(targets_text)
+                if not isinstance(targets, list) or not targets:
+                    raise ValueError("expected a nonempty array")
+                for target in targets:
+                    if not isinstance(target, dict) or not all(
+                        isinstance(target.get(key), str) and target[key]
+                        for key in ("id", "host", "profile", "topic")
+                    ):
+                        raise ValueError(
+                            "each target needs id, host, profile, and topic"
+                        )
+                    if IPv4Address(target["host"]) not in known_addresses:
+                        problems.append(
+                            f"{device['name']}: SCADA target {target['host']} is not inventoried"
+                        )
+            except (ValueError, TypeError) as exc:
+                problems.append(f"{device['name']}: invalid SCADA_TARGETS: {exc}")
     return problems
 
 

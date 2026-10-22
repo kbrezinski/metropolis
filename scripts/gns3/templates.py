@@ -79,6 +79,16 @@ TEMPLATES: tuple[ImageTemplate, ...] = (
         description="EtherNet/IP duty/standby pump drive or valve controller",
     ),
     spec(
+        "Metropolis networked analyzer",
+        "metropolis/analyzer:dev",
+        description="Modbus TCP pH and turbidity analyzer for the dosing cell",
+    ),
+    spec(
+        "Metropolis differential-pressure instrument",
+        "metropolis/dp-instrument:dev",
+        description="Modbus TCP filter pressure-drop instrument",
+    ),
+    spec(
         "Metropolis MQTT/CoAP sensor",
         "metropolis/mqtt-sensor:dev",
         description="MQTT telemetry publisher with CoAP discovery and status",

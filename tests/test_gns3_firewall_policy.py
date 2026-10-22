@@ -141,12 +141,14 @@ def test_invalid_attack_source_and_unknown_network_fail_closed(documents):
     outside_target = parse_attack_exception("attack-lab:attack-lab:tcp:502")
     with pytest.raises(ValueError, match="attack target is on attack-lab"):
         compile_policy(DATASET, infrastructure, inventory, [outside_target])
-    uncabled = parse_attack_exception("attack-lab:plant-dosing:tcp:502")
+    # Use a still-empty cell to check that removing its only segment makes it
+    # unavailable to a policy rule.
+    uncabled = parse_attack_exception("attack-lab:plant-disinfection:tcp:502")
     changed = copy.deepcopy(infrastructure)
     changed["segments"] = [
         segment
         for segment in changed["segments"]
-        if segment["network_id"] != "plant-dosing"
+        if segment["network_id"] != "plant-disinfection"
     ]
     with pytest.raises(ValueError, match="no declared link"):
         compile_policy(DATASET, changed, inventory, [uncabled])

@@ -24,6 +24,136 @@ devices:
       EIP_VALVE_HOST: 10.20.10.42
       EIP_RPI_MS: "100"
 
+  - name: MET-PLC-DOSING-01
+    model: testbeds/metropolis/devices/controllers/plc
+    image: metropolis/controller:dev
+    site: treatment_plant
+    subnet: 10.20.11.0/24
+    address: 10.20.11.10/24
+    gateway: 10.20.11.1
+    protocols: [modbus-tcp, ethernet-ip]
+    environment:
+      NODE_HOSTNAME: MET-PLC-DOSING-01
+      NODE_IP: 10.20.11.10/24
+      NODE_GATEWAY: 10.20.11.1
+      DEVICE_ROLE: PLC
+      CELL_ROLE: dosing
+      ANALYZER_HOST: 10.20.11.20
+      ANALYZER_POLL_INTERVAL: "1"
+      EIP_DUTY_HOST: 10.20.11.40
+      EIP_STANDBY_HOST: 10.20.11.41
+      EIP_RPI_MS: "100"
+
+  - name: MET-ANALYZER-DOSING-01
+    model: testbeds/metropolis/devices/field/analyzers
+    image: metropolis/analyzer:dev
+    site: treatment_plant
+    subnet: 10.20.11.0/24
+    address: 10.20.11.20/24
+    gateway: 10.20.11.1
+    protocols: [modbus-tcp]
+    environment:
+      NODE_HOSTNAME: MET-ANALYZER-DOSING-01
+      NODE_IP: 10.20.11.20/24
+      NODE_GATEWAY: 10.20.11.1
+      ANALYZER_INTERVAL: "1"
+
+  - name: MET-PUMP-DRIVE-DOSING-DUTY-01
+    model: testbeds/metropolis/devices/field/actuators
+    image: metropolis/actuator:dev
+    site: treatment_plant
+    subnet: 10.20.11.0/24
+    address: 10.20.11.40/24
+    gateway: 10.20.11.1
+    protocols: [ethernet-ip]
+    environment:
+      NODE_HOSTNAME: MET-PUMP-DRIVE-DOSING-DUTY-01
+      NODE_IP: 10.20.11.40/24
+      NODE_GATEWAY: 10.20.11.1
+      ACTUATOR_ROLE: pump_drive
+
+  - name: MET-PUMP-DRIVE-DOSING-STANDBY-01
+    model: testbeds/metropolis/devices/field/actuators
+    image: metropolis/actuator:dev
+    site: treatment_plant
+    subnet: 10.20.11.0/24
+    address: 10.20.11.41/24
+    gateway: 10.20.11.1
+    protocols: [ethernet-ip]
+    environment:
+      NODE_HOSTNAME: MET-PUMP-DRIVE-DOSING-STANDBY-01
+      NODE_IP: 10.20.11.41/24
+      NODE_GATEWAY: 10.20.11.1
+      ACTUATOR_ROLE: pump_drive
+
+  - name: MET-PLC-FILTRATION-01
+    model: testbeds/metropolis/devices/controllers/plc
+    image: metropolis/controller:dev
+    site: treatment_plant
+    subnet: 10.20.12.0/24
+    address: 10.20.12.10/24
+    gateway: 10.20.12.1
+    protocols: [modbus-tcp, ethernet-ip]
+    environment:
+      NODE_HOSTNAME: MET-PLC-FILTRATION-01
+      NODE_IP: 10.20.12.10/24
+      NODE_GATEWAY: 10.20.12.1
+      DEVICE_ROLE: PLC
+      CELL_ROLE: filtration
+      INSTRUMENT_HOST: 10.20.12.20
+      DP_POLL_INTERVAL: "1"
+      INSTRUMENT_STALE_SECONDS: "3"
+      EIP_PUMP_HOST: 10.20.12.40
+      EIP_VALVE_HOST: 10.20.12.42
+      EIP_RPI_MS: "100"
+      BACKWASH_SECONDS: "8"
+      BACKWASH_HYSTERESIS_X10: "100"
+
+  - name: MET-DP-FILTRATION-01
+    model: testbeds/metropolis/devices/field/instruments
+    image: metropolis/dp-instrument:dev
+    site: treatment_plant
+    subnet: 10.20.12.0/24
+    address: 10.20.12.20/24
+    gateway: 10.20.12.1
+    protocols: [modbus-tcp]
+    environment:
+      NODE_HOSTNAME: MET-DP-FILTRATION-01
+      NODE_IP: 10.20.12.20/24
+      NODE_GATEWAY: 10.20.12.1
+      DP_UPDATE_INTERVAL: "1"
+      DP_MIN_X10: "250"
+      DP_MAX_X10: "800"
+      DP_CYCLE_SECONDS: "120"
+
+  - name: MET-PUMP-DRIVE-FILTRATION-BACKWASH-01
+    model: testbeds/metropolis/devices/field/actuators
+    image: metropolis/actuator:dev
+    site: treatment_plant
+    subnet: 10.20.12.0/24
+    address: 10.20.12.40/24
+    gateway: 10.20.12.1
+    protocols: [ethernet-ip]
+    environment:
+      NODE_HOSTNAME: MET-PUMP-DRIVE-FILTRATION-BACKWASH-01
+      NODE_IP: 10.20.12.40/24
+      NODE_GATEWAY: 10.20.12.1
+      ACTUATOR_ROLE: pump_drive
+
+  - name: MET-VALVE-CTRL-FILTRATION-BACKWASH-01
+    model: testbeds/metropolis/devices/field/actuators
+    image: metropolis/actuator:dev
+    site: treatment_plant
+    subnet: 10.20.12.0/24
+    address: 10.20.12.42/24
+    gateway: 10.20.12.1
+    protocols: [ethernet-ip]
+    environment:
+      NODE_HOSTNAME: MET-VALVE-CTRL-FILTRATION-BACKWASH-01
+      NODE_IP: 10.20.12.42/24
+      NODE_GATEWAY: 10.20.12.1
+      ACTUATOR_ROLE: valve_controller
+
   - name: MET-PUMP-DRIVE-INTAKE-DUTY-01
     model: testbeds/metropolis/devices/field/actuators
     image: metropolis/actuator:dev
@@ -149,6 +279,8 @@ devices:
       NODE_IP: 10.20.20.10/24
       NODE_GATEWAY: 10.20.20.1
       PLC_HOST: 10.20.10.10
+      SCADA_TARGETS: >-
+        [{"id":"intake","host":"10.20.10.10","profile":"intake","topic":"metropolis/scada/intake/status"},{"id":"dosing","host":"10.20.11.10","profile":"dosing","topic":"metropolis/scada/dosing/status"},{"id":"filtration","host":"10.20.12.10","profile":"filtration","topic":"metropolis/scada/filtration/status"}]
       MQTT_HOST: 10.20.23.10
       MQTT_USERNAME: lab_device
       MQTT_PASSWORD: LabOnly_Device_2026
@@ -184,9 +316,67 @@ devices:
       HMI_USERNAME: operator
       HMI_PASSWORD: LabOnly_HMI_2026
       HMI_HTTP_PORT: "8080"
+      HMI_CELL_ID: intake
+      HMI_SETPOINT_UNIT: percent
+      MQTT_ACK_TOPIC: metropolis/scada/intake/ack
       MQTT_TELEMETRY_TOPIC: metropolis/scada/intake/status
       MQTT_HOST: 10.20.23.10
       MQTT_TOPIC: metropolis/plant/intake/command
+      MQTT_USERNAME: lab_device
+      MQTT_PASSWORD: LabOnly_Device_2026
+
+  - name: MET-HMI-DOSING-01
+    model: testbeds/metropolis/devices/operations/hmi
+    image: metropolis/hmi:dev
+    site: treatment_plant
+    subnet: 10.20.51.0/24
+    address: 10.20.51.10/24
+    gateway: 10.20.51.1
+    protocols: [mqtt, http]
+    environment:
+      NODE_HOSTNAME: MET-HMI-DOSING-01
+      NODE_IP: 10.20.51.10/24
+      NODE_GATEWAY: 10.20.51.1
+      HMI_USERNAME: operator
+      HMI_PASSWORD: LabOnly_HMI_2026
+      HMI_HTTP_PORT: "8080"
+      HMI_CELL_ID: dosing
+      HMI_SETPOINT_UNIT: percent
+      MQTT_ACK_TOPIC: metropolis/scada/dosing/ack
+      HMI_PANEL_TITLE: Dosing operator panel
+      HMI_SETPOINT_LABEL: Requested dose setpoint
+      HMI_SETPOINT_COMMAND: dose_setpoint
+      MQTT_TELEMETRY_TOPIC: metropolis/scada/dosing/status
+      MQTT_HOST: 10.20.23.10
+      MQTT_TOPIC: metropolis/plant/dosing/command
+      MQTT_USERNAME: lab_device
+      MQTT_PASSWORD: LabOnly_Device_2026
+
+  - name: MET-HMI-FILTRATION-01
+    model: testbeds/metropolis/devices/operations/hmi
+    image: metropolis/hmi:dev
+    site: treatment_plant
+    subnet: 10.20.52.0/24
+    address: 10.20.52.10/24
+    gateway: 10.20.52.1
+    protocols: [mqtt, http]
+    environment:
+      NODE_HOSTNAME: MET-HMI-FILTRATION-01
+      NODE_IP: 10.20.52.10/24
+      NODE_GATEWAY: 10.20.52.1
+      HMI_USERNAME: operator
+      HMI_PASSWORD: LabOnly_HMI_2026
+      HMI_HTTP_PORT: "8080"
+      HMI_CELL_ID: filtration
+      HMI_PANEL_TITLE: Filtration operator panel
+      HMI_SETPOINT_LABEL: Requested backwash threshold
+      HMI_SETPOINT_COMMAND: backwash_threshold
+      HMI_SETPOINT_UNIT: kPa
+      HMI_SETPOINT_MIN: "10"
+      MQTT_TELEMETRY_TOPIC: metropolis/scada/filtration/status
+      MQTT_ACK_TOPIC: metropolis/scada/filtration/ack
+      MQTT_HOST: 10.20.23.10
+      MQTT_TOPIC: metropolis/plant/filtration/command
       MQTT_USERNAME: lab_device
       MQTT_PASSWORD: LabOnly_Device_2026
 

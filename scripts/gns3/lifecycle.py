@@ -51,7 +51,11 @@ def tier_for(kind: str, image: str | None) -> int:
     """The startup tier for a node, from its kind and image."""
     if kind in INFRASTRUCTURE_TIERS:
         return INFRASTRUCTURE_TIERS[kind]
-    if image == "metropolis/actuator:dev":
+    if image in {
+        "metropolis/actuator:dev",
+        "metropolis/analyzer:dev",
+        "metropolis/dp-instrument:dev",
+    }:
         return TIER_ACTUATOR
     if image in SERVER_IMAGES:
         return TIER_SERVER

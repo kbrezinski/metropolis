@@ -28,7 +28,8 @@ makes the server match it.
 
 ```bash
 # 1. Build the images, then register a template for each
-# Include metropolis/actuator:dev for the intake duty/standby drives and valve.
+# Include metropolis/actuator:dev for intake, dosing, and filtration I/O;
+# metropolis/analyzer:dev for dosing; and metropolis/dp-instrument:dev for filtration.
 python scripts/gns3/run.py register_templates --check
 python scripts/gns3/run.py register_templates
 
@@ -48,6 +49,10 @@ python scripts/gns3/run.py capture_traffic --coverage
 python scripts/gns3/run.py capture_traffic --all-built --coverage --duration 60
 # Or choose individual declared links:
 python scripts/gns3/run.py capture_traffic --links link-core-plant attach-intake-plc --duration 60
+# Dosing: local analyzer polling, cyclic I/O, and routed SCADA polling:
+python scripts/gns3/run.py capture_traffic --links attach-dosing-analyzer attach-dosing-duty-drive attach-dosing-standby-drive link-plant-cell-dosing-uplink --duration 60
+# Filtration: local pressure polling, cyclic backwash I/O, and routed SCADA polling:
+python scripts/gns3/run.py capture_traffic --links attach-filtration-dp attach-filtration-backwash-pump attach-filtration-backwash-valve link-plant-cell-filtration-uplink --duration 60
 
 # For a complete experiment, collect logs and PCAPs together:
 python scripts/gns3/run.py experiment_run --start-lab --configure-routers --duration 60 \
@@ -166,6 +171,27 @@ manifest list unavailable declared links and never assert full network coverage.
 Coverage describes modeled paths. Inspect PCAPs containing both local subnet
 flows and routed flows before describing the data as broad network coverage.
 Uncabled or undeclared paths are outside the capture set.
+
+For the dosing cell, local Modbus TCP analyzer polls should appear on
+`attach-dosing-analyzer` or `attach-dosing-plc`; cyclic EtherNet/IP UDP 2222
+should appear on each drive attachment. SCADA-to-PLC Modbus crosses
+`link-plant-cell-dosing-uplink`. The dosing HMI's MQTT traffic crosses
+`link-plant-hmi-dosing-uplink` and its own `attach-hmi-dosing` link. Check
+`--coverage` first, then confirm packets and timing in the copied PCAPs. The
+new cell's live GNS3 behavior is not established by the offline plan checks.
+
+For filtration, the PLC polls the differential-pressure instrument over local
+Modbus TCP every second. The backwash pump and valve use TCP 44818 setup and
+cyclic UDP 2222 at a nominal 100 ms interval. SCADA polls the filtration PLC
+over routed Modbus TCP every 5 seconds, and the filtration HMI's MQTT command
+and acknowledgement traffic crosses `link-plant-hmi-filtration-uplink`.
+Capture `attach-filtration-dp`, both backwash actuator attachments,
+`link-plant-cell-filtration-uplink`, and `attach-hmi-filtration` or its uplink
+to check these expectations. The 25–80 kPa, 120-second independent pressure
+waveform should cross the default 65 kPa threshold, with an 8-second backwash
+request and a 10 kPa rearm band. The waveform does not model backwash changing
+physical filter pressure. Confirm packet timing and startup in the user's GNS3
+environment before claiming a verified run.
 
 ## Experiment device logs
 

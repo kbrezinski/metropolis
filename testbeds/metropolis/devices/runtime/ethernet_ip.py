@@ -234,6 +234,7 @@ class CyclicActuator:
         self._command = False
         self._active = False
         self._available = False
+        self._faulted = False
         self._stop = threading.Event()
         self._worker: threading.Thread | None = None
 
@@ -250,6 +251,12 @@ class CyclicActuator:
         """Return (confirmed active, connection healthy)."""
         with self._lock:
             return self._active, self._available
+
+    @property
+    def faulted(self) -> bool:
+        """Return the fault flag in the latest valid device I/O status."""
+        with self._lock:
+            return self._faulted
 
     def close(self) -> None:
         self._stop.set()
@@ -296,7 +303,8 @@ class CyclicActuator:
                                 continue
                             last_input_sequence = incoming
                             with self._lock:
-                                self._active = bool(data[0]) and not bool(data[1])
+                                self._faulted = bool(data[1])
+                                self._active = bool(data[0]) and not self._faulted
                                 self._available = True
                             break
                         self._stop.wait(max(0, self.rpi - (time.monotonic() - started)))
@@ -307,6 +315,7 @@ class CyclicActuator:
                 with self._lock:
                     self._active = False
                     self._available = False
+                    self._faulted = False
                 self._stop.wait(1.0)
             finally:
                 if serial is not None:

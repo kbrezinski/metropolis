@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Metropolis · Intake HMI</title>
+  <title>Metropolis HMI</title>
   <style>
     body { font: 16px system-ui,sans-serif; background:#edf2f5; color:#172b3a; margin:0; }
     main { max-width:760px; margin:40px auto; padding:24px; }
@@ -19,15 +19,16 @@
   </style>
 </head>
 <body><main>
-  <header><span>METROPOLIS / WATER TREATMENT LAB</span><h1>Intake operator panel</h1>
+  <header><span>METROPOLIS / WATER TREATMENT LAB</span><h1 id="panel-title">Operator panel</h1>
     <p id="connection" role="status">Loading service status…</p></header>
-  <section><h2>Requested level setpoint</h2>
-    <p>Current request: <strong id="current">—</strong>%</p>
-    <form id="setpoint"><label for="value">New setpoint (0–100%)</label>
+  <section><h2 id="setpoint-label">Requested setpoint</h2>
+    <p>Current request: <strong id="current">—</strong> <span id="unit"></span></p>
+    <form id="setpoint"><label id="value-label" for="value">New setpoint</label>
       <input id="value" type="number" min="0" max="100" step="0.1" required>
       <button type="submit">Apply request</button></form>
     <p id="notice" role="status"></p>
-    <p class="muted">This lab publishes setpoint requests over MQTT. No PLC actuation or physical process response is modeled.</p>
+    <p id="command-status" role="status" class="muted">No controller request sent.</p>
+    <p class="muted">A stored acknowledgement confirms controller readback, not physical process response.</p>
   </section>
   <section><h2>Latest SCADA telemetry</h2><p id="received" class="muted">No telemetry yet.</p>
     <pre id="telemetry">Waiting for the SCADA publisher.</pre></section>
@@ -38,9 +39,27 @@ async function refresh() {
     const response = await fetch('/api/status', {cache: 'no-store'});
     if (!response.ok) throw new Error('HTTP ' + response.status);
     const state = await response.json();
+    document.getElementById('panel-title').textContent = state.panel_title;
+    document.getElementById('setpoint-label').textContent = state.setpoint_label;
+    document.getElementById('unit').textContent = state.setpoint_unit;
+    document.getElementById('value-label').textContent = 'New setpoint (' + state.setpoint_min + '–' + state.setpoint_max + ' ' + state.setpoint_unit + ')';
+    document.getElementById('value').min = state.setpoint_min;
+    document.getElementById('value').max = state.setpoint_max;
     document.getElementById('connection').textContent = state.device + ' · MQTT ' + (state.mqtt_connected ? 'connected' : 'disconnected');
     document.getElementById('current').textContent = state.setpoint;
-    document.getElementById('received').textContent = state.telemetry_received_at ? 'Last received: ' + state.telemetry_received_at : 'No telemetry yet.';
+    const command = {
+      idle: 'No controller request sent.',
+      pending: 'Waiting for controller acknowledgement' + (state.last_publish_queued_at ? ' (MQTT queued).' : '.'),
+      stored: 'Controller stored the request and confirmed readback.',
+      rejected: 'Controller request rejected.',
+      failed: 'Controller request failed.',
+      timeout: 'No controller acknowledgement before the timeout.'
+    };
+    document.getElementById('command-status').textContent = (command[state.command_status] || state.command_status) +
+      (state.command_reason ? ' ' + state.command_reason : '');
+    document.getElementById('received').textContent = state.telemetry_received_at ?
+      'Last received: ' + state.telemetry_received_at + ' · ' + state.telemetry_status :
+      'Telemetry unavailable.';
     document.getElementById('telemetry').textContent = state.telemetry ? JSON.stringify(state.telemetry, null, 2) : 'Waiting for the SCADA publisher.';
   } catch (error) {
     document.getElementById('connection').textContent = 'Status unavailable: ' + error.message;
@@ -54,7 +73,7 @@ document.getElementById('setpoint').addEventListener('submit', async (event) => 
       body: JSON.stringify({value: Number(document.getElementById('value').value)})});
     const result = await response.json();
     if (!response.ok) throw new Error(result.error || ('HTTP ' + response.status));
-    document.getElementById('notice').textContent = 'Request accepted locally. Publication requires an MQTT connection.';
+    document.getElementById('notice').textContent = 'Request accepted locally. Awaiting controller acknowledgement.';
     await refresh();
   } catch (error) { document.getElementById('notice').textContent = error.message; }
 });

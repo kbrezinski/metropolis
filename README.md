@@ -116,26 +116,30 @@ routers. See the [firewall run guide](scripts/gns3/README.md#routed-firewall-pol
 
 ## Device models
 
-The emulated set focuses on Modbus TCP and MQTT:
+The emulated set includes Modbus TCP, EtherNet/IP, MQTT, and supporting services:
 
 | Role | What it does |
 |---|---|
-| PLC / RTU | Modbus TCP server with example process registers, a heartbeat, and writable pump/valve coils |
+| PLC / RTU | Modbus TCP process registers; intake, dosing, and filtration PLCs exchange cyclic EtherNet/IP I/O with separate actuators |
+| Dosing analyzer | Networked Modbus TCP pH, turbidity, and heartbeat readings |
+| Filtration instrument | Networked Modbus TCP differential-pressure and heartbeat readings |
+| Pump drives and valve | Simplified cyclic EtherNet/IP command and status traffic on each cell's local VLAN |
 | Field sensor | Publishes periodic JSON telemetry over MQTT, and answers CoAP discovery and status |
 | MQTT broker | Mosquitto on TCP 1883, requiring credentials |
-| SCADA | Polls a Modbus controller and publishes a status snapshot over MQTT |
-| HMI | Authenticated HTTP panel on TCP 8080; shows telemetry and publishes setpoints |
+| SCADA | Polls the configured intake, dosing, and filtration Modbus PLCs; publishes MQTT snapshots and readback acknowledgements for operator setpoints |
+| HMI | Authenticated HTTP panel on TCP 8080; shows telemetry and controller status, and sends a command only after an operator submits a setpoint |
 | Historian | Subscribes to MQTT topics and logs what it receives |
 | Engineering workstation | OpenSSH shell and SFTP on TCP 22 |
 | Routine control client | Resolves the PLC via DNS, samples NTP, and makes bounded periodic Modbus reads and writes |
 | Legacy gateway | Telnet login and shell, for experiments needing legacy host access |
 | DNS and NTP | Local name resolution and time replies, so the network has background traffic |
 
-These are lightweight protocol simulators, not vendor firmware. The sample
-process values are not connected by a hydraulic model, and the HMI setpoint is
-not wired to PLC control logic — attacks have no physical consequence. Per-role
-MQTT ACLs and TLS, a realistic process model, and complete cell-by-cell register
-maps remain future work.
+These are lightweight protocol simulators, not vendor firmware. Cell readings
+are not connected by a hydraulic model. SCADA writes each HMI request to the
+cell PLC and reports register readback; `stored` does not confirm a physical
+actuation. The dosing output uses its setpoint and filtration uses its
+backwash threshold, while intake stores a level setpoint without changing its
+manual coil behavior. Per-role MQTT ACLs remain future work.
 
 See [testbeds/metropolis/devices/README.md](testbeds/metropolis/devices/README.md)
 for build commands, environment settings, topics, and register definitions.
@@ -165,6 +169,9 @@ From the repository root:
 
 ```bash
 docker build -f testbeds/metropolis/devices/controllers/plc/Dockerfile -t metropolis/controller:dev .
+docker build -f testbeds/metropolis/devices/field/actuators/Dockerfile -t metropolis/actuator:dev .
+docker build -f testbeds/metropolis/devices/field/analyzers/Dockerfile -t metropolis/analyzer:dev .
+docker build -f testbeds/metropolis/devices/field/instruments/Dockerfile -t metropolis/dp-instrument:dev .
 docker build -f testbeds/metropolis/devices/services/mqtt_broker/Dockerfile -t metropolis/mqtt-broker:dev .
 docker build -f testbeds/metropolis/devices/field/sensors/Dockerfile -t metropolis/mqtt-sensor:dev .
 docker build -f testbeds/metropolis/devices/operations/scada/Dockerfile -t metropolis/scada:dev .
@@ -179,9 +186,9 @@ do not create GNS3 templates or place nodes in a project.
 
 ### 3. Create the templates and topology
 
-The GNS3 automation does this from the declared topology. Import the VyOS and
-Ethernet switch appliances once in the GUI — they are appliances rather than
-images, so they cannot be registered like the device images — then:
+The GNS3 automation does this from the declared topology. Import the VyOS
+appliance once in the GUI; the Open vSwitch image is registered as a Docker
+template alongside the device images. Then:
 
 ```bash
 python scripts/gns3/run.py register_templates --check   # registry vs inventory
@@ -207,13 +214,11 @@ polling clients, so nothing exhausts its retries against a node that is still
 booting. `--configure-routers` logs into each VyOS console, applies its script,
 and reports any address the router does not come back with.
 
-Use `device_instances/initial_devices.yaml` as the node inventory. GNS3 does not
-read this file, so copy each node's `NODE_HOSTNAME`, `NODE_IP`, and
-`NODE_GATEWAY` into its Docker environment settings. The shared startup script
-applies those to `eth0` (or `NODE_INTERFACE`) before the application starts;
-leave `NODE_IP` empty to skip address setup. Templates, topology, router
-startup, and switch setup are all manual. A topology builder that reads the
-inventory is future work.
+The builder reads `device_instances/initial_devices.yaml` and supplies each
+node's environment to its Docker template. The shared startup script applies
+`NODE_IP` and `NODE_GATEWAY` to `eth0` (or `NODE_INTERFACE`). For an existing
+GNS3 project, inspect reused nodes after changing an image or environment:
+the builder does not replace their old template settings automatically.
 
 Connect each Docker node's interface before starting it, or the entrypoint will
 not find an interface to configure.
@@ -228,9 +233,14 @@ python scripts/gns3/run.py capture_traffic --list
 python scripts/gns3/run.py capture_traffic --links link-core-plant --duration 60
 ```
 
-GNS3 writes each capture next to the project and the command reports where the
-files landed. Record the topology, addresses, image versions, scenario, capture
-points, and timestamps under the matching dataset folder.
+The capture command retains the GNS3 server-side original and copies each
+nonempty PCAP into the versioned dataset's `captures/<run-id>/` directory with
+a manifest and hashes. For dosing, capture `attach-dosing-analyzer` for local
+Modbus, both dosing drive attachments for cyclic EtherNet/IP, and
+`link-plant-cell-dosing-uplink` for routed SCADA polling. For filtration,
+capture `attach-filtration-dp`, both backwash actuator attachments, and
+`link-plant-cell-filtration-uplink`. See the
+[GNS3 capture guide](scripts/gns3/README.md#capture-coverage-and-files).
 
 ### 6. Generate attack traffic
 

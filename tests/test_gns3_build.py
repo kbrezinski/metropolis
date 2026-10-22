@@ -97,13 +97,32 @@ def test_intake_actuators_have_distinct_built_ports(plan):
     actuator_nodes = [
         node
         for node in topology.nodes
-        if node.name.startswith("MET-PUMP-DRIVE-")
+        if node.name.startswith("MET-PUMP-DRIVE-INTAKE-")
         or node.name == "MET-VALVE-CTRL-INTAKE-01"
     ]
     assert len(actuator_nodes) == 3
     assert {node.template_name for node in actuator_nodes} == {
         "Metropolis networked actuator"
     }
+
+
+def test_dosing_devices_have_distinct_built_ports_and_templates(plan):
+    topology, _ = plan
+    links = {item.link_id: item for item in topology.links}
+    cell_links = (
+        "attach-dosing-plc",
+        "attach-dosing-analyzer",
+        "attach-dosing-duty-drive",
+        "attach-dosing-standby-drive",
+    )
+    assert {links[name].second.node for name in cell_links} == {"sw-plant-cell-dosing"}
+    assert len({links[name].second.adapter for name in cell_links}) == 4
+    assert all(links[name].first.adapter == 0 for name in cell_links)
+    assert links["attach-hmi-dosing"].second.node == "sw-plant-dosing-hmi"
+    templates = {node.name: node.template_name for node in topology.nodes}
+    assert templates["MET-ANALYZER-DOSING-01"] == "Metropolis networked analyzer"
+    assert templates["MET-PLC-DOSING-01"] == "Metropolis PLC/RTU"
+    assert templates["MET-HMI-DOSING-01"] == "Metropolis HMI"
 
 
 def test_switch_port_numbers_follow_the_specification_order():

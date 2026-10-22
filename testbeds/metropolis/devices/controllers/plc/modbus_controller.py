@@ -3,7 +3,9 @@
 The holding registers are not static. A small coupled process model drives
 level, flow, and quality from the pump coil and from each other, so telemetry
 moves the way a plant's does and the sensor's readings agree with the
-registers. See ``process_model.py`` for the model and its bounds.
+registers. Holding register 4 stores the operator setpoint and register 5
+exposes communication and actuator alarms. See ``process_model.py`` for the
+model and its bounds.
 """
 
 from __future__ import annotations
@@ -27,6 +29,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "runtime"))
 from process_model import ProcessState, update  # noqa: E402
 from ethernet_ip import CyclicActuator  # noqa: E402
+from alarms import (  # noqa: E402
+    DUTY_UNAVAILABLE,
+    OUTPUT_UNCONFIRMED,
+    STANDBY_UNAVAILABLE,
+    VALVE_UNAVAILABLE,
+    alarm_changes,
+)
 
 
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
@@ -47,11 +56,13 @@ TICK_SECONDS = 0.1
 DATASTORE_OFFSET = 0
 
 
-def make_context(values: list[int]) -> ModbusServerContext:
+def make_context(values: list[int], *, setpoint_x10: int = 650) -> ModbusServerContext:
+    if not 0 <= setpoint_x10 <= 1000:
+        raise ValueError("Intake setpoint must be within 0..1000")
     device = ModbusSlaveContext(
         di=ModbusSequentialDataBlock(1, [0] * 16),
         co=ModbusSequentialDataBlock(1, [0] * 16),
-        hr=ModbusSequentialDataBlock(1, values + [0] * 12),
+        hr=ModbusSequentialDataBlock(1, values + [setpoint_x10, 0] + [0] * 10),
         ir=ModbusSequentialDataBlock(1, [0] * 16),
     )
     return ModbusServerContext(slaves=device, single=True)
@@ -85,13 +96,46 @@ def update_actuators(
     duty.command(requested)
     duty_running, duty_healthy = duty.snapshot()
     duty_running = duty_running and duty_healthy
-    standby.command(requested and not duty_running)
+    standby_requested = requested and not duty_running
+    standby.command(standby_requested)
     standby_running, standby_healthy = standby.snapshot()
     standby_running = standby_running and standby_healthy
     valve_request = bool(context[0].getValues(COILS, 1, 1)[0])
     valve.command(valve_request)
     valve_open, valve_healthy = valve.snapshot()
     valve_open = valve_open and valve_healthy
+
+    alarm_mask = 0
+    if (
+        not duty_healthy
+        or getattr(duty, "faulted", False)
+        or (requested and not duty_running)
+    ):
+        alarm_mask |= DUTY_UNAVAILABLE
+    if (
+        not standby_healthy
+        or getattr(standby, "faulted", False)
+        or (standby_requested and not standby_running)
+    ):
+        alarm_mask |= STANDBY_UNAVAILABLE
+    if (
+        not valve_healthy
+        or getattr(valve, "faulted", False)
+        or (valve_request and not valve_open)
+    ):
+        alarm_mask |= VALVE_UNAVAILABLE
+    if (requested and not (duty_running or standby_running)) or (
+        valve_request and not valve_open
+    ):
+        alarm_mask |= OUTPUT_UNCONFIRMED
+    previous = read_holding(context, 5, 1)[0]
+    if alarm_mask != previous:
+        write_holding(context, 5, [alarm_mask])
+        raised, cleared = alarm_changes(previous, alarm_mask)
+        for name in raised:
+            log.warning("alarm_raised=%s", name)
+        for name in cleared:
+            log.info("alarm_cleared=%s", name)
     # Discrete inputs expose confirmed duty, standby, and valve status to SCADA.
     context[0].setValues(
         2, 0, [int(duty_running), int(standby_running), int(valve_open)]
@@ -110,7 +154,9 @@ def main() -> None:
     quality_tenths = int(round(float(os.getenv("PROCESS_QUALITY", "950"))))
     values = [level_tenths, flow_tenths, quality_tenths, 0]
 
-    context = make_context(values)
+    context = make_context(
+        values, setpoint_x10=int(os.getenv("INTAKE_SETPOINT_X10", "650"))
+    )
     duty = os.getenv("EIP_DUTY_HOST")
     standby = os.getenv("EIP_STANDBY_HOST")
     valve = os.getenv("EIP_VALVE_HOST")
@@ -182,4 +228,14 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    cell_role = os.getenv("CELL_ROLE")
+    if cell_role == "dosing":
+        from dosing_controller import main as dosing_main
+
+        dosing_main()
+    elif cell_role == "filtration":
+        from filtration_controller import main as filtration_main
+
+        filtration_main()
+    else:
+        main()
