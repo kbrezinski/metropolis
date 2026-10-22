@@ -191,13 +191,15 @@ def main() -> int:
                 print(f"  {router_result.node}: {router_result.error}", file=sys.stderr)
                 continue
             note = (
-                f", {len(router_result.missing)} address(es) not reported"
+                f", {len(router_result.missing)} readback issue(s)"
                 if router_result.missing
                 else ""
             )
+            if router_result.missing:
+                failed += 1
             for missing in router_result.missing:
                 print(
-                    f"  {router_result.node}: {missing} is not configured",
+                    f"  {router_result.node}: {missing}",
                     file=sys.stderr,
                 )
             print(

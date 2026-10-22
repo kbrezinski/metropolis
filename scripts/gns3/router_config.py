@@ -34,6 +34,55 @@ log = logging.getLogger("gns3.routers")
 DEFAULT_USERNAME = "vyos"
 DEFAULT_PASSWORD = "vyos"
 
+# Exact routes deployed by earlier Metropolis scripts. Do not remove a user's
+# other static routes when reconfiguring an existing appliance.
+LEGACY_STATIC_ROUTES: dict[str, dict[str, str]] = {
+    "router_ot_core": {
+        **{
+            f"10.20.{octet}.0/24": "10.20.254.2"
+            for octet in (10, 11, 12, 13, 50, 51, 52, 53)
+        },
+        "10.20.14.0/24": "10.20.254.10",
+        "10.20.15.0/24": "10.20.254.10",
+        "10.20.40.0/24": "10.20.254.6",
+        "10.30.10.0/24": "10.20.254.6",
+        "10.99.10.0/24": "10.20.254.6",
+    },
+    "router_plant": {"0.0.0.0/0": "10.20.254.1"},
+    "router_ot_dmz": {"10.20.0.0/16": "10.20.254.5"},
+    "router_ot_wan": {
+        "10.20.14.0/24": "172.31.255.21",
+        "10.20.15.0/24": "172.31.255.11",
+        "10.20.20.0/24": "10.20.254.9",
+        "10.20.30.0/24": "10.20.254.9",
+    },
+    "router_raw_water": {
+        "10.20.20.0/24": "172.31.255.1",
+        "10.20.23.0/24": "172.31.255.1",
+        "10.20.30.0/24": "172.31.255.1",
+    },
+    "router_reservoir": {
+        "10.20.20.0/24": "172.31.255.1",
+        "10.20.23.0/24": "172.31.255.1",
+        "10.20.30.0/24": "172.31.255.1",
+    },
+}
+STATIC_COMMAND = re.compile(
+    r"^set protocols static route (\S+) next-hop ['\"]?([^'\"\s]+)['\"]?",
+    re.M,
+)
+
+
+def legacy_static_deletes(script: Path, configuration: str) -> list[str]:
+    """Delete only exact Metropolis static routes found in the running config."""
+    known = LEGACY_STATIC_ROUTES.get(script.stem, {})
+    return [
+        f"delete protocols static route {prefix} next-hop '{hop}'"
+        for prefix, hop in STATIC_COMMAND.findall(configuration)
+        if known.get(prefix) == hop
+    ]
+
+
 LOGIN_PROMPT = re.compile(rb"(?:vyos|login):\s*$")
 PASSWORD_PROMPT = re.compile(rb"Password:\s*$")
 # The operational prompt, and the configuration prompt entered by "configure".
@@ -204,15 +253,15 @@ def apply_router_config(
     try:
         with Console(host, port, boot_timeout) as console:
             buffer = console.login(username, password)
-            existing = ""
-            if firewall_commands is not None:
-                console.send("show configuration commands")
-                existing = console.expect(OP_PROMPT, CONFIG_TIMEOUT, clear=True).decode(
-                    "utf-8", errors="replace"
-                )
+            console.send("show configuration commands")
+            existing = console.expect(OP_PROMPT, CONFIG_TIMEOUT, clear=True).decode(
+                "utf-8", errors="replace"
+            )
             console.send("configure")
             buffer = console.expect(CONFIG_PROMPT, CONFIG_TIMEOUT, clear=True)
 
+            legacy_deletes = legacy_static_deletes(script, existing)
+            commands = legacy_deletes + commands
             if firewall_commands is not None:
                 commands = managed_deletes(existing) + commands
 
@@ -234,7 +283,7 @@ def apply_router_config(
             console.send("run show interfaces")
             output = console.expect(CONFIG_PROMPT, CONFIG_TIMEOUT, clear=True)
             firewall_output = b""
-            if firewall_commands is not None:
+            if firewall_commands is not None or legacy_deletes:
                 console.send("run show configuration commands")
                 firewall_output = console.expect(
                     CONFIG_PROMPT, CONFIG_TIMEOUT, clear=True
@@ -249,8 +298,10 @@ def apply_router_config(
         for address in sorted(addresses):
             if address not in text:
                 result.missing.append(f"eth{number} {address}")
+    configured = firewall_output.decode("utf-8", errors="replace")
+    for command in legacy_static_deletes(script, configured):
+        result.missing.append(f"legacy static route remains: {command}")
     if firewall_commands is not None:
-        configured = firewall_output.decode("utf-8", errors="replace")
         expected_names = {
             command.split()[3]
             for command in firewall_commands

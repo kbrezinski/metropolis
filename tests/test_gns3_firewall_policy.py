@@ -129,19 +129,19 @@ def test_inventory_address_change_updates_rules(documents):
     assert "source address '10.20.20.10'" not in core
 
 
-def test_missing_return_route_rejects_flow(documents, tmp_path):
+def test_missing_ospf_advertisement_rejects_policy(documents, tmp_path):
     inventory, infrastructure = documents
     changed = copy.deepcopy(infrastructure)
-    wan = next(item for item in changed["routers"] if item["name"] == "MET-OT-WAN")
-    original = ROOT / wan["config"]
-    without_route = tmp_path / "router_ot_wan.sh"
-    without_route.write_text(
+    core = next(item for item in changed["routers"] if item["name"] == "MET-OT-CORE")
+    original = ROOT / core["config"]
+    without_network = tmp_path / "router_ot_core.sh"
+    without_network.write_text(
         original.read_text().replace(
-            "set protocols static route 10.20.20.0/24 next-hop '10.20.254.9'\n", ""
+            "set protocols ospf area 0 network '10.20.20.0/24'\n", ""
         )
     )
-    wan["config"] = str(without_route)
-    with pytest.raises(ValueError, match="scada-reservoir-modbus: return path"):
+    core["config"] = str(without_network)
+    with pytest.raises(ValueError, match="OSPF advertised networks do not match"):
         compile_policy(DATASET, changed, inventory)
 
 

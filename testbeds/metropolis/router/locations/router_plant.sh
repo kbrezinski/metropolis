@@ -16,6 +16,7 @@ configure
 
 set interfaces ethernet eth0 description 'Transit to OT core'
 set interfaces ethernet eth0 address '10.20.254.2/30'
+set interfaces ethernet eth0 ip ospf network 'point-to-point'
 
 set interfaces ethernet eth1 description '802.1Q trunk to plant aggregation switch'
 set interfaces ethernet eth1 vif 10 description 'Intake PLC network'
@@ -35,7 +36,19 @@ set interfaces ethernet eth1 vif 52 address '10.20.52.1/24'
 set interfaces ethernet eth1 vif 53 description 'Disinfection and storage HMI network'
 set interfaces ethernet eth1 vif 53 address '10.20.53.1/24'
 
-set protocols static route 0.0.0.0/0 next-hop '10.20.254.1'
+set protocols ospf parameters router-id '10.20.254.2'
+set protocols ospf log-adjacency-changes
+set protocols ospf passive-interface default
+set protocols ospf passive-interface-exclude 'eth0'
+set protocols ospf area 0 network '10.20.254.0/30'
+set protocols ospf area 0 network '10.20.10.0/24'
+set protocols ospf area 0 network '10.20.11.0/24'
+set protocols ospf area 0 network '10.20.12.0/24'
+set protocols ospf area 0 network '10.20.13.0/24'
+set protocols ospf area 0 network '10.20.50.0/24'
+set protocols ospf area 0 network '10.20.51.0/24'
+set protocols ospf area 0 network '10.20.52.0/24'
+set protocols ospf area 0 network '10.20.53.0/24'
 
 set system host-name 'MET-PLANT'
 set system syslog host 10.20.30.11 facility all level info

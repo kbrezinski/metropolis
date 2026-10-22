@@ -33,7 +33,7 @@ appropriate.
 - **Generate attack traffic** against those nodes with the experiment toolkit,
   which resolves every target from the inventory.
 - **Validate the design** — the address plan, inventory, link plan, router
-  interfaces, static routes, and switch VLANs are checked against each other by
+  interfaces, OSPF networks, and switch VLANs are checked against each other by
   one command.
 - **Capture traffic** on chosen links, and record it under the versioned dataset
   folder.
@@ -103,11 +103,15 @@ specifications](testbeds/metropolis/switch/README.md), and [v1 dataset
 notes](testbeds/metropolis/datasets/water_treatment_v1/README.md).
 
 **The routing and firewall still need runtime validation.** Router scripts
-define interfaces and static routes. When routers are configured through the
-GNS3 tooling, `topology/firewall-policy.yaml` generates default-deny VyOS 1.3
-zone rules for routed traffic; attack-lab access requires a recorded per-run
-exception. The simulated WAN still has no IPsec, and same-VLAN traffic bypasses
-the routers. See the [firewall run guide](scripts/gns3/README.md#routed-firewall-policy).
+define interfaces and OSPF area 0. OSPF neighbors are limited to
+router transit links and the shared WAN; device-facing LANs are passive, and
+enterprise and attack-test networks are advertised passively for return routing. When routers are
+configured through the GNS3 tooling, `topology/firewall-policy.yaml` generates
+default-deny VyOS 1.3 zone rules, including narrow OSPF control-plane
+allowances. The loader removes the exact static routes installed by earlier
+Metropolis scripts. Attack-lab access requires a recorded per-run exception.
+The simulated WAN still has no IPsec, and same-VLAN traffic bypasses the
+routers. See the [firewall run guide](scripts/gns3/README.md#routed-firewall-policy).
 
 ## Device models
 

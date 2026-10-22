@@ -99,3 +99,101 @@ def test_validator_rejects_a_router_address_that_drifts_from_its_script(sandbox)
 
     assert result.returncode != 0
     assert "router_plant.sh configures" in result.stdout
+
+
+def test_validator_rejects_missing_ospf_advertisement(sandbox):
+    target = sandbox / "testbeds/metropolis/router/backbone/router_ot_dmz.sh"
+    text = target.read_text(encoding="utf-8")
+    target.write_text(
+        text.replace("set protocols ospf area 0 network '10.99.10.0/24'\n", ""),
+        encoding="utf-8",
+    )
+    result = run_validator(sandbox)
+    assert result.returncode != 0
+    assert "OSPF networks differ from connected networks" in result.stdout
+    assert "10.99.10.0/24" in result.stdout
+
+
+def test_validator_rejects_trunk_vlan_mismatch(sandbox):
+    target = sandbox / DOCUMENTS[1]
+    text = target.read_text(encoding="utf-8")
+    target.write_text(
+        text.replace(
+            "vlans: [10, 11, 12, 13, 50, 51, 52, 53]",
+            "vlans: [10, 11, 12, 13, 50, 51, 52]",
+            1,
+        ),
+        encoding="utf-8",
+    )
+
+    result = run_validator(sandbox)
+
+    assert result.returncode != 0
+    assert "link-plant-switch: MET-PLANT eth1 trunk VLANs" in result.stdout
+
+
+def test_validator_rejects_wrong_segment_vlan(sandbox):
+    target = sandbox / DOCUMENTS[1]
+    text = target.read_text(encoding="utf-8")
+    target.write_text(
+        text.replace(
+            "id: link-plant-cell-intake-uplink\n    kind: trunk\n"
+            "    description: Plant aggregation to the intake cell access switch\n"
+            "    vlans: [10]",
+            "id: link-plant-cell-intake-uplink\n    kind: trunk\n"
+            "    description: Plant aggregation to the intake cell access switch\n"
+            "    vlans: [11]",
+            1,
+        ),
+        encoding="utf-8",
+    )
+
+    result = run_validator(sandbox)
+
+    assert result.returncode != 0
+    assert "sw-plant-cell-intake: expected one uplink carrying VLAN 10" in result.stdout
+
+
+def test_validator_rejects_host_attached_to_wrong_network(sandbox):
+    target = sandbox / DOCUMENTS[1]
+    text = target.read_text(encoding="utf-8")
+    target.write_text(
+        text.replace(
+            "id: attach-intake-plc\n    kind: access\n"
+            "    description: Intake PLC on the plant intake segment\n"
+            "    network_id: plant-intake\n    cidr: 10.20.10.0/24",
+            "id: attach-intake-plc\n    kind: access\n"
+            "    description: Intake PLC on the plant intake segment\n"
+            "    network_id: plant-dosing\n    cidr: 10.20.11.0/24",
+            1,
+        ),
+        encoding="utf-8",
+    )
+
+    result = run_validator(sandbox)
+
+    assert result.returncode != 0
+    assert "attach-intake-plc: MET-PLC-INTAKE-01 subnet" in result.stdout
+    assert "sw-plant-cell-intake access port must use plant-intake" in result.stdout
+
+
+def test_validator_rejects_router_interface_on_wrong_link_network(sandbox):
+    target = sandbox / DOCUMENTS[1]
+    text = target.read_text(encoding="utf-8")
+    target.write_text(
+        text.replace(
+            "id: link-dmz-switch\n    kind: access\n"
+            "    description: OT/DMZ router to the DMZ switch\n"
+            "    network_id: ot-dmz\n    cidr: 10.20.40.0/24",
+            "id: link-dmz-switch\n    kind: access\n"
+            "    description: OT/DMZ router to the DMZ switch\n"
+            "    network_id: enterprise\n    cidr: 10.30.10.0/24",
+            1,
+        ),
+        encoding="utf-8",
+    )
+
+    result = run_validator(sandbox)
+
+    assert result.returncode != 0
+    assert "link-dmz-switch: MET-OT-DMZ eth1 address" in result.stdout

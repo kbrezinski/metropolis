@@ -19,13 +19,18 @@ configure
 
 set interfaces ethernet eth0 description 'Transit to OT core'
 set interfaces ethernet eth0 address '10.20.254.10/30'
+set interfaces ethernet eth0 ip ospf network 'point-to-point'
 set interfaces ethernet eth1 description 'Simulated WAN underlay'
 set interfaces ethernet eth1 address '172.31.255.1/24'
 
-set protocols static route 10.20.14.0/24 next-hop '172.31.255.21'
-set protocols static route 10.20.15.0/24 next-hop '172.31.255.11'
-set protocols static route 10.20.20.0/24 next-hop '10.20.254.9'
-set protocols static route 10.20.30.0/24 next-hop '10.20.254.9'
+# The shared WAN stays a broadcast OSPF segment with hub/site neighbors.
+set protocols ospf parameters router-id '10.20.254.10'
+set protocols ospf log-adjacency-changes
+set protocols ospf passive-interface default
+set protocols ospf passive-interface-exclude 'eth0'
+set protocols ospf passive-interface-exclude 'eth1'
+set protocols ospf area 0 network '10.20.254.8/30'
+set protocols ospf area 0 network '172.31.255.0/24'
 
 set system host-name 'MET-OT-WAN'
 set system syslog host 10.20.30.11 facility all level info

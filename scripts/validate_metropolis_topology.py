@@ -179,11 +179,14 @@ def validate_topology(repository_root: Path) -> list[Check]:
     router_addresses: list[IPv4Interface] = []
     router_vlans: set[tuple[int, IPv4Network]] = set()
     router_problems: list[str] = []
-    route_problems: list[str] = []
+    ospf_problems: list[str] = []
     address_pattern = re.compile(
         r"set interfaces ethernet \S+(?: vif (\d+))? address '([^']+)'"
     )
-    route_pattern = re.compile(r"set protocols static route (\S+) next-hop '([^']+)'")
+    ospf_pattern = re.compile(r"^set protocols ospf area 0 network '([^']+)'$", re.M)
+    active_pattern = re.compile(
+        r"^set protocols ospf passive-interface-exclude '([^']+)'$", re.M
+    )
     for router_file in router_files:
         text = router_file.read_text(encoding="utf-8")
         local_addresses: list[IPv4Interface] = []
@@ -210,18 +213,30 @@ def validate_topology(repository_root: Path) -> list[Check]:
                         f"{router_file.name}: VLAN {vlan} on {address.network} "
                         f"does not match address-plan VLAN {plan_record.get('vlan_id')}"
                     )
-        connected = [address.network for address in local_addresses]
-        for route, next_hop in route_pattern.findall(text):
-            route_network = ip_network(route, strict=False)
-            next_hop_address = IPv4Address(next_hop)
-            if not any(next_hop_address in subnet for subnet in connected):
-                route_problems.append(
-                    f"{router_file.name}: next hop {next_hop} for {route} "
-                    "is not on a directly connected subnet"
-                )
-            if not any(subnet.subnet_of(route_network) for subnet in network_by_cidr):
-                route_problems.append(
-                    f"{router_file.name}: route {route} contains no planned subnet"
+        connected = {address.network for address in local_addresses}
+        advertised = {ip_network(value) for value in ospf_pattern.findall(text)}
+        if advertised != connected:
+            ospf_problems.append(
+                f"{router_file.name}: OSPF networks differ from connected networks; "
+                f"missing {sorted(str(item) for item in connected - advertised)}, "
+                f"extra {sorted(str(item) for item in advertised - connected)}"
+            )
+        if "set protocols ospf passive-interface default" not in text:
+            ospf_problems.append(
+                f"{router_file.name}: OSPF interfaces are not passive by default"
+            )
+        if "set protocols static route " in text:
+            ospf_problems.append(f"{router_file.name}: static routes remain configured")
+        configured_interfaces = {
+            match.group(1)
+            for match in re.finditer(
+                r"^set interfaces ethernet (eth\d+)(?: vif \d+)? address ", text, re.M
+            )
+        }
+        for interface in active_pattern.findall(text):
+            if interface not in configured_interfaces:
+                ospf_problems.append(
+                    f"{router_file.name}: active OSPF interface {interface} has no address"
                 )
 
     for record in networks:
@@ -250,8 +265,8 @@ def validate_topology(repository_root: Path) -> list[Check]:
     )
     checks.append(
         Check(
-            "Static routes use reachable next hops and planned destinations",
-            tuple(route_problems),
+            "OSPF advertises connected networks without static routes",
+            tuple(ospf_problems),
         )
     )
 
@@ -303,6 +318,20 @@ def validate_topology(repository_root: Path) -> list[Check]:
         Check(
             "Switch subnet references and trunk VLANs match plan",
             tuple(switch_problems),
+        )
+    )
+    checks.append(
+        Check(
+            "VLAN port membership and router link interfaces match the plan",
+            tuple(
+                _validate_vlan_ports(
+                    infrastructure,
+                    inventory["devices"],
+                    link_plan,
+                    network_by_id,
+                    repository_root,
+                )
+            ),
         )
     )
     checks.append(
@@ -369,6 +398,116 @@ def _router_addresses(router_file: Path) -> dict[str, str]:
         number, address = match.groups()
         addresses[number] = address
     return addresses
+
+
+def _validate_vlan_ports(
+    infrastructure: dict,
+    devices: list[dict],
+    link_plan: dict,
+    network_by_id: dict,
+    repository_root: Path,
+) -> list[str]:
+    """Check every declared VLAN path against the commands and cabling plan."""
+    problems: list[str] = []
+    links = link_plan["links"]
+    devices_by_name = {device["name"]: device for device in devices}
+    routers = {router["name"]: router for router in infrastructure.get("routers", [])}
+
+    for name, router in routers.items():
+        config_path = repository_root / router["config"]
+        if not config_path.is_file():
+            continue  # The infrastructure check reports the missing script.
+        text = config_path.read_text(encoding="utf-8")
+        configured_vlans: dict[str, set[int]] = {}
+        for interface, vlan in re.findall(
+            r"^set interfaces ethernet (eth\d+) vif (\d+)\b", text, re.M
+        ):
+            configured_vlans.setdefault(interface, set()).add(int(vlan))
+        configured_addresses = _router_addresses(config_path)
+        for interface in router.get("interfaces", []):
+            interface_name = interface["name"]
+            expected = set(interface.get("vlans", []))
+            actual = configured_vlans.get(interface_name, set())
+            if actual != expected:
+                problems.append(
+                    f"{name} {interface_name}: declared VLANs {sorted(expected)} "
+                    f"differ from VyOS vifs {sorted(actual)}"
+                )
+            attached = [
+                link
+                for link in links
+                if any(
+                    endpoint["node"] == name
+                    and endpoint.get("interface") == interface_name
+                    for endpoint in link["endpoints"]
+                )
+            ]
+            if len(attached) != 1:
+                problems.append(
+                    f"{name} {interface_name}: expected one link, found {len(attached)}"
+                )
+                continue
+            link = attached[0]
+            if expected:
+                if link["kind"] != "trunk" or set(link.get("vlans", [])) != expected:
+                    problems.append(
+                        f"{link['id']}: {name} {interface_name} trunk VLANs "
+                        f"must be {sorted(expected)}"
+                    )
+            elif link.get("vlans"):
+                problems.append(
+                    f"{link['id']}: {name} {interface_name} is untagged but "
+                    f"the link lists VLANs {link['vlans']}"
+                )
+            if link.get("network_id") in network_by_id and not expected:
+                network = network_by_id[link["network_id"]]
+                address = configured_addresses.get(interface_name.removeprefix("eth"))
+                if address and ip_interface(address).network != ip_network(
+                    network["cidr"]
+                ):
+                    problems.append(
+                        f"{link['id']}: {name} {interface_name} address {address} "
+                        f"does not match {network['id']} ({network['cidr']})"
+                    )
+
+    for link in links:
+        network = network_by_id.get(link.get("network_id"))
+        if network is None:
+            continue
+        for endpoint in link["endpoints"]:
+            device = devices_by_name.get(endpoint["node"])
+            if device and ip_network(device["subnet"]) != ip_network(network["cidr"]):
+                problems.append(
+                    f"{link['id']}: {device['name']} subnet {device['subnet']} "
+                    f"does not match {network['id']} ({network['cidr']})"
+                )
+
+    for segment in infrastructure.get("segments", []):
+        name = segment["name"]
+        network = network_by_id.get(segment.get("network_id"))
+        if network is None:
+            continue  # The infrastructure check reports an unknown network.
+        expected_vlan = network.get("vlan_id")
+        uplinks = [
+            link
+            for link in links
+            if link["kind"] == "trunk"
+            and any(endpoint["node"] == name for endpoint in link["endpoints"])
+        ]
+        if len(uplinks) != 1 or uplinks[0].get("vlans") != [expected_vlan]:
+            problems.append(
+                f"{name}: expected one uplink carrying VLAN {expected_vlan}"
+            )
+        for link in links:
+            if link["kind"] != "access" or not any(
+                endpoint["node"] == name for endpoint in link["endpoints"]
+            ):
+                continue
+            if link.get("network_id") != segment["network_id"]:
+                problems.append(
+                    f"{link['id']}: {name} access port must use {segment['network_id']}"
+                )
+    return problems
 
 
 def _documented_router_interfaces(router_file: Path) -> set[str]:
@@ -689,7 +828,7 @@ def render_report(repository_root: Path, checks: list[Check]) -> str:
             "",
             "## Scope and limitations",
             "",
-            "This validates consistency across the checked-in YAML, VyOS command text, and switch Markdown. A blank VLAN means a standalone untagged subnet. For cabling it checks the link plan against the inventory, the address plan, and each router script's configured interfaces, and it checks that every router script is represented. It does not execute VyOS configuration, assign or confirm literal GNS3 port numbers, verify that a link is physically cabled, test packet reachability, or validate firewall/IPsec behavior. The two overlay `/30`s are reservations and intentionally have no configured router interfaces yet.",
+            "This validates consistency across the checked-in YAML, VyOS command text, and switch Markdown, including declared VLAN access/trunk membership and router link interfaces. A blank VLAN means a standalone untagged subnet. For cabling it checks the link plan against the inventory, the address plan, and each router script's configured interfaces, and it checks that every router script is represented. It does not execute VyOS or Open vSwitch configuration, assign or confirm literal GNS3 port numbers, verify that a link is physically cabled, test packet reachability or Layer 2 isolation, or validate firewall/IPsec behavior. The two overlay `/30`s are reservations and intentionally have no configured router interfaces yet.",
             "",
         ]
     )

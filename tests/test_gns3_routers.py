@@ -94,6 +94,12 @@ class ScriptedSocket:
             self.pending += self.configuration + self.config_prompt
         elif command == "run show interfaces":
             self.pending += self.interfaces + self.config_prompt
+        elif command.startswith("delete protocols static route "):
+            old = command.replace("delete ", "set ", 1).encode()
+            self.configuration = b"\n".join(
+                line for line in self.configuration.splitlines() if line != old
+            )
+            self.pending += self.config_prompt
         else:
             self.pending += self.config_prompt
 
@@ -267,6 +273,48 @@ def test_apply_replaces_owned_firewall_and_checks_readback(scripted):
     assert "delete firewall name USER_POLICY" not in sent
     for command in firewall:
         assert command in sent
+
+
+def test_reconfiguration_removes_only_legacy_metropolis_static_routes(scripted):
+    script = ROUTERS / "backbone/router_ot_wan.sh"
+    expected = expected_interfaces(script)
+    reported = " ".join(sorted({a for group in expected.values() for a in group}))
+    existing = b"\n".join(
+        [
+            b"set protocols static route 10.20.20.0/24 next-hop '10.20.254.9'",
+            b"set protocols static route 10.20.30.0/24 next-hop '192.0.2.1'",
+            b"set protocols static route 192.0.2.0/24 next-hop '10.20.254.9'",
+        ]
+    )
+    fake = scripted(interfaces=reported.encode(), configuration=existing)
+    result = apply_router_config("127.0.0.1", 1, script, boot_timeout=1.0)
+    sent = b"".join(fake.sent).decode()
+    assert result.error is None
+    assert result.missing == []
+    assert "delete protocols static route 10.20.20.0/24 next-hop '10.20.254.9'" in sent
+    assert "delete protocols static route 10.20.30.0/24" not in sent
+    assert "delete protocols static route 192.0.2.0/24" not in sent
+
+
+def test_reconfiguration_reports_legacy_route_that_remains(monkeypatch):
+    class IgnoredDeletion(ScriptedSocket):
+        def _react(self, command: str) -> None:
+            if command.startswith("delete protocols static route "):
+                self.pending += self.config_prompt
+            else:
+                super()._react(command)
+
+    script = ROUTERS / "backbone/router_ot_wan.sh"
+    expected = expected_interfaces(script)
+    reported = " ".join(sorted({a for group in expected.values() for a in group}))
+    fake = IgnoredDeletion(
+        interfaces=reported.encode(),
+        configuration=b"set protocols static route 10.20.20.0/24 next-hop '10.20.254.9'",
+    )
+    monkeypatch.setattr(socket, "create_connection", lambda *a, **k: fake)
+    result = apply_router_config("127.0.0.1", 1, script, boot_timeout=1.0)
+    assert result.applied is True
+    assert any("legacy static route remains" in item for item in result.missing)
 
 
 def test_apply_reports_firewall_missing_from_router_readback(scripted):

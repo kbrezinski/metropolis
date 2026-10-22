@@ -19,7 +19,8 @@ ROOT = Path(__file__).resolve().parents[2]
 ADDRESS = re.compile(
     r"^set interfaces ethernet (eth\d+)(?: vif (\d+))? address '([^']+)'$"
 )
-STATIC_ROUTE = re.compile(r"^set protocols static route (\S+) next-hop '([^']+)'$")
+OSPF_NETWORK = re.compile(r"^set protocols ospf area 0 network '([^']+)'$")
+OSPF_ACTIVE = re.compile(r"^set protocols ospf passive-interface-exclude '([^']+)'$")
 MANAGED_ZONE = re.compile(r"\bzone-policy zone (MET_[A-Za-z0-9_]+)\b")
 MANAGED_RULESET = re.compile(r"\bfirewall name (MET_[A-Za-z0-9_]+)\b")
 
@@ -37,30 +38,8 @@ class Flow:
 class Router:
     name: str
     interfaces: dict[str, IPv4Interface]
-    routes: list[tuple[IPv4Network, IPv4Address]]
-
-    def route(self, destination: IPv4Address) -> tuple[str, IPv4Address | None]:
-        candidates: list[tuple[int, int, str, IPv4Address | None]] = []
-        for interface, address in self.interfaces.items():
-            if destination in address.network:
-                candidates.append((address.network.prefixlen, 1, interface, None))
-        for network, next_hop in self.routes:
-            if destination not in network:
-                continue
-            outgoing = [
-                name
-                for name, address in self.interfaces.items()
-                if next_hop in address.network
-            ]
-            if len(outgoing) != 1:
-                raise ValueError(
-                    f"{self.name}: next hop {next_hop} is not on one interface"
-                )
-            candidates.append((network.prefixlen, 0, outgoing[0], next_hop))
-        if not candidates:
-            raise ValueError(f"{self.name}: no route to {destination}")
-        _, _, interface, next_hop = max(candidates)
-        return interface, next_hop
+    advertised: set[IPv4Network]
+    ospf_active: set[str]
 
 
 def _routers(infrastructure: dict) -> dict[str, Router]:
@@ -69,19 +48,29 @@ def _routers(infrastructure: dict) -> dict[str, Router]:
         name = declared["name"]
         path = ROOT / declared["config"]
         interfaces: dict[str, IPv4Interface] = {}
-        routes = []
+        advertised: set[IPv4Network] = set()
+        ospf_active: set[str] = set()
         for line in path.read_text(encoding="utf-8").splitlines():
             match = ADDRESS.fullmatch(line.strip())
             if match:
                 base, vlan, address = match.groups()
                 interfaces[f"{base}.{vlan}" if vlan else base] = ip_interface(address)
-            match = STATIC_ROUTE.fullmatch(line.strip())
+            match = OSPF_NETWORK.fullmatch(line.strip())
             if match:
-                network, next_hop = match.groups()
-                routes.append((ip_network(network), IPv4Address(next_hop)))
+                advertised.add(ip_network(match.group(1)))
+            match = OSPF_ACTIVE.fullmatch(line.strip())
+            if match:
+                ospf_active.add(match.group(1))
         if not interfaces:
             raise ValueError(f"{name}: router script has no interfaces")
-        routers[name] = Router(name, interfaces, routes)
+        connected = {address.network for address in interfaces.values()}
+        if advertised != connected:
+            raise ValueError(
+                f"{name}: OSPF advertised networks do not match connected networks: "
+                f"missing {sorted(str(item) for item in connected - advertised)}, "
+                f"extra {sorted(str(item) for item in advertised - connected)}"
+            )
+        routers[name] = Router(name, interfaces, advertised, ospf_active)
     return routers
 
 
@@ -168,40 +157,51 @@ def _owner(routers: dict[str, Router], address: IPv4Address) -> tuple[str, str]:
 
 def _path(
     routers: dict[str, Router],
+    adjacency: dict[str, list[tuple[str, str, str]]],
     source_name: str,
     source_ip: IPv4Address | None,
     destination: IPv4Address,
 ) -> tuple[list[tuple[str, str, str]], IPv4Address]:
     if source_ip is None:
-        router_name, incoming = source_name, "local"
+        start, incoming = source_name, "local"
     else:
-        router_name, incoming = _owner(routers, source_ip)
+        start, incoming = _owner(routers, source_ip)
+    end, destination_interface = _owner(routers, destination)
+    destination_network = routers[end].interfaces[destination_interface].network
+    if destination_network not in routers[end].advertised:
+        raise ValueError(f"{end}: {destination_network} is not advertised in OSPF")
+    queue = deque([(start, [])])
+    shortest: list[list[tuple[str, str, str]]] = []
+    while queue:
+        current, edges = queue.popleft()
+        if shortest and len(edges) > len(shortest[0]):
+            break
+        if current == end:
+            shortest.append(edges)
+            continue
+        for neighbor, outgoing, peer_interface in adjacency[current]:
+            if (
+                neighbor not in {start, *(edge[0] for edge in edges)}
+                and neighbor != current
+            ):
+                queue.append((neighbor, [*edges, (current, outgoing, peer_interface)]))
+    if not shortest:
+        raise ValueError(f"no declared OSPF path from {start} to {end}")
+    if len(shortest) != 1:
+        raise ValueError(f"multiple equal-cost OSPF paths from {start} to {end}")
+    edges = shortest[0]
     path = []
-    visited = set()
-    while router_name not in visited:
-        visited.add(router_name)
-        router = routers[router_name]
-        outgoing, next_hop = router.route(destination)
-        if source_ip is None:
-            source_ip = router.interfaces[outgoing].ip
-        if incoming == outgoing:
-            if not path and next_hop is None:
-                return [], source_ip
-            raise ValueError(f"{router_name}: flow enters and leaves {incoming}")
+    for router_name, outgoing, peer_interface in edges:
         path.append((router_name, incoming, outgoing))
-        if next_hop is None:
-            return path, source_ip
-        next_routers = [
-            (other.name, interface)
-            for other in routers.values()
-            if other.name != router_name
-            for interface, configured in other.interfaces.items()
-            if configured.ip == next_hop
-        ]
-        if len(next_routers) != 1:
-            raise ValueError(f"{router_name}: next hop {next_hop} is not one router")
-        router_name, incoming = next_routers[0]
-    raise ValueError(f"route to {destination} loops at {router_name}")
+        incoming = peer_interface
+    if start != end or incoming != destination_interface:
+        path.append((end, incoming, destination_interface))
+    if source_ip is None:
+        first_outgoing = path[0][2] if path else destination_interface
+        source_ip = routers[start].interfaces[first_outgoing].ip
+    if any(in_iface == out_iface for _, in_iface, out_iface in path):
+        raise ValueError("flow enters and leaves the same OSPF interface")
+    return path, source_ip
 
 
 def _cabled_between(
@@ -288,6 +288,45 @@ def compile_policy(
     pairs: dict[str, dict[tuple[str, str], set[tuple[str, str, str, int | None]]]] = {
         name: {} for name in routers
     }
+    adjacency: dict[str, list[tuple[str, str, str]]] = {name: [] for name in routers}
+    # OSPF terminates on the routers themselves. Permit IP protocol 89 only on
+    # declared neighbor interfaces, from the named peer addresses. These rules
+    # precede the generic invalid-state drop because multicast control packets
+    # are not reliably classified as NEW by connection tracking.
+    for name, router in routers.items():
+        for interface in sorted(router.ospf_active):
+            address = router.interfaces.get(interface)
+            if address is None:
+                raise ValueError(f"{name}: OSPF interface {interface} has no address")
+            if address.network not in router.advertised:
+                raise ValueError(
+                    f"{name}: OSPF interface {interface} is not advertised"
+                )
+            peers = [
+                (other.name, peer_interface, peer_address)
+                for other in routers.values()
+                if other.name != name
+                for peer_interface, peer_address in other.interfaces.items()
+                if peer_interface in other.ospf_active
+                and peer_address.network == address.network
+            ]
+            if not peers:
+                raise ValueError(f"{name} {interface}: no declared OSPF neighbor")
+            for peer_name, peer_interface, peer_address in peers:
+                if not _cabled_between(
+                    links, switch_names, name, interface, peer_name, peer_interface
+                ):
+                    raise ValueError(
+                        f"{name} {interface}: no declared cable to OSPF neighbor "
+                        f"{peer_name} {peer_interface}"
+                    )
+                adjacency[name].append((peer_name, interface, peer_interface))
+                pairs[name].setdefault((interface, "local"), set()).add(
+                    (str(peer_address.ip), "0.0.0.0/0", "89", None)
+                )
+            pairs[name].setdefault(("local", interface), set()).add(
+                (str(address.ip), "0.0.0.0/0", "89", None)
+            )
     report = {"baseline_flows": [], "attack_exceptions": [], "local_subnet_flows": []}
     for flow in baseline + exceptions:
         if flow.destination not in devices:
@@ -319,13 +358,15 @@ def compile_policy(
             )
         try:
             path, resolved_source = _path(
-                routers, flow.source, source_ip, destination_ip
+                routers, adjacency, flow.source, source_ip, destination_ip
             )
         except ValueError as exc:
             raise ValueError(f"{flow.name}: {exc}") from exc
         if path and source_ip is not None:
             try:
-                reverse, _ = _path(routers, flow.destination, destination_ip, source_ip)
+                reverse, _ = _path(
+                    routers, adjacency, flow.destination, destination_ip, source_ip
+                )
             except ValueError as exc:
                 raise ValueError(f"{flow.name}: return path: {exc}") from exc
             if reverse != [
@@ -382,17 +423,23 @@ def compile_policy(
                 f"set firewall name {ruleset} rule 21 action 'accept'",
                 f"set firewall name {ruleset} rule 21 state related 'enable'",
             ]
-            for number, (source, destination, protocol, port) in enumerate(
-                sorted(allowed), 100
-            ):
+            ospf = sorted(item for item in allowed if item[2] == "89")
+            other = sorted(item for item in allowed if item[2] != "89")
+            if len(ospf) >= 10:
+                raise ValueError(f"{name}: too many OSPF peers on {incoming}")
+            for number, (source, destination, protocol, port) in [
+                *enumerate(ospf, 1),
+                *enumerate(other, 100),
+            ]:
                 prefix = f"set firewall name {ruleset} rule {number}"
                 lines += [
                     f"{prefix} action 'accept'",
                     f"{prefix} source address '{source}'",
                     f"{prefix} destination address '{destination}'",
                     f"{prefix} protocol '{protocol}'",
-                    f"{prefix} state new 'enable'",
                 ]
+                if protocol != "89":
+                    lines.append(f"{prefix} state new 'enable'")
                 if port is not None:
                     lines.append(f"{prefix} destination port '{port}'")
             lines.append(

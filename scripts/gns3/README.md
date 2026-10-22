@@ -64,12 +64,12 @@ Every command takes `--help`. `build_topology --plan`, `capture_traffic --list`,
 
 `topology/firewall-policy.yaml` lists baseline flows by inventoried source and
 destination name, protocol, and destination port. `render_firewall --check`
-resolves current addresses and checks the forward and return routes; without
+resolves current addresses and checks the forward and return paths over declared OSPF peers; without
 `--check`, it prints the flow report and generated VyOS commands as JSON. The
 policy is validated against `schemas/firewall-policy.schema.json`.
 `build_topology --configure-routers` and `experiment_run --configure-routers`
-apply the generated rules after the router interface and route commands. The
-loader removes only its own `MET_` zones and rule sets before reapplying them;
+apply the generated rules after the router interface and OSPF commands. The
+loader removes exact legacy Metropolis static routes and its own `MET_` zones and rule sets before reapplying them;
 unrelated VyOS firewall configuration is left alone. It checks that the managed
 names appear in the router's reported configuration. Actual packet enforcement
 still requires the user's offline GNS3 validation.
@@ -79,7 +79,33 @@ for traffic to and from each router. Permitted new flows match exact source and
 destination IPs, protocol, and port; established and related return traffic is
 allowed. Undeclared DMZ, enterprise, and attack-lab flows are denied. A router
 firewall cannot filter two devices sharing one VLAN, such as the intake PLC and
-its drives. The WAN hub has explicit return routes for SCADA and syslog traffic.
+its drives. OSPF supplies return routes for SCADA and syslog traffic.
+
+The six router scripts use OSPFv2 area 0 for inter-router routing.
+Core-to-plant, core-to-DMZ, and core-to-WAN `/30` links use OSPF
+point-to-point mode. The shared WAN underlay is a broadcast OSPF segment for
+the WAN hub and both remote routers. OT LANs are advertised passively, so no
+OSPF hellos are sent to device ports. Enterprise and attack-test networks are
+also advertised passively to enable return routing. The generated local
+zone policy permits IP protocol 89 only on declared OSPF peer interfaces and
+from their named peer addresses. Adjacency changes are sent to router syslog.
+The firewall policy still controls cross-zone traffic. The offline compiler
+rejects missing or ambiguous OSPF paths instead of assuming that static routes
+will carry traffic.
+
+These are checked-in settings, not a claim of live adjacency. In GNS3, use
+`show ip ospf neighbor`, `show ip ospf route`, and `show ip route` on the VyOS consoles and
+capture a transit or WAN-underlay link to confirm hello and update packets.
+`render_firewall --check` validates the declared OSPF peers and their cables
+without contacting GNS3.
+
+For an existing project, run `build_topology --configure-routers` to migrate
+all six routers. The loader reads each running configuration, removes only the
+exact static routes installed by the earlier Metropolis scripts, commits the
+OSPF configuration, and reports any legacy route still present on readback.
+Check each router's route table for OSPF learned remote prefixes and the absence
+of those old static routes. Running a `.sh` router script manually does not
+remove routes already saved on an appliance; use the loader for this migration.
 
 For a controlled attack experiment, add `--attack-allow
 SOURCE:TARGET:tcp|udp|icmp:PORT` to `experiment_run`, together with
