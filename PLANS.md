@@ -1,24 +1,17 @@
 # Metropolis research plan
 
-This is a living, concise plan. Record new ideas and decisions here when we discuss future work. Only category 1 is active. Categories 2–4 are parked until the user explicitly asks to work on them.
+This is a living, concise plan. Record new ideas and decisions here when we discuss future work. Tasks are ordered from higher to lower priority. Only category 1 is active; categories 2–4 are parked until the user explicitly asks to work on them.
 
 ## 1. Testbed and attack scripts — current focus
 
-Expand the GNS3 water-treatment network one cell at a time, with bounded attack cases alongside normal traffic. Prioritize credible packet timing, polling rates, and value-change patterns; physically accurate values and cross-cell process coupling are not required. Check images, links, subnets, routes, and capture coverage for each addition.
+Expand the GNS3 water-treatment network one cell at a time. Prioritize credible packet timing, polling rates, and value-change patterns; physically accurate values and cross-cell process coupling are not required. Check images, links, subnets, routes, and capture coverage for each addition.
 
-**Network fundamentals as the topology expands:** Router scripts now use OSPF area 0 for inter-router routing, with all connected LANs advertised passively. Live route selection and firewall behavior remain to be checked in GNS3.
-
-- [ ] Consider STP when redundant switch links are added; the current Open vSwitch configuration does not enable it.
-
-**Next milestone — intake:** Finish the declared duty pump drive, standby drive, and valve controller as separate simulated nodes. Inventory, links, simulator code, and focused tests exist, but these devices are not a completed testbed capability. Add configurable cyclic EtherNet/IP I/O and check its expected packet pattern.
-
-**Then — dosing:** Add a PLC, networked analyzer, duty and standby drives, and HMI; extend central SCADA polling to the cell. Reuse Modbus TCP and EtherNet/IP on the existing dosing and HMI networks. Add bounded attack cases and verify normal and attack traffic in captures.
-
-**Later ideas:** Filtration, disinfection, remote sites, and broader network expansion. Discuss and scope each before implementation.
-
-**Telemetry:** Reuse the existing central syslog receiver for network-delivered device events. Treat Docker output as simulator diagnostics, not research telemetry. Verify source attribution and report missing sources.
-
-**Low priority:** Add the existing firewall policy as an optional document in `metropolis.topology`, including load/save and validation; have the GNS3 compiler consume that model instead of reading the YAML separately.
+- [ ] Add the dosing cell: PLC, networked analyzer, duty and standby drives, HMI, and central SCADA polling. Reuse Modbus TCP and EtherNet/IP; verify normal traffic in captures.
+- [ ] Verify source attribution and missing-source reporting for the central syslog receiver. Treat Docker output as simulator diagnostics, not research telemetry.
+- [ ] Scope filtration, disinfection, remote sites, and broader network expansion before implementation.
+- [ ] Explore paired plant and operations aggregation switches with dual-uplink access switches, then consider DMZ, WAN, and remote-site redundancy. Revisit the one-uplink topology assumptions, router uplinks, and native Open vSwitch RSTP before adding loops. These are proposals, not declared nodes.
+- [ ] Add the existing firewall policy as an optional document in `metropolis.topology`, including load/save and validation; have the GNS3 compiler consume that model instead of reading the YAML separately.
+- [ ] Scope future attack scripts separately, including cases for new cells after normal traffic is established.
 
 ## 2. Data processing and model development — future
 

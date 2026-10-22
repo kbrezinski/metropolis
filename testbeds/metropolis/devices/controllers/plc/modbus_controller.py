@@ -26,7 +26,7 @@ from pymodbus.server import StartTcpServer
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "runtime"))
 from process_model import ProcessState, update  # noqa: E402
-from ethernet_ip import get_status, set_command  # noqa: E402
+from ethernet_ip import CyclicActuator  # noqa: E402
 
 
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
@@ -74,30 +74,24 @@ def pump_is_on(context: ModbusServerContext) -> bool:
     return bool(context[0].getValues(COILS, 0 + DATASTORE_OFFSET, 1)[0])
 
 
-def poll_actuators(
-    context: ModbusServerContext, duty: str, standby: str, valve: str
+def update_actuators(
+    context: ModbusServerContext,
+    duty: CyclicActuator,
+    standby: CyclicActuator,
+    valve: CyclicActuator,
 ) -> bool:
-    """Command duty drive, fail over on lost response, and return actual flow state."""
+    """Set next cyclic outputs and publish confirmed intake I/O states."""
     requested = pump_is_on(context)
-    try:
-        duty_running = set_command(duty, requested) and get_status(duty)
-        duty_ok = not requested or duty_running
-    except (OSError, ValueError, ConnectionError) as exc:
-        log.warning("Duty drive unavailable: %s", exc)
-        duty_running, duty_ok = False, False
-    try:
-        standby_running = set_command(
-            standby, requested and not duty_ok
-        ) and get_status(standby)
-    except (OSError, ValueError, ConnectionError) as exc:
-        log.warning("Standby drive unavailable: %s", exc)
-        standby_running = False
+    duty.command(requested)
+    duty_running, duty_healthy = duty.snapshot()
+    duty_running = duty_running and duty_healthy
+    standby.command(requested and not duty_running)
+    standby_running, standby_healthy = standby.snapshot()
+    standby_running = standby_running and standby_healthy
     valve_request = bool(context[0].getValues(COILS, 1, 1)[0])
-    try:
-        valve_open = set_command(valve, valve_request) and get_status(valve)
-    except (OSError, ValueError, ConnectionError) as exc:
-        log.warning("Valve controller unavailable: %s", exc)
-        valve_open = False
+    valve.command(valve_request)
+    valve_open, valve_healthy = valve.snapshot()
+    valve_open = valve_open and valve_healthy
     # Discrete inputs expose confirmed duty, standby, and valve status to SCADA.
     context[0].setValues(
         2, 0, [int(duty_running), int(standby_running), int(valve_open)]
@@ -121,9 +115,19 @@ def main() -> None:
     standby = os.getenv("EIP_STANDBY_HOST")
     valve = os.getenv("EIP_VALVE_HOST")
     networked = bool(duty and standby and valve)
+    io_clients: tuple[CyclicActuator, CyclicActuator, CyclicActuator] | None = None
     if networked:
         # An intake valve starts open; coil 1 remains the operator command.
         context[0].setValues(COILS, 1, [1])
+        rpi_ms = int(os.getenv("EIP_RPI_MS", "100"))
+        io_port = int(os.getenv("EIP_IO_PORT", "2222"))
+        io_clients = tuple(
+            CyclicActuator(address, rpi_ms=rpi_ms, io_port=io_port)
+            for address in (duty, standby, valve)
+        )
+        io_clients[2].command(True)
+        for client in io_clients:
+            client.start()
     state = ProcessState(
         level=float(level_tenths),
         flow=float(flow_tenths),
@@ -143,14 +147,10 @@ def main() -> None:
         since_heartbeat = 0.0
         last_published = state.registers()
         actual_pump = False
-        poll_elapsed = 1.0
         while True:
             time.sleep(TICK_SECONDS)
-            if networked:
-                poll_elapsed += TICK_SECONDS
-                if poll_elapsed >= 1.0:
-                    actual_pump = poll_actuators(context, duty, standby, valve)
-                    poll_elapsed = 0.0
+            if io_clients is not None:
+                actual_pump = update_actuators(context, *io_clients)
             # Preserve fractional motion between ticks. Only reload rounded
             # register values when an outside writer has changed them.
             current = read_holding(context, 0, 3)
@@ -173,7 +173,12 @@ def main() -> None:
 
     threading.Thread(target=clock, daemon=True).start()
     log.info("Starting %s model %s on %s:%s", role, name, host, port)
-    StartTcpServer(context, address=(host, port))
+    try:
+        StartTcpServer(context, address=(host, port))
+    finally:
+        if io_clients is not None:
+            for client in io_clients:
+                client.close()
 
 
 if __name__ == "__main__":

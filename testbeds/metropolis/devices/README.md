@@ -37,7 +37,7 @@ publish Docker ports — they bind to their own GNS3 interfaces.
 | Device | Source | What it does | Suggested network |
 |---|---|---|---|
 | PLC / RTU | `controllers/plc/` | Modbus TCP server with a small holding-register and coil map; one image serves either role | Plant VLANs 10-13, or remote site LANs 14-15 |
-| Networked actuator | `field/actuators/` | EtherNet/IP explicit-message pump drive or valve controller | Intake VLAN 10, `10.20.10.0/24` |
+| Networked actuator | `field/actuators/` | EtherNet/IP cyclic I/O pump drive or valve controller | Intake VLAN 10, `10.20.10.0/24` |
 | MQTT and CoAP sensor | `field/sensors/` | Publishes MQTT telemetry; answers CoAP discovery and status on UDP 5683 | Plant or remote-site LAN |
 | MQTT broker | `services/mqtt_broker/` | Authenticated Mosquitto broker for telemetry and HMI commands | VLAN 23, `10.20.23.0/24` |
 | SCADA collector | `operations/scada/` | Polls a Modbus controller and republishes the snapshot over MQTT | VLAN 20, `10.20.20.0/24` |
@@ -130,8 +130,8 @@ Beyond the shared `NODE_*` values above:
 
 | Image | Variables |
 |---|---|
-| `metropolis/controller:dev` | `DEVICE_ROLE=PLC`, `MODBUS_HOST=0.0.0.0`, `MODBUS_PORT=502`, `PROCESS_LEVEL=650`, `PROCESS_FLOW=120`, `PROCESS_QUALITY=950` |
-| `metropolis/actuator:dev` | `ACTUATOR_ROLE=pump_drive\|valve_controller`, `ACTUATOR_FAULTED=false`, `EIP_PORT=44818` |
+| `metropolis/controller:dev` | `DEVICE_ROLE=PLC`, `MODBUS_HOST=0.0.0.0`, `MODBUS_PORT=502`, `PROCESS_LEVEL=650`, `PROCESS_FLOW=120`, `PROCESS_QUALITY=950`; intake PLC also uses `EIP_DUTY_HOST`, `EIP_STANDBY_HOST`, `EIP_VALVE_HOST`, `EIP_RPI_MS=100`, `EIP_IO_PORT=2222` |
+| `metropolis/actuator:dev` | `ACTUATOR_ROLE=pump_drive\|valve_controller`, `ACTUATOR_FAULTED=false`, `EIP_PORT=44818`, `EIP_IO_PORT=2222` |
 | `metropolis/mqtt-sensor:dev` | `SENSOR_TYPE`, `SENSOR_VALUE`, `PLC_HOST`, `SENSOR_REGISTER`, `SENSOR_DIVISOR`, `MQTT_USERNAME`, `MQTT_PASSWORD`, `MQTT_HOST`, `MQTT_PORT=1883`, `MQTT_TOPIC`, `PUBLISH_MODE=persistent\|per-message`, `COAP_ENABLED=true`, `COAP_PORT=5683` |
 | `metropolis/mqtt-broker:dev` | Builds its password file at startup. Synthetic accounts: `lab_device` / `LabOnly_Device_2026` and `lab_operator` / `LabOnly_MQTT_2026`. Listens on TCP 1883. |
 | `metropolis/scada:dev` | `PLC_HOST`, `MODBUS_PORT=502`, `MODBUS_UNIT_ID=1`, `MQTT_USERNAME`, `MQTT_PASSWORD`, `MQTT_HOST`, `MQTT_PORT`, `MQTT_TOPIC`, `POLL_INTERVAL=5` |
@@ -216,10 +216,22 @@ does not respond, the standby drive is commanded to run. The process model uses
 confirmed pump and valve state. All three nodes share the PLC's existing
 `10.20.10.0/24` VLAN; no additional route is needed. Set
 `ACTUATOR_FAULTED=true` on the duty drive to exercise standby takeover. The
-EtherNet/IP simulator
-implements RegisterSession and SendRRData with CIP Get/Set Attribute Single on
-lab-specific class `0x64`, instance 1, attribute 1 (Boolean active state), on
-TCP 44818. It does not implement a vendor drive profile or cyclic I/O.
+PLC opens an I/O connection on TCP 44818, then sends a one-byte command assembly
+to each actuator over UDP 2222 at the configurable `EIP_RPI_MS` interval
+(default 100 ms). Each actuator produces an active/fault status assembly at
+the same interval. The standby drive exchanges status while idle and receives
+a run command when the duty drive is unavailable or reports that it is not
+running. Loss of output updates makes an actuator stop after at least four
+requested intervals (minimum 0.5 s). Discrete inputs 0–2 on the PLC expose
+confirmed duty, standby, and valve state to SCADA. Existing CIP Get/Set
+Attribute Single messages on lab-specific class `0x64` remain available for
+diagnostics. The I/O assemblies and connection handling are simplified for
+this simulator; they are not a vendor drive profile or an ODVA-conformant
+implementation. This follows [ODVA's description of unconnected TCP setup and
+cyclic UDP I/O](https://www.odva.org/publication_download/ethernet-ip-technology-overview/).
+Rebuild the controller and actuator images after changing
+`EIP_RPI_MS` or the simulator code. Live GNS3 timing and packet captures still
+need to be checked on the user's GNS3 host.
 
 The controller's coupled process model changes level, flow, and quality over
 time. It is a traffic-generating approximation, not a hydraulic simulation.

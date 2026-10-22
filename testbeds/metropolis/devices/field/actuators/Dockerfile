@@ -4,7 +4,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     ACTUATOR_ROLE=pump_drive \
     EIP_HOST=0.0.0.0 \
-    EIP_PORT=44818
+    EIP_PORT=44818 \
+    EIP_IO_PORT=2222
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends iproute2 hostname \
@@ -15,5 +16,6 @@ COPY testbeds/metropolis/devices/runtime/network-entrypoint.sh /usr/local/bin/me
 RUN chmod +x /usr/local/bin/metropolis-entrypoint
 
 EXPOSE 44818/tcp
+EXPOSE 2222/udp
 ENTRYPOINT ["/usr/local/bin/metropolis-entrypoint"]
 CMD ["python", "/opt/metropolis/actuator.py"]

@@ -5,7 +5,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     DEVICE_NAME=MET-PLC-INTAKE-01 \
     DEVICE_ROLE=PLC \
     MODBUS_HOST=0.0.0.0 \
-    MODBUS_PORT=502
+    MODBUS_PORT=502 \
+    EIP_RPI_MS=100
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends iproute2 hostname \
