@@ -41,10 +41,13 @@ class Target:
 
 
 COMMANDS = {
-    "intake": ("level_setpoint", "percent", 0.0),
-    "dosing": ("dose_setpoint", "percent", 0.0),
-    "filtration": ("backwash_threshold", "kPa", 10.0),
+    "intake": ("level_setpoint", "percent", 0.0, 100.0),
+    "dosing": ("dose_setpoint", "percent", 0.0, 100.0),
+    "filtration": ("backwash_threshold", "kPa", 10.0, 100.0),
+    "disinfection": ("residual_setpoint", "mg/L", 0.0, 10.0),
 }
+READ_ONLY_PROFILES = frozenset({"reservoir", "raw_water"})
+SUPPORTED_PROFILES = COMMANDS.keys() | READ_ONLY_PROFILES
 SETPOINT_REGISTER = 4
 COMMAND_MAX_AGE_SECONDS = 15
 
@@ -89,7 +92,7 @@ def configured_targets(
             raise ValueError("Each SCADA target needs id, host, profile, and topic")
         if any(not isinstance(item[key], str) or not item[key] for key in item):
             raise ValueError("SCADA target fields must be nonempty strings")
-        if item["profile"] not in COMMANDS:
+        if item["profile"] not in SUPPORTED_PROFILES:
             raise ValueError(f"Unsupported SCADA profile: {item['profile']}")
         targets.append(Target(item["id"], item["host"], item["profile"], item["topic"]))
     if len({item.cell for item in targets}) != len(targets):
@@ -100,6 +103,8 @@ def configured_targets(
 def decode_registers(target: Target, registers: list[int]) -> dict:
     if len(registers) < 4:
         raise ValueError("Controller returned fewer than four registers")
+    if target.profile in READ_ONLY_PROFILES and len(registers) < 6:
+        raise ValueError("Remote RTU returned fewer than six registers")
     payload = {
         "cell": target.cell,
         "controller": target.host,
@@ -108,12 +113,33 @@ def decode_registers(target: Target, registers: list[int]) -> dict:
     }
     if len(registers) >= 6:
         payload.update(
-            setpoint=registers[4] / 10,
             alarm_mask=registers[5],
             alarms=[label for bit, label in ALARM_NAMES.items() if registers[5] & bit],
             quality="degraded" if registers[5] else "good",
         )
-    if target.profile == "dosing":
+        if target.profile in COMMANDS:
+            payload["setpoint"] = registers[4] / 10
+    if target.profile in READ_ONLY_PROFILES:
+        level_field, pump_field = (
+            ("reservoir_level_percent", "booster_pump_running")
+            if target.profile == "reservoir"
+            else ("wet_well_level_percent", "lift_pump_running")
+        )
+        payload.update(
+            {
+                level_field: registers[0] / 10,
+                pump_field: bool(registers[1]),
+                "instrument_ready": bool(registers[2]),
+                "pump_requested": bool(registers[4]),
+            }
+        )
+    elif target.profile == "disinfection":
+        payload.update(
+            residual_mg_l=registers[0] / 10,
+            pump_status=registers[1],
+            dose_output_percent=registers[2] / 10,
+        )
+    elif target.profile == "dosing":
         payload.update(
             ph=registers[0] / 100,
             turbidity_ntu=registers[1] / 10,
@@ -167,7 +193,9 @@ def validate_command(
     """Return the Modbus register value for a fresh, cell-specific request."""
     if max_age <= 0:
         raise ValueError("COMMAND_MAX_AGE_SECONDS must be positive")
-    expected_command, expected_unit, minimum = COMMANDS[target.profile]
+    if target.profile not in COMMANDS:
+        raise ValueError("This SCADA target does not accept commands")
+    expected_command, expected_unit, minimum, maximum = COMMANDS[target.profile]
     if payload.get("cell") != target.cell:
         raise ValueError("command cell does not match the MQTT topic")
     if not isinstance(payload.get("device"), str) or not payload["device"]:
@@ -179,8 +207,8 @@ def validate_command(
     value = payload.get("value")
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise ValueError("command value must be numeric")
-    if not math.isfinite(value) or not minimum <= value <= 100:
-        raise ValueError(f"command value must be between {minimum:g} and 100")
+    if not math.isfinite(value) or not minimum <= value <= maximum:
+        raise ValueError(f"command value must be between {minimum:g} and {maximum:g}")
     scaled = value * 10
     if abs(scaled - round(scaled)) > 1e-6:
         raise ValueError("command value must use increments of 0.1")
@@ -239,7 +267,11 @@ class CommandBridge:
     ) -> None:
         if command_max_age <= 0:
             raise ValueError("COMMAND_MAX_AGE_SECONDS must be positive")
-        self.targets = {command_topic(target): target for target in targets}
+        self.targets = {
+            command_topic(target): target
+            for target in targets
+            if target.profile in COMMANDS
+        }
         self.publisher = publisher
         self.port = port
         self.unit_id = unit_id
@@ -350,8 +382,8 @@ def main() -> None:
         if reason_code != 0:
             log.warning("MQTT connection rejected: %s", reason_code)
             return
-        for target in targets:
-            client.subscribe(command_topic(target), qos=1)
+        for topic in bridge.targets:
+            client.subscribe(topic, qos=1)
 
     def on_message(client, userdata, message) -> None:
         if message.topic not in bridge.targets or len(message.payload) > 4096:

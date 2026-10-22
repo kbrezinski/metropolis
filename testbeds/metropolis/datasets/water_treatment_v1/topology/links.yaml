@@ -294,8 +294,7 @@ links:
       - node: sw-operations-services
         port_role: aggregation-uplink
 
-  # Host attachments to the populated access segments. Disinfection retains
-  # trunk capacity but has no modelled hosts yet.
+  # Host attachments to the populated access segments.
   - id: attach-intake-plc
     kind: access
     description: Intake PLC on the plant intake segment
@@ -422,6 +421,42 @@ links:
       - node: MET-VALVE-CTRL-FILTRATION-BACKWASH-01
       - node: sw-plant-cell-filtration
 
+  - id: attach-disinfection-plc
+    kind: access
+    description: Disinfection PLC on the plant disinfection segment
+    network_id: plant-disinfection
+    cidr: 10.20.13.0/24
+    endpoints:
+      - node: MET-PLC-DISINFECTION-01
+      - node: sw-plant-cell-disinfection
+
+  - id: attach-disinfection-analyzer
+    kind: access
+    description: Residual analyzer on the plant disinfection segment
+    network_id: plant-disinfection
+    cidr: 10.20.13.0/24
+    endpoints:
+      - node: MET-ANALYZER-DISINFECTION-01
+      - node: sw-plant-cell-disinfection
+
+  - id: attach-disinfection-duty-drive
+    kind: access
+    description: Disinfection duty metering pump on the plant disinfection segment
+    network_id: plant-disinfection
+    cidr: 10.20.13.0/24
+    endpoints:
+      - node: MET-PUMP-DRIVE-DISINFECTION-DUTY-01
+      - node: sw-plant-cell-disinfection
+
+  - id: attach-disinfection-standby-drive
+    kind: access
+    description: Disinfection standby metering pump on the plant disinfection segment
+    network_id: plant-disinfection
+    cidr: 10.20.13.0/24
+    endpoints:
+      - node: MET-PUMP-DRIVE-DISINFECTION-STANDBY-01
+      - node: sw-plant-cell-disinfection
+
   - id: attach-reservoir-rtu
     kind: access
     description: Reservoir RTU on the reservoir station LAN
@@ -430,6 +465,27 @@ links:
     endpoints:
       - node: MET-RTU-RESERVOIR-01
       - node: sw-reservoir-access
+        port_role: rtu-or-plc
+
+  - id: attach-reservoir-level
+    kind: access
+    description: Networked reservoir level instrument on the station LAN
+    network_id: reservoir
+    cidr: 10.20.14.0/24
+    endpoints:
+      - node: MET-LEVEL-RESERVOIR-01
+      - node: sw-reservoir-access
+        port_role: sensor-actuator-1
+
+  - id: attach-reservoir-pump
+    kind: access
+    description: Networked reservoir booster pump drive on the station LAN
+    network_id: reservoir
+    cidr: 10.20.14.0/24
+    endpoints:
+      - node: MET-PUMP-DRIVE-RESERVOIR-01
+      - node: sw-reservoir-access
+        port_role: sensor-actuator-2
 
   - id: attach-raw-water-rtu
     kind: access
@@ -439,6 +495,27 @@ links:
     endpoints:
       - node: MET-RTU-RAW-WATER-01
       - node: sw-raw-water-access
+        port_role: rtu-or-plc
+
+  - id: attach-raw-water-level
+    kind: access
+    description: Networked wet-well level instrument on the lift station LAN
+    network_id: raw-water
+    cidr: 10.20.15.0/24
+    endpoints:
+      - node: MET-LEVEL-RAW-WATER-01
+      - node: sw-raw-water-access
+        port_role: sensor-actuator-1
+
+  - id: attach-raw-water-pump
+    kind: access
+    description: Networked raw-water lift pump drive on the station LAN
+    network_id: raw-water
+    cidr: 10.20.15.0/24
+    endpoints:
+      - node: MET-PUMP-DRIVE-RAW-WATER-01
+      - node: sw-raw-water-access
+        port_role: sensor-actuator-2
 
   - id: attach-scada
     kind: access
@@ -529,6 +606,15 @@ links:
     endpoints:
       - node: MET-HMI-FILTRATION-01
       - node: sw-plant-filtration-hmi
+
+  - id: attach-hmi-disinfection
+    kind: access
+    description: Disinfection HMI on the disinfection HMI segment
+    network_id: disinfection-hmi
+    cidr: 10.20.53.0/24
+    endpoints:
+      - node: MET-HMI-DISINFECTION-01
+      - node: sw-plant-disinfection-hmi
 
   # Attack-lab nodes share the isolated attack-test segment.
   - id: attach-attack-lab

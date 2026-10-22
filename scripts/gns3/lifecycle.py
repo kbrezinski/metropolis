@@ -55,6 +55,7 @@ def tier_for(kind: str, image: str | None) -> int:
         "metropolis/actuator:dev",
         "metropolis/analyzer:dev",
         "metropolis/dp-instrument:dev",
+        "metropolis/level-instrument:dev",
     }:
         return TIER_ACTUATOR
     if image in SERVER_IMAGES:

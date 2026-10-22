@@ -37,9 +37,10 @@ publish Docker ports — they bind to their own GNS3 interfaces.
 | Device | Source | What it does | Suggested network |
 |---|---|---|---|
 | PLC / RTU | `controllers/plc/` | Modbus TCP server with a small holding-register and coil map; one image serves either role | Plant VLANs 10-13, or remote site LANs 14-15 |
-| Networked actuator | `field/actuators/` | EtherNet/IP cyclic I/O pump drive or valve controller | Intake VLAN 10, dosing VLAN 11, or filtration VLAN 12 |
-| Networked analyzer | `field/analyzers/` | Modbus TCP pH and turbidity readings with a changing waveform | Dosing VLAN 11, `10.20.11.0/24` |
+| Networked actuator | `field/actuators/` | EtherNet/IP cyclic I/O pump drive or valve controller | Plant VLANs 10–13 or remote-site LANs 14–15 |
+| Networked analyzer | `field/analyzers/` | Modbus TCP pH/turbidity or chlorine residual readings, selected by `ANALYZER_ROLE` | Dosing VLAN 11 or disinfection VLAN 13 |
 | Differential-pressure instrument | `field/instruments/` | Modbus TCP pressure drop and heartbeat with a repeatable waveform | Filtration VLAN 12, `10.20.12.0/24` |
+| Level instrument | `field/level_instrument/` | Modbus TCP level and heartbeat with a simple independent variation | Reservoir and raw-water LANs, `10.20.14.0/24` and `10.20.15.0/24` |
 | MQTT and CoAP sensor | `field/sensors/` | Publishes MQTT telemetry; answers CoAP discovery and status on UDP 5683 | Plant or remote-site LAN |
 | MQTT broker | `services/mqtt_broker/` | Authenticated Mosquitto broker for telemetry and HMI commands | VLAN 23, `10.20.23.0/24` |
 | SCADA collector | `operations/scada/` | Polls configured Modbus controllers, publishes MQTT snapshots, and writes acknowledged HMI setpoints to PLCs | VLAN 20, `10.20.20.0/24` |
@@ -59,9 +60,15 @@ The intake PLC commands a duty pump drive, a standby pump drive, and a valve
 controller as separate GNS3 Docker nodes. The dosing PLC polls a networked
 analyzer and commands separate duty and standby drives. The filtration PLC
 polls a networked differential-pressure instrument and commands a backwash
-pump and valve. All three cells use cyclic EtherNet/IP I/O; the shared
-controller image selects `CELL_ROLE=dosing` or `CELL_ROLE=filtration` for those
-cells. Other PLC/RTU instances retain the internal coil model.
+pump and valve. The disinfection PLC polls a chlorine residual analyzer and
+commands duty and standby metering pumps. All four cells use cyclic EtherNet/IP
+I/O. At the reservoir and raw-water sites, each RTU polls a separate networked
+level instrument and exchanges cyclic I/O with a pump drive. The shared
+controller image selects `CELL_ROLE=dosing`, `filtration`, `disinfection`, or
+`remote_site` for these roles. The shared analyzer image uses
+`ANALYZER_ROLE=chlorine` for disinfection and defaults to dosing pH/turbidity.
+Chlorine and remote-site level readings do not depend on pump commands; these
+are traffic models rather than physical process models.
 Experiment runs collect Docker output as simulator diagnostics with
 `scripts/gns3/run.py experiment_run`.
 
@@ -75,6 +82,7 @@ docker build -f testbeds/metropolis/devices/controllers/plc/Dockerfile -t metrop
 docker build -f testbeds/metropolis/devices/field/actuators/Dockerfile -t metropolis/actuator:dev .
 docker build -f testbeds/metropolis/devices/field/analyzers/Dockerfile -t metropolis/analyzer:dev .
 docker build -f testbeds/metropolis/devices/field/instruments/Dockerfile -t metropolis/dp-instrument:dev .
+docker build -f testbeds/metropolis/devices/field/level_instrument/Dockerfile -t metropolis/level-instrument:dev .
 docker build -f testbeds/metropolis/devices/field/sensors/Dockerfile -t metropolis/mqtt-sensor:dev .
 docker build -f testbeds/metropolis/devices/services/mqtt_broker/Dockerfile -t metropolis/mqtt-broker:dev .
 docker build -f testbeds/metropolis/devices/operations/scada/Dockerfile -t metropolis/scada:dev .
@@ -98,6 +106,11 @@ docker build -f testbeds/metropolis/devices/attack/merlin/agent/Dockerfile -t me
 
 Building creates local images only. It does not create GNS3 templates or place
 nodes in a project.
+
+Disinfection reuses the controller, analyzer, actuator, HMI, and SCADA images.
+The remote sites reuse controller, actuator, and SCADA and add the level
+instrument image. Rebuild changed images on the GNS3 compute that hosts those
+nodes before starting the lab.
 
 ## How a node configures itself
 
@@ -138,13 +151,14 @@ Beyond the shared `NODE_*` values above:
 
 | Image | Variables |
 |---|---|
-| `metropolis/controller:dev` | `DEVICE_ROLE=PLC`, `MODBUS_HOST=0.0.0.0`, `MODBUS_PORT=502`; intake uses `PROCESS_LEVEL`, `PROCESS_FLOW`, `PROCESS_QUALITY`, `EIP_DUTY_HOST`, `EIP_STANDBY_HOST`, `EIP_VALVE_HOST`; dosing uses `CELL_ROLE=dosing`, `ANALYZER_HOST`, `ANALYZER_POLL_INTERVAL=1`, `DOSING_PH_LOW=700`, `DOSING_PH_HIGH=735`, `EIP_DUTY_HOST`, `EIP_STANDBY_HOST`; filtration uses `CELL_ROLE=filtration`, `INSTRUMENT_HOST`, `DP_POLL_INTERVAL=1`, `BACKWASH_SECONDS=8`, `EIP_PUMP_HOST`, `EIP_VALVE_HOST`; all three use `EIP_RPI_MS=100`, `EIP_IO_PORT=2222` |
+| `metropolis/controller:dev` | `DEVICE_ROLE=PLC`, `MODBUS_HOST=0.0.0.0`, `MODBUS_PORT=502`; intake uses `PROCESS_LEVEL`, `PROCESS_FLOW`, `PROCESS_QUALITY`, `EIP_DUTY_HOST`, `EIP_STANDBY_HOST`, `EIP_VALVE_HOST`; dosing uses `CELL_ROLE=dosing`, `ANALYZER_HOST`, `ANALYZER_POLL_INTERVAL=1`, `DOSING_PH_LOW=700`, `DOSING_PH_HIGH=735`, `EIP_DUTY_HOST`, `EIP_STANDBY_HOST`; filtration uses `CELL_ROLE=filtration`, `INSTRUMENT_HOST`, `DP_POLL_INTERVAL=1`, `BACKWASH_SECONDS=8`, `EIP_PUMP_HOST`, `EIP_VALVE_HOST`; disinfection uses `CELL_ROLE=disinfection`, `ANALYZER_HOST`, `ANALYZER_POLL_INTERVAL=1`, `EIP_DUTY_HOST`, `EIP_STANDBY_HOST`; remote RTUs use `CELL_ROLE=remote_site`, `REMOTE_SITE_ROLE=reservoir` or `raw_water`, `INSTRUMENT_HOST`, `EIP_PUMP_HOST`, and `LEVEL_POLL_INTERVAL=1`; cyclic roles use `EIP_RPI_MS=100`, `EIP_IO_PORT=2222` |
 | `metropolis/actuator:dev` | `ACTUATOR_ROLE=pump_drive\|valve_controller`, `ACTUATOR_FAULTED=false`, `EIP_PORT=44818`, `EIP_IO_PORT=2222` |
-| `metropolis/analyzer:dev` | `MODBUS_HOST=0.0.0.0`, `MODBUS_PORT=502`, `ANALYZER_INTERVAL=1` |
+| `metropolis/analyzer:dev` | `ANALYZER_ROLE=dosing` (default) exposes pH, turbidity, heartbeat; `ANALYZER_ROLE=chlorine` exposes residual x10 mg/L and heartbeat. Also uses `MODBUS_HOST=0.0.0.0`, `MODBUS_PORT=502`, `ANALYZER_INTERVAL=1`. |
 | `metropolis/dp-instrument:dev` | `MODBUS_HOST=0.0.0.0`, `MODBUS_PORT=502`, `DP_UPDATE_INTERVAL=1`, `DP_MIN_X10=250`, `DP_MAX_X10=800`, `DP_CYCLE_SECONDS=120` |
+| `metropolis/level-instrument:dev` | `MODBUS_HOST=0.0.0.0`, `MODBUS_PORT=502`, `LEVEL_UPDATE_INTERVAL=1`, `LEVEL_MIN_X10`, `LEVEL_MAX_X10`, `LEVEL_CYCLE_SECONDS` |
 | `metropolis/mqtt-sensor:dev` | `SENSOR_TYPE`, `SENSOR_VALUE`, `PLC_HOST`, `SENSOR_REGISTER`, `SENSOR_DIVISOR`, `MQTT_USERNAME`, `MQTT_PASSWORD`, `MQTT_HOST`, `MQTT_PORT=1883`, `MQTT_TOPIC`, `PUBLISH_MODE=persistent\|per-message`, `COAP_ENABLED=true`, `COAP_PORT=5683` |
 | `metropolis/mqtt-broker:dev` | Builds its password file at startup. Synthetic accounts: `lab_device` / `LabOnly_Device_2026` and `lab_operator` / `LabOnly_MQTT_2026`. Listens on TCP 1883. |
-| `metropolis/scada:dev` | `SCADA_TARGETS` is a JSON array of `{id, host, profile, topic}` entries; `profile` is `intake`, `dosing`, or `filtration`. Also uses `MODBUS_PORT=502`, `MODBUS_UNIT_ID=1`, `MQTT_USERNAME`, `MQTT_PASSWORD`, `MQTT_HOST`, `MQTT_PORT`, `POLL_INTERVAL=5`, `PLC_STALE_SECONDS=15`, `COMMAND_MAX_AGE_SECONDS=15`. Without `SCADA_TARGETS`, `PLC_HOST` and `MQTT_TOPIC` retain single-intake behavior. |
+| `metropolis/scada:dev` | `SCADA_TARGETS` is a JSON array of `{id, host, profile, topic}` entries; plant profiles `intake`, `dosing`, `filtration`, and `disinfection` support HMI commands, while `reservoir` and `raw_water` are read-only RTU profiles. Also uses `MODBUS_PORT=502`, `MODBUS_UNIT_ID=1`, `MQTT_USERNAME`, `MQTT_PASSWORD`, `MQTT_HOST`, `MQTT_PORT`, `POLL_INTERVAL=5`, `PLC_STALE_SECONDS=15`, `COMMAND_MAX_AGE_SECONDS=15`. Without `SCADA_TARGETS`, `PLC_HOST` and `MQTT_TOPIC` retain single-intake behavior. |
 | `metropolis/hmi:dev` | Required `HMI_PASSWORD`; `HMI_USERNAME=operator`, `HMI_HTTP_HOST=0.0.0.0`, `HMI_HTTP_PORT=8080`, `MQTT_USERNAME`, `MQTT_PASSWORD`, `MQTT_HOST`, `MQTT_PORT`, `MQTT_TOPIC`, `MQTT_TELEMETRY_TOPIC`, `MQTT_ACK_TOPIC`, `SETPOINT`, `HMI_CELL_ID`, `HMI_PANEL_TITLE`, `HMI_SETPOINT_LABEL`, `HMI_SETPOINT_COMMAND`, `HMI_SETPOINT_UNIT`, `HMI_SETPOINT_MIN/MAX`, `COMMAND_ACK_TIMEOUT=15`, `TELEMETRY_STALE_SECONDS=30` |
 | `metropolis/historian:dev` | `MQTT_USERNAME`, `MQTT_PASSWORD`, `MQTT_HOST`, `MQTT_PORT`, `MQTT_TOPIC=metropolis/#` |
 | `metropolis/engineering:dev` | Required `ENGINEER_PASSWORD`; OpenSSH on TCP 22 as the fixed non-root account `engineer` |
@@ -164,23 +178,27 @@ in `device_instances/` before you collect traffic.
 | `MET-HMI-INTAKE-01` | `http://10.20.50.10:8080/` | `operator` / `LabOnly_HMI_2026` |
 | `MET-HMI-DOSING-01` | `http://10.20.51.10:8080/` | `operator` / `LabOnly_HMI_2026` |
 | `MET-HMI-FILTRATION-01` | `http://10.20.52.10:8080/` | `operator` / `LabOnly_HMI_2026` |
+| `MET-HMI-DISINFECTION-01` | `http://10.20.53.10:8080/` | `operator` / `LabOnly_HMI_2026` |
 | `MET-ENGINEERING-01` | SSH and SFTP at `10.20.21.10:22` | `engineer` / `LabOnly_Engineering_2026` |
 
-Attach the engineering node to VLAN 21 and the three HMIs to VLANs 50, 51,
-and 52 respectively. If an engineering template carries a start-command
+Attach the engineering node to VLAN 21 and the four HMIs to VLANs 50 through
+53 respectively. If an engineering template carries a start-command
 override such as `sleep infinity`, clear it so the image's SSH startup runs.
 
 ### HMI
 
 Each panel shows its configured SCADA topic and accepts a setpoint in 0.1-unit
 increments. Intake and dosing use 0–100%; filtration uses a 10–100 kPa
-backwash threshold. Only an explicit operator POST publishes a command. SCADA
+backwash threshold; disinfection uses a 0–10 mg/L residual target. Only an
+explicit operator POST publishes a command. SCADA
 subscribes to the cell command topic, validates the request, writes PLC holding
 register 4 over Modbus TCP, reads it back, and publishes a correlated MQTT
 acknowledgement. `stored` confirms the register value; it does not confirm a
 physical output. The dosing PLC uses the requested percent in its drive logic;
-the filtration PLC uses the threshold to trigger backwash. The intake PLC
-stores the level request but keeps its existing manual coil control behavior.
+the filtration PLC uses the threshold to trigger backwash; the disinfection PLC
+compares its analyzer reading with the target to request pump operation. The
+intake PLC stores the level request but keeps its existing manual coil control
+behavior.
 
 All routes require HTTP Basic authentication: `/`, `/api/status`, `/healthz`,
 and `POST /api/setpoint`. A setpoint request is a JSON body of `{"value":65}`
@@ -233,7 +251,7 @@ Holding registers, using zero-based protocol addresses:
 | 1 | Flow rate | Engineering units × 10; 120 = 12.0 units/s |
 | 2 | Water quality | Engineering units × 10; 950 = 95.0% |
 | 3 | Heartbeat counter | Increments once per second |
-| 4 | Writable HMI setpoint | Engineering units × 10: intake level %, dosing output %, or filtration backwash threshold kPa |
+| 4 | Writable HMI setpoint | Engineering units × 10: intake level %, dosing output %, filtration backwash threshold kPa, or disinfection residual target mg/L |
 | 5 | Alarm bitmask | 1 instrument unavailable, 2 instrument stale, 4 duty/pump unavailable, 8 standby unavailable, 16 valve unavailable, 32 output unconfirmed |
 
 Coils 0 and 1 are the pump-run and valve-open commands. On the intake PLC,
@@ -340,8 +358,57 @@ live GNS3 check.
 | SCADA ↔ filtration PLC | Modbus TCP read of registers 0–5 every 5 s; alarm mask and quality in MQTT snapshot | Routed VLAN 20↔12, `link-plant-cell-filtration-uplink` |
 | Filtration HMI → broker → SCADA → PLC | MQTT request on operator submission, then Modbus TCP register-4 write/readback and MQTT acknowledgement | Routed VLANs 52/23/20/12, `attach-hmi-filtration` plus PLC uplink |
 
-Other future cells still need process models and register maps before treating
-their generated traffic as operationally representative.
+### Disinfection cell
+
+`MET-PLC-DISINFECTION-01` (`10.20.13.10`) polls the networked chlorine
+residual analyzer (`10.20.13.20`) over Modbus TCP. The analyzer exposes
+residual × 10 mg/L and heartbeat in holding registers 0–1. The PLC exposes
+residual, confirmed pump status bits, on/off output, heartbeat, writable
+residual target, and alarms in holding registers 0–5. Coil 0 enables pump
+requests; discrete inputs report duty pump, standby pump, and analyzer status.
+The PLC requests the duty pump when its analyzer reading is below the target,
+and requests the standby pump if the duty pump is unavailable, faulted, or
+fails to confirm after a short grace period. Both
+pumps exchange on/off cyclic EtherNet/IP I/O while connected. The analyzer's
+reading is independent of pump state; there is no chlorine process model.
+
+The PLC, analyzer, and pumps share VLAN 13. SCADA in VLAN 20 polls the PLC over
+Modbus TCP and publishes status to the HMI in VLAN 53. The HMI sends a residual
+target through MQTT; SCADA writes PLC register 4 and acknowledges readback.
+The existing network-level firewall policy covers these routed flows. For
+packet checks, use `attach-disinfection-analyzer`, both pump attachments,
+`link-plant-cell-disinfection-uplink`, and `attach-hmi-disinfection` or
+`link-plant-hmi-disinfection-uplink`. Startup and packet behavior still need a
+live GNS3 check.
+
+### Remote reservoir and raw-water sites
+
+The reservoir RTU (`10.20.14.10`) polls a separate level instrument
+(`10.20.14.20`) and exchanges cyclic I/O with a booster pump drive
+(`10.20.14.40`). The raw-water RTU (`10.20.15.10`) follows the same pattern
+with a wet-well level instrument (`10.20.15.20`) and lift-pump drive
+(`10.20.15.40`). Each device is its own Docker node and has an Ethernet link
+to its site switch. The instrument's Modbus TCP holding registers 0 and 1
+contain level × 10 percent and a one-second heartbeat. Its value varies
+independently of the drive.
+
+Each RTU exposes six Modbus TCP holding registers: 0 level × 10 percent,
+1 confirmed pump-running state, 2 instrument-ready state, 3 RTU heartbeat,
+4 requested pump state, and 5 alarm bitmask. Coil 0 requests pump operation.
+The RTU polls its instrument about once per second and exchanges pump commands
+and status over the existing simplified EtherNet/IP model at a nominal 100 ms
+interval. Central SCADA polls both RTUs over the simulated WAN about every
+five seconds and publishes read-only MQTT status. The current routed path is
+an untrusted underlay in the scenario; site-to-site IPsec remains future work.
+
+| Expected flow | Capture point at reservoir | Capture point at raw water |
+|---|---|---|
+| RTU ↔ level instrument, local Modbus TCP | `attach-reservoir-level` | `attach-raw-water-level` |
+| RTU ↔ pump drive, local cyclic EtherNet/IP | `attach-reservoir-pump` | `attach-raw-water-pump` |
+| SCADA ↔ RTU, routed Modbus TCP | `link-reservoir-wan` | `link-raw-water-wan` |
+
+These are expected flows from the declarations and models. Confirm startup,
+packets, and timing in GNS3 before treating them as runtime verified.
 
 ## Routine traffic, Telnet, DNS, and time
 
@@ -528,6 +595,11 @@ runs a CoAP GET over DTLS. Until then, treat `coaps://` as unsupported.
 | `metropolis/scada/filtration/status` | SCADA | Historian, filtration HMI |
 | `metropolis/plant/filtration/command` | Filtration HMI | SCADA, historian |
 | `metropolis/scada/filtration/ack` | SCADA | Filtration HMI, historian |
+| `metropolis/scada/disinfection/status` | SCADA | Historian, disinfection HMI |
+| `metropolis/plant/disinfection/command` | Disinfection HMI | SCADA, historian |
+| `metropolis/scada/disinfection/ack` | SCADA | Disinfection HMI, historian |
+| `metropolis/scada/reservoir/status` | SCADA | Historian |
+| `metropolis/scada/raw-water/status` | SCADA | Historian |
 
 The historian subscribes to `metropolis/#` and writes what it receives to its
 console for capture.

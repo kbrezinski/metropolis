@@ -1,6 +1,6 @@
 # Metropolis v1 topology validation
 
-**Result: PASS (10/10 checks passed)**
+**Result: PASS (11/11 checks passed)**
 
 Regenerate this report from the repository root with:
 
@@ -17,8 +17,9 @@ uv run python scripts/validate_metropolis_topology.py --report testbeds/metropol
 | Address plan: unique, valid, non-overlapping IPv4 networks | No mismatches found | PASS |
 | Device inventory: site, subnet, IP, gateway, and environment | No mismatches found | PASS |
 | Router interfaces and VLAN subinterfaces match address plan | No mismatches found | PASS |
-| Static routes use reachable next hops and planned destinations | No mismatches found | PASS |
+| OSPF advertises connected networks without static routes | No mismatches found | PASS |
 | Switch subnet references and trunk VLANs match plan | No mismatches found | PASS |
+| VLAN port membership and router link interfaces match the plan | No mismatches found | PASS |
 | All device service targets resolve to inventoried nodes | No mismatches found | PASS |
 | Link plan matches the inventory, address plan, and router interfaces | No mismatches found | PASS |
 | Routers and switches match their scripts, specs, and the link plan | No mismatches found | PASS |
@@ -62,4 +63,4 @@ This is the central lookup table. Match each network to the router interface and
 
 ## Scope and limitations
 
-This validates consistency across the checked-in YAML, VyOS command text, and switch Markdown. A blank VLAN means a standalone untagged subnet. For cabling it checks the link plan against the inventory, the address plan, and each router script's configured interfaces, and it checks that every router script is represented. It does not execute VyOS configuration, assign or confirm literal GNS3 port numbers, verify that a link is physically cabled, test packet reachability, or validate firewall/IPsec behavior. The two overlay `/30`s are reservations and intentionally have no configured router interfaces yet.
+This validates consistency across the checked-in YAML, VyOS command text, and switch Markdown, including declared VLAN access/trunk membership and router link interfaces. A blank VLAN means a standalone untagged subnet. For cabling it checks the link plan against the inventory, the address plan, and each router script's configured interfaces, and it checks that every router script is represented. It does not execute VyOS or Open vSwitch configuration, assign or confirm literal GNS3 port numbers, verify that a link is physically cabled, test packet reachability or Layer 2 isolation, or validate firewall/IPsec behavior. The two overlay `/30`s are reservations and intentionally have no configured router interfaces yet.

@@ -28,8 +28,9 @@ makes the server match it.
 
 ```bash
 # 1. Build the images, then register a template for each
-# Include metropolis/actuator:dev for intake, dosing, and filtration I/O;
-# metropolis/analyzer:dev for dosing; and metropolis/dp-instrument:dev for filtration.
+# Include metropolis/actuator:dev for all four cells and both remote sites; metropolis/analyzer:dev
+# for dosing and disinfection; metropolis/dp-instrument:dev for filtration;
+# and metropolis/level-instrument:dev for the two remote sites.
 python scripts/gns3/run.py register_templates --check
 python scripts/gns3/run.py register_templates
 
@@ -53,6 +54,10 @@ python scripts/gns3/run.py capture_traffic --links link-core-plant attach-intake
 python scripts/gns3/run.py capture_traffic --links attach-dosing-analyzer attach-dosing-duty-drive attach-dosing-standby-drive link-plant-cell-dosing-uplink --duration 60
 # Filtration: local pressure polling, cyclic backwash I/O, and routed SCADA polling:
 python scripts/gns3/run.py capture_traffic --links attach-filtration-dp attach-filtration-backwash-pump attach-filtration-backwash-valve link-plant-cell-filtration-uplink --duration 60
+# Disinfection: local residual polling, cyclic pump I/O, and routed SCADA polling:
+python scripts/gns3/run.py capture_traffic --links attach-disinfection-analyzer attach-disinfection-duty-drive attach-disinfection-standby-drive link-plant-cell-disinfection-uplink attach-hmi-disinfection --duration 60
+# Remote sites: local level polling and pump I/O, plus routed SCADA polling:
+python scripts/gns3/run.py capture_traffic --links attach-reservoir-level attach-reservoir-pump link-reservoir-wan attach-raw-water-level attach-raw-water-pump link-raw-water-wan --duration 60
 
 # For a complete experiment, collect logs and PCAPs together:
 python scripts/gns3/run.py experiment_run --start-lab --configure-routers --duration 60 \
@@ -192,6 +197,29 @@ waveform should cross the default 65 kPa threshold, with an 8-second backwash
 request and a 10 kPa rearm band. The waveform does not model backwash changing
 physical filter pressure. Confirm packet timing and startup in the user's GNS3
 environment before claiming a verified run.
+
+For disinfection, the PLC polls a chlorine residual analyzer over local Modbus
+TCP and exchanges on/off cyclic EtherNet/IP I/O with duty and standby metering
+pumps. SCADA polls the PLC over routed Modbus TCP; the VLAN 53 HMI sends its
+residual target through MQTT and receives a readback acknowledgement. Capture
+`attach-disinfection-analyzer`, both pump attachments,
+`link-plant-cell-disinfection-uplink`, and `attach-hmi-disinfection` or its
+uplink to observe these paths. The analyzer value is independent of pump state.
+These declared paths and offline checks do not verify live GNS3 packets.
+In an existing GNS3 project, update or recreate `MET-SCADA-01` so its node
+environment includes the new `SCADA_TARGETS` entry; the builder does not
+reconcile environment changes on nodes it reuses by name.
+
+The reservoir and raw-water RTUs each poll a local networked level instrument
+over Modbus TCP and exchange cyclic EtherNet/IP I/O with one local pump drive.
+Central SCADA polls the two RTUs read-only over Modbus TCP through the simulated
+WAN. Their instrument, pump, and WAN attachment links in the example above
+separate local traffic from routed traffic. The WAN is treated as an untrusted
+public-network underlay for this scenario, although it is a GNS3 virtual
+segment and no site-to-site IPsec tunnel is configured yet. On a reused GNS3
+project, update or recreate both RTUs and SCADA so their new environment
+variables and targets take effect. Live startup and PCAP verification remain
+for the user's GNS3 environment.
 
 ## Experiment device logs
 

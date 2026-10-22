@@ -71,7 +71,7 @@ TEMPLATES: tuple[ImageTemplate, ...] = (
     spec(
         "Metropolis PLC/RTU",
         "metropolis/controller:dev",
-        description="Modbus TCP controller with intake EtherNet/IP actuator client",
+        description="Modbus TCP controller with cyclic EtherNet/IP for populated cells",
     ),
     spec(
         "Metropolis networked actuator",
@@ -81,12 +81,17 @@ TEMPLATES: tuple[ImageTemplate, ...] = (
     spec(
         "Metropolis networked analyzer",
         "metropolis/analyzer:dev",
-        description="Modbus TCP pH and turbidity analyzer for the dosing cell",
+        description="Modbus TCP dosing or disinfection analyzer",
     ),
     spec(
         "Metropolis differential-pressure instrument",
         "metropolis/dp-instrument:dev",
         description="Modbus TCP filter pressure-drop instrument",
+    ),
+    spec(
+        "Metropolis level instrument",
+        "metropolis/level-instrument:dev",
+        description="Modbus TCP reservoir or raw-water level instrument",
     ),
     spec(
         "Metropolis MQTT/CoAP sensor",

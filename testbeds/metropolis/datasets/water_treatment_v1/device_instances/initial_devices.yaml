@@ -154,6 +154,69 @@ devices:
       NODE_GATEWAY: 10.20.12.1
       ACTUATOR_ROLE: valve_controller
 
+  - name: MET-PLC-DISINFECTION-01
+    model: testbeds/metropolis/devices/controllers/plc
+    image: metropolis/controller:dev
+    site: treatment_plant
+    subnet: 10.20.13.0/24
+    address: 10.20.13.10/24
+    gateway: 10.20.13.1
+    protocols: [modbus-tcp, ethernet-ip]
+    environment:
+      NODE_HOSTNAME: MET-PLC-DISINFECTION-01
+      NODE_IP: 10.20.13.10/24
+      NODE_GATEWAY: 10.20.13.1
+      DEVICE_ROLE: PLC
+      CELL_ROLE: disinfection
+      ANALYZER_HOST: 10.20.13.20
+      ANALYZER_POLL_INTERVAL: "1"
+      EIP_DUTY_HOST: 10.20.13.40
+      EIP_STANDBY_HOST: 10.20.13.41
+      EIP_RPI_MS: "100"
+
+  - name: MET-ANALYZER-DISINFECTION-01
+    model: testbeds/metropolis/devices/field/analyzers
+    image: metropolis/analyzer:dev
+    site: treatment_plant
+    subnet: 10.20.13.0/24
+    address: 10.20.13.20/24
+    gateway: 10.20.13.1
+    protocols: [modbus-tcp]
+    environment:
+      NODE_HOSTNAME: MET-ANALYZER-DISINFECTION-01
+      NODE_IP: 10.20.13.20/24
+      NODE_GATEWAY: 10.20.13.1
+      ANALYZER_ROLE: chlorine
+      ANALYZER_INTERVAL: "1"
+
+  - name: MET-PUMP-DRIVE-DISINFECTION-DUTY-01
+    model: testbeds/metropolis/devices/field/actuators
+    image: metropolis/actuator:dev
+    site: treatment_plant
+    subnet: 10.20.13.0/24
+    address: 10.20.13.40/24
+    gateway: 10.20.13.1
+    protocols: [ethernet-ip]
+    environment:
+      NODE_HOSTNAME: MET-PUMP-DRIVE-DISINFECTION-DUTY-01
+      NODE_IP: 10.20.13.40/24
+      NODE_GATEWAY: 10.20.13.1
+      ACTUATOR_ROLE: pump_drive
+
+  - name: MET-PUMP-DRIVE-DISINFECTION-STANDBY-01
+    model: testbeds/metropolis/devices/field/actuators
+    image: metropolis/actuator:dev
+    site: treatment_plant
+    subnet: 10.20.13.0/24
+    address: 10.20.13.41/24
+    gateway: 10.20.13.1
+    protocols: [ethernet-ip]
+    environment:
+      NODE_HOSTNAME: MET-PUMP-DRIVE-DISINFECTION-STANDBY-01
+      NODE_IP: 10.20.13.41/24
+      NODE_GATEWAY: 10.20.13.1
+      ACTUATOR_ROLE: pump_drive
+
   - name: MET-PUMP-DRIVE-INTAKE-DUTY-01
     model: testbeds/metropolis/devices/field/actuators
     image: metropolis/actuator:dev
@@ -203,12 +266,46 @@ devices:
     subnet: 10.20.14.0/24
     address: 10.20.14.10/24
     gateway: 10.20.14.1
-    protocols: [modbus-tcp]
+    protocols: [modbus-tcp, ethernet-ip]
     environment:
       NODE_HOSTNAME: MET-RTU-RESERVOIR-01
       NODE_IP: 10.20.14.10/24
       NODE_GATEWAY: 10.20.14.1
       DEVICE_ROLE: RTU
+      CELL_ROLE: remote_site
+      REMOTE_SITE_ROLE: reservoir
+      INSTRUMENT_HOST: 10.20.14.20
+      LEVEL_POLL_INTERVAL: "1"
+      INSTRUMENT_STALE_SECONDS: "3"
+      EIP_PUMP_HOST: 10.20.14.40
+      EIP_RPI_MS: "100"
+
+  - name: MET-LEVEL-RESERVOIR-01
+    model: testbeds/metropolis/devices/field/level_instrument
+    image: metropolis/level-instrument:dev
+    site: reservoir_booster
+    subnet: 10.20.14.0/24
+    address: 10.20.14.20/24
+    gateway: 10.20.14.1
+    protocols: [modbus-tcp]
+    environment:
+      NODE_HOSTNAME: MET-LEVEL-RESERVOIR-01
+      NODE_IP: 10.20.14.20/24
+      NODE_GATEWAY: 10.20.14.1
+
+  - name: MET-PUMP-DRIVE-RESERVOIR-01
+    model: testbeds/metropolis/devices/field/actuators
+    image: metropolis/actuator:dev
+    site: reservoir_booster
+    subnet: 10.20.14.0/24
+    address: 10.20.14.40/24
+    gateway: 10.20.14.1
+    protocols: [ethernet-ip]
+    environment:
+      NODE_HOSTNAME: MET-PUMP-DRIVE-RESERVOIR-01
+      NODE_IP: 10.20.14.40/24
+      NODE_GATEWAY: 10.20.14.1
+      ACTUATOR_ROLE: pump_drive
 
   - name: MET-RTU-RAW-WATER-01
     model: testbeds/metropolis/devices/controllers/plc
@@ -217,12 +314,46 @@ devices:
     subnet: 10.20.15.0/24
     address: 10.20.15.10/24
     gateway: 10.20.15.1
-    protocols: [modbus-tcp]
+    protocols: [modbus-tcp, ethernet-ip]
     environment:
       NODE_HOSTNAME: MET-RTU-RAW-WATER-01
       NODE_IP: 10.20.15.10/24
       NODE_GATEWAY: 10.20.15.1
       DEVICE_ROLE: RTU
+      CELL_ROLE: remote_site
+      REMOTE_SITE_ROLE: raw_water
+      INSTRUMENT_HOST: 10.20.15.20
+      LEVEL_POLL_INTERVAL: "1"
+      INSTRUMENT_STALE_SECONDS: "3"
+      EIP_PUMP_HOST: 10.20.15.40
+      EIP_RPI_MS: "100"
+
+  - name: MET-LEVEL-RAW-WATER-01
+    model: testbeds/metropolis/devices/field/level_instrument
+    image: metropolis/level-instrument:dev
+    site: raw_water_lift
+    subnet: 10.20.15.0/24
+    address: 10.20.15.20/24
+    gateway: 10.20.15.1
+    protocols: [modbus-tcp]
+    environment:
+      NODE_HOSTNAME: MET-LEVEL-RAW-WATER-01
+      NODE_IP: 10.20.15.20/24
+      NODE_GATEWAY: 10.20.15.1
+
+  - name: MET-PUMP-DRIVE-RAW-WATER-01
+    model: testbeds/metropolis/devices/field/actuators
+    image: metropolis/actuator:dev
+    site: raw_water_lift
+    subnet: 10.20.15.0/24
+    address: 10.20.15.40/24
+    gateway: 10.20.15.1
+    protocols: [ethernet-ip]
+    environment:
+      NODE_HOSTNAME: MET-PUMP-DRIVE-RAW-WATER-01
+      NODE_IP: 10.20.15.40/24
+      NODE_GATEWAY: 10.20.15.1
+      ACTUATOR_ROLE: pump_drive
 
   - name: MET-SENSOR-INTAKE-01
     model: testbeds/metropolis/devices/field/sensors
@@ -280,7 +411,7 @@ devices:
       NODE_GATEWAY: 10.20.20.1
       PLC_HOST: 10.20.10.10
       SCADA_TARGETS: >-
-        [{"id":"intake","host":"10.20.10.10","profile":"intake","topic":"metropolis/scada/intake/status"},{"id":"dosing","host":"10.20.11.10","profile":"dosing","topic":"metropolis/scada/dosing/status"},{"id":"filtration","host":"10.20.12.10","profile":"filtration","topic":"metropolis/scada/filtration/status"}]
+        [{"id":"intake","host":"10.20.10.10","profile":"intake","topic":"metropolis/scada/intake/status"},{"id":"dosing","host":"10.20.11.10","profile":"dosing","topic":"metropolis/scada/dosing/status"},{"id":"filtration","host":"10.20.12.10","profile":"filtration","topic":"metropolis/scada/filtration/status"},{"id":"disinfection","host":"10.20.13.10","profile":"disinfection","topic":"metropolis/scada/disinfection/status"},{"id":"reservoir","host":"10.20.14.10","profile":"reservoir","topic":"metropolis/scada/reservoir/status"},{"id":"raw-water","host":"10.20.15.10","profile":"raw_water","topic":"metropolis/scada/raw-water/status"}]
       MQTT_HOST: 10.20.23.10
       MQTT_USERNAME: lab_device
       MQTT_PASSWORD: LabOnly_Device_2026
@@ -377,6 +508,35 @@ devices:
       MQTT_ACK_TOPIC: metropolis/scada/filtration/ack
       MQTT_HOST: 10.20.23.10
       MQTT_TOPIC: metropolis/plant/filtration/command
+      MQTT_USERNAME: lab_device
+      MQTT_PASSWORD: LabOnly_Device_2026
+
+  - name: MET-HMI-DISINFECTION-01
+    model: testbeds/metropolis/devices/operations/hmi
+    image: metropolis/hmi:dev
+    site: treatment_plant
+    subnet: 10.20.53.0/24
+    address: 10.20.53.10/24
+    gateway: 10.20.53.1
+    protocols: [mqtt, http]
+    environment:
+      NODE_HOSTNAME: MET-HMI-DISINFECTION-01
+      NODE_IP: 10.20.53.10/24
+      NODE_GATEWAY: 10.20.53.1
+      HMI_USERNAME: operator
+      HMI_PASSWORD: LabOnly_HMI_2026
+      HMI_HTTP_PORT: "8080"
+      HMI_CELL_ID: disinfection
+      HMI_PANEL_TITLE: Disinfection operator panel
+      HMI_SETPOINT_LABEL: Requested residual target
+      HMI_SETPOINT_COMMAND: residual_setpoint
+      HMI_SETPOINT_UNIT: mg/L
+      HMI_SETPOINT_MAX: "10"
+      SETPOINT: "1.0"
+      MQTT_TELEMETRY_TOPIC: metropolis/scada/disinfection/status
+      MQTT_ACK_TOPIC: metropolis/scada/disinfection/ack
+      MQTT_HOST: 10.20.23.10
+      MQTT_TOPIC: metropolis/plant/disinfection/command
       MQTT_USERNAME: lab_device
       MQTT_PASSWORD: LabOnly_Device_2026
 

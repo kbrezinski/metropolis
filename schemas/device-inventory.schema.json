@@ -46,6 +46,11 @@
         "subnet": { "$ref": "#/$defs/cidr" },
         "address": { "$ref": "#/$defs/cidr" },
         "gateway": { "type": "string", "format": "ipv4" },
+        "link_policy": {
+          "type": "string",
+          "enum": ["required", "intentionally_uncabled"],
+          "description": "A physical link is required unless this support node is deliberately left uncabled. Omission means required."
+        },
         "protocols": {
           "type": "array",
           "minItems": 1,

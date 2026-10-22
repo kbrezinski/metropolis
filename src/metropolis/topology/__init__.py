@@ -542,6 +542,7 @@ class Device:
     protocols: tuple[str, ...] = ()
     environment: dict[str, str] = field(default_factory=dict)
     notes: str | None = None
+    link_policy: str = "required"
     auto_network: bool = False
 
     def to_dict(self) -> dict[str, Any]:
@@ -556,6 +557,9 @@ class Device:
                 "gateway": self.gateway,
                 "protocols": list(self.protocols),
                 "notes": self.notes,
+                "link_policy": (
+                    self.link_policy if self.link_policy != "required" else None
+                ),
                 "environment": dict(self.environment),
             }
         )
@@ -573,6 +577,7 @@ class Device:
             protocols=tuple(data.get("protocols") or ()),
             environment=dict(data.get("environment") or {}),
             notes=data.get("notes"),
+            link_policy=data.get("link_policy", "required"),
         )
 
     def refresh_network(self, gateway: str | None = None) -> Device:
@@ -1096,7 +1101,12 @@ class Topology:
     def _device_problems(self, network_by_id: Mapping[str, Network]) -> list[str]:
         found: list[str] = []
         by_cidr = {network.cidr: network for network in network_by_id.values()}
+        assigned_addresses: dict[ipaddress.IPv4Address | ipaddress.IPv6Address, str] = {}
         for device in self.devices:
+            if device.link_policy not in {"required", "intentionally_uncabled"}:
+                found.append(
+                    f"device {device.name}: unknown link policy {device.link_policy!r}"
+                )
             if device.subnet is None:
                 continue
             network = by_cidr.get(device.subnet)
@@ -1113,6 +1123,12 @@ class Topology:
                     f"device {device.name}: bad address {device.address!r} ({exc})"
                 )
                 continue
+            if previous := assigned_addresses.get(address.ip):
+                found.append(
+                    f"devices {previous} and {device.name} share address {address.ip}"
+                )
+            else:
+                assigned_addresses[address.ip] = device.name
             if address.network != ipaddress.ip_network(device.subnet, strict=False):
                 found.append(
                     f"device {device.name}: address {device.address} is not in "

@@ -87,9 +87,9 @@ Access Layer 2 segment for the reservoir/booster station.
 | Port | Role | Mode | VLANs | Far end |
 |---|---|---|---|---|
 | 0 | `router-uplink` | access | untagged | `MET-RESERVOIR` eth0 — Reservoir router to the reservoir station switch |
-| 1 | `rtu-or-plc` | spare | — | nothing cabled |
-| 2 | `sensor-actuator-1` | spare | — | nothing cabled |
-| 3 | `sensor-actuator-2` | spare | — | nothing cabled |
+| 1 | `rtu-or-plc` | access | untagged | `MET-RTU-RESERVOIR-01` — Reservoir RTU on the reservoir station LAN |
+| 2 | `sensor-actuator-1` | access | untagged | `MET-LEVEL-RESERVOIR-01` — Networked reservoir level instrument on the station LAN |
+| 3 | `sensor-actuator-2` | access | untagged | `MET-PUMP-DRIVE-RESERVOIR-01` — Networked reservoir booster pump drive on the station LAN |
 
 ## `sw-raw-water-access`
 
@@ -98,9 +98,9 @@ Access Layer 2 segment for the raw-water lift station.
 | Port | Role | Mode | VLANs | Far end |
 |---|---|---|---|---|
 | 0 | `router-uplink` | access | untagged | `MET-RAW-WATER` eth0 — Raw-water router to the raw-water station switch |
-| 1 | `rtu-or-plc` | spare | — | nothing cabled |
-| 2 | `sensor-actuator-1` | spare | — | nothing cabled |
-| 3 | `sensor-actuator-2` | spare | — | nothing cabled |
+| 1 | `rtu-or-plc` | access | untagged | `MET-RTU-RAW-WATER-01` — Raw-water RTU on the lift station LAN |
+| 2 | `sensor-actuator-1` | access | untagged | `MET-LEVEL-RAW-WATER-01` — Networked wet-well level instrument on the lift station LAN |
+| 3 | `sensor-actuator-2` | access | untagged | `MET-PUMP-DRIVE-RAW-WATER-01` — Networked raw-water lift pump drive on the station LAN |
 
 ## Notes
 

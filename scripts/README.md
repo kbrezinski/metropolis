@@ -3,20 +3,23 @@
 This directory contains dataset-processing, topology-validation, and bounded
 lab experiment utilities. See [`attacks/README.md`](attacks/README.md) for the
 toolkit and [`attacks/SERVICE_TARGETS.md`](attacks/SERVICE_TARGETS.md) for service
-targets and Gotham adaptation notes. An automated GNS3 topology builder remains
-future work.
+targets and Gotham adaptation notes. [`gns3/README.md`](gns3/README.md)
+documents the automated topology builder, capture commands, and combined
+experiment runs.
 
 ## GNS3 implementation references
 
-Metropolis' GNS3 design is currently expressed as device models and
-configuration specifications rather than a one-command topology deployment:
+Metropolis' GNS3 tooling builds from versioned device and topology declarations.
+Image builds, template registration, topology creation, router configuration,
+and experiment capture are separate commands:
 
 - Buildable Docker device models: `testbeds/metropolis/devices/`
 - Router configuration scripts: `testbeds/metropolis/router/`
 - Switch configuration notes: `testbeds/metropolis/switch/`
-- Planned device instances: `testbeds/metropolis/datasets/water_treatment_v1/device_instances/initial_devices.yaml`
+- Device instances: `testbeds/metropolis/datasets/water_treatment_v1/device_instances/initial_devices.yaml`
 - Address and subnet plan: `testbeds/metropolis/datasets/water_treatment_v1/topology/address-plan.yaml`
 - Consistency check: `python scripts/validate_metropolis_topology.py`
+- GNS3 command entry point: `python scripts/gns3/run.py`
 
 When creating a GNS3 project, use stable logical roles for equivalent
 experiment components across testbeds. For example, an attacker node could be
@@ -24,15 +27,19 @@ named `LAB-ATTACKER-01`, while the Metropolis MQTT broker is
 `MET-MQTT-BROKER-01`. Record the mapping, actual project name, node names,
 addresses, image versions, and routes with each experiment.
 
-The topology validator checks the checked-in plans; it does not connect to
-GNS3 or confirm that a running project matches those plans. Start and validate
-nodes and routes in GNS3 before capturing traffic.
+Run the topology validator separately from pytest whenever the dataset changes.
+It checks the declared inventory, links, addresses, router scripts, and switch
+roles; pytest checks reusable simulator and tooling behavior. Adding a node
+that uses an existing simulator does not require a unit test with its exact
+name or IP address. The validator does not connect to GNS3 or confirm that a
+running project matches the plan. Start and validate nodes and routes in GNS3
+before capturing traffic.
 
 ## Dataset-processing pipeline
 
 [`run_gotham_pipeline.py`](run_gotham_pipeline.py) prepares downloaded Gotham
 network packet feature CSVs. It is separate from the Metropolis GNS3 topology
-and from attack execution. See the root README for its inputs and outputs.
+and from attack execution. Run it with `--help` for its inputs and outputs.
 
 ### Metropolis PCAP extraction (stage 1)
 

@@ -25,8 +25,12 @@ logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 log = logging.getLogger("metropolis.hmi")
 
 
+def configured_name() -> str:
+    return os.getenv("NODE_HOSTNAME") or os.getenv("DEVICE_NAME", "MET-HMI-INTAKE-01")
+
+
 def main() -> None:
-    name = os.getenv("DEVICE_NAME", "MET-HMI-INTAKE-01")
+    name = configured_name()
     broker = os.getenv("MQTT_HOST", "10.20.23.10")
     port = int(os.getenv("MQTT_PORT", "1883"))
     topic = os.getenv("MQTT_TOPIC", "metropolis/plant/intake/command")

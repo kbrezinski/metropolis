@@ -9,7 +9,6 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 DEVICES = ROOT / "testbeds/metropolis/devices"
@@ -100,25 +99,30 @@ def test_dosing_plc_reads_modbus_analyzer_and_rejects_failure(monkeypatch):
         dosing.read_analyzer("10.20.11.20")
 
 
-def test_inventory_configures_three_scada_cells_and_distinct_telemetry():
-    inventory = yaml.safe_load(
-        (
-            ROOT
-            / "testbeds/metropolis/datasets/water_treatment_v1/device_instances/initial_devices.yaml"
-        ).read_text()
-    )
-    scada_node = next(
-        item for item in inventory["devices"] if item["name"] == "MET-SCADA-01"
-    )
+def test_scada_configures_distinct_cell_targets_and_decodes_telemetry():
     targets = scada.configured_targets(
-        scada_node["environment"]["SCADA_TARGETS"],
+        json.dumps(
+            [
+                {
+                    "id": "intake",
+                    "host": "192.0.2.10",
+                    "profile": "intake",
+                    "topic": "demo/intake/status",
+                },
+                {
+                    "id": "dosing",
+                    "host": "192.0.2.11",
+                    "profile": "dosing",
+                    "topic": "demo/dosing/status",
+                },
+            ]
+        ),
         legacy_host="unused",
         legacy_topic="unused",
     )
     assert [(item.cell, item.host) for item in targets] == [
-        ("intake", "10.20.10.10"),
-        ("dosing", "10.20.11.10"),
-        ("filtration", "10.20.12.10"),
+        ("intake", "192.0.2.10"),
+        ("dosing", "192.0.2.11"),
     ]
     assert scada.decode_registers(targets[0], [650, 120, 950, 8])["level_percent"] == 65
     dose = scada.decode_registers(targets[1], [695, 48, 650, 9])

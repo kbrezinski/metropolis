@@ -28,15 +28,18 @@ appropriate.
 
 ## What you can do today
 
-- **Build the device images** and create the topology from the inventory with one
-  command, rather than adding nodes by hand.
+- **Build the device images**, register their GNS3 templates, and create the
+  declared topology with repeatable commands rather than adding nodes by hand.
 - **Generate attack traffic** against those nodes with the experiment toolkit,
-  which resolves every target from the inventory.
+  which selects targets from the inventory by default and accepts explicit
+  overrides.
 - **Validate the design** — the address plan, inventory, link plan, router
   interfaces, OSPF networks, and switch VLANs are checked against each other by
   one command.
 - **Capture traffic** on chosen links, and record it under the versioned dataset
-  folder.
+  folder. A combined experiment command records PCAPs, logs, and a run manifest.
+- **Extract and conservatively clean packet features** from completed PCAP runs
+  with the two Metropolis processing scripts.
 - **Design a topology in Python** — build a network, check it for contradictions,
   draw it, and write it out as the same dataset documents everything else reads.
   Start with `scripts/build_a_topology.py` or
@@ -47,10 +50,11 @@ appropriate.
 - **Testbed definitions** — `testbeds/` holds one folder per environment:
   Metropolis router scripts, switch and VLAN specifications, device models, and
   its versioned dataset.
-- **Reusable schemas** — `schemas/` defines shared formats: the network address
-  plan, the device inventory, the infrastructure inventory, and the link plan.
+- **Reusable schemas** — `schemas/` defines shared formats for topology,
+  firewall policy, experiment runs, and normalized device logs.
   Each testbed stores its own concrete allocations, nodes, and cabling, and the
-  topology validator checks every document against its schema.
+  topology validator checks the declared topology documents against their
+  schemas. The firewall renderer validates the policy separately.
 - **Emulated devices** — Dockerfiles and Python apps under
   `testbeds/metropolis/devices/`: Modbus TCP PLC/RTU models, MQTT telemetry, a
   broker, SCADA, HMI, historian, and an engineering workstation. There is also
@@ -59,8 +63,9 @@ appropriate.
   a legacy Telnet host, so captures contain more than attacks.
 - **Experiment toolkit** — `scripts/attacks/` generates attack traffic. Start
   with [its README](scripts/attacks/README.md).
-- **Research package** — `src/metropolis/` provides runtime and reproducibility
-  scaffolding. It is not yet connected to capture, labelling, or training.
+- **Research package** — `src/metropolis/` provides topology and early-stage
+  model scaffolding. PCAP extraction and cleaning are scripts under `scripts/`;
+  labelling and model training remain future work.
 - **Gotham data pipeline** — `scripts/run_gotham_pipeline.py` cleans and labels
   the separately downloaded Gotham dataset. It does not build or run Metropolis.
 
@@ -82,7 +87,7 @@ uv run python -m metropolis.topology --dataset testbeds/metropolis/datasets/wate
 The plan uses separate sites and routed zones, following Purdue concepts as a
 guide:
 
-| Purdue-style area | Metropolis role | Planned networks |
+| Purdue-style area | Metropolis role | Declared networks |
 |---|---|---|
 | Levels 0-1 | Sensors, actuators, PLCs, and RTUs in process cells | `10.20.10.0/24` – `10.20.15.0/24` |
 | Level 2 | HMIs and local control access | `10.20.50.0/24` – `10.20.53.0/24` |
@@ -90,7 +95,7 @@ guide:
 | Level 3.5 | OT DMZ | `10.20.40.0/24` |
 | Level 4 | Simulated enterprise network | `10.30.10.0/24` |
 | Lab-only test zone | Attack-generation hosts | `10.99.10.0/24` |
-| Inter-site transport | Simulated WAN underlay, with reserved IPsec overlays | `172.31.255.0/24`, overlays under `10.20.254.0/24` |
+| Inter-site transport | Simulated WAN underlay, with reserved IPsec overlays | `172.31.255.0/24`; `10.20.254.12/30` and `10.20.254.16/30` reserved |
 
 These ranges belong to Metropolis. Future testbeds can use the same schema with
 different CIDRs, or reuse an allocation pattern deliberately when two
@@ -111,8 +116,10 @@ selected LANs or CIDRs access by protocol and port to all hosts in those
 networks, with default-deny VyOS 1.3 zone rules and narrow OSPF control-plane
 allowances. The loader removes the exact static routes installed by earlier
 Metropolis scripts. Attack-lab access requires a recorded per-run exception.
-The simulated WAN still has no IPsec, and same-VLAN traffic bypasses the
-routers. See the [firewall run guide](scripts/gns3/README.md#routed-firewall-policy).
+The simulated WAN is the untrusted public-network underlay in this scenario;
+site-to-site IPsec is planned but not configured. GNS3 does not connect this
+segment to the actual Internet. Same-VLAN traffic bypasses the routers. See
+the [firewall run guide](scripts/gns3/README.md#routed-firewall-policy).
 
 ## Device models
 
@@ -120,13 +127,15 @@ The emulated set includes Modbus TCP, EtherNet/IP, MQTT, and supporting services
 
 | Role | What it does |
 |---|---|
-| PLC / RTU | Modbus TCP process registers; intake, dosing, and filtration PLCs exchange cyclic EtherNet/IP I/O with separate actuators |
+| PLC / RTU | Modbus TCP process registers; populated plant PLCs and remote-site RTUs exchange cyclic EtherNet/IP I/O with separate actuators |
 | Dosing analyzer | Networked Modbus TCP pH, turbidity, and heartbeat readings |
 | Filtration instrument | Networked Modbus TCP differential-pressure and heartbeat readings |
-| Pump drives and valve | Simplified cyclic EtherNet/IP command and status traffic on each cell's local VLAN |
+| Disinfection analyzer | Networked Modbus TCP chlorine residual and heartbeat readings |
+| Remote-site level instrument | Networked Modbus TCP level and heartbeat readings at the reservoir and raw-water sites |
+| Pump drives and valve | Simplified cyclic EtherNet/IP command and status traffic on plant VLANs and remote-site LANs |
 | Field sensor | Publishes periodic JSON telemetry over MQTT, and answers CoAP discovery and status |
 | MQTT broker | Mosquitto on TCP 1883, requiring credentials |
-| SCADA | Polls the configured intake, dosing, and filtration Modbus PLCs; publishes MQTT snapshots and readback acknowledgements for operator setpoints |
+| SCADA | Polls the four plant PLCs and two remote RTUs over Modbus TCP; publishes MQTT status and plant-PLC setpoint readback acknowledgements |
 | HMI | Authenticated HTTP panel on TCP 8080; shows telemetry and controller status, and sends a command only after an operator submits a setpoint |
 | Historian | Subscribes to MQTT topics and logs what it receives |
 | Engineering workstation | OpenSSH shell and SFTP on TCP 22 |
@@ -134,12 +143,12 @@ The emulated set includes Modbus TCP, EtherNet/IP, MQTT, and supporting services
 | Legacy gateway | Telnet login and shell, for experiments needing legacy host access |
 | DNS and NTP | Local name resolution and time replies, so the network has background traffic |
 
-These are lightweight protocol simulators, not vendor firmware. Cell readings
-are not connected by a hydraulic model. SCADA writes each HMI request to the
-cell PLC and reports register readback; `stored` does not confirm a physical
-actuation. The dosing output uses its setpoint and filtration uses its
-backwash threshold, while intake stores a level setpoint without changing its
-manual coil behavior. Per-role MQTT ACLs remain future work.
+These are lightweight protocol simulators, not vendor firmware. Intake has a
+small coupled process model; the newer cells and remote instruments use simple
+readings that are not tied to pump behavior. There is no hydraulic or chemical
+process simulation. SCADA writes plant-HMI requests to the respective PLC and
+reports register readback; `stored` does not confirm physical actuation. The
+remote RTUs are read-only SCADA targets. Per-role MQTT ACLs remain future work.
 
 See [testbeds/metropolis/devices/README.md](testbeds/metropolis/devices/README.md)
 for build commands, environment settings, topics, and register definitions.
@@ -149,19 +158,23 @@ for build commands, environment settings, topics, and register definitions.
 The intended host is Ubuntu with Docker and a GNS3 server reachable by the GNS3
 client. The steps below build the images, register the templates, create the
 topology, start the lab, apply the router configurations, and capture traffic.
+They are setup instructions; live operation and packet patterns still need to
+be checked in your GNS3 environment.
 
 ### 1. Prepare the host
 
-Install Docker and GNS3 from their official instructions, then clone the
-repository onto the machine that will build or run the GNS3 Docker nodes:
+Install Docker and GNS3 from their official instructions. Install Python 3.12+
+and [uv](https://docs.astral.sh/uv/) on the machine running the GNS3 controller
+commands, then clone the repository there and install its Python dependencies:
 
 ```bash
 git clone https://github.com/kbrezinski/metropolis.git
 cd metropolis
+uv sync --group dev
 ```
 
-For a remote GNS3 server, build or transfer images to the Docker host that
-server uses. Images that exist only on your desktop are not visible to it.
+For a remote GNS3 compute, build or transfer images to that Docker host. Images
+that exist only on your controller machine are not visible to it.
 
 ### 2. Build the device images
 
@@ -172,6 +185,7 @@ docker build -f testbeds/metropolis/devices/controllers/plc/Dockerfile -t metrop
 docker build -f testbeds/metropolis/devices/field/actuators/Dockerfile -t metropolis/actuator:dev .
 docker build -f testbeds/metropolis/devices/field/analyzers/Dockerfile -t metropolis/analyzer:dev .
 docker build -f testbeds/metropolis/devices/field/instruments/Dockerfile -t metropolis/dp-instrument:dev .
+docker build -f testbeds/metropolis/devices/field/level_instrument/Dockerfile -t metropolis/level-instrument:dev .
 docker build -f testbeds/metropolis/devices/services/mqtt_broker/Dockerfile -t metropolis/mqtt-broker:dev .
 docker build -f testbeds/metropolis/devices/field/sensors/Dockerfile -t metropolis/mqtt-sensor:dev .
 docker build -f testbeds/metropolis/devices/operations/scada/Dockerfile -t metropolis/scada:dev .
@@ -180,9 +194,11 @@ docker build -f testbeds/metropolis/devices/operations/historian/Dockerfile -t m
 docker build -f testbeds/metropolis/devices/operations/engineering_workstation/Dockerfile -t metropolis/engineering:dev .
 ```
 
-The [device README](testbeds/metropolis/devices/README.md) lists the rest,
-including the attack-lab images. These commands create local images only; they
-do not create GNS3 templates or place nodes in a project.
+These are examples. Build **every image required by the selected inventory**
+using the complete list in the [device README](testbeds/metropolis/devices/README.md#build-the-images),
+including the Open vSwitch and attack-lab images. Images must exist on the
+Docker compute that hosts the nodes. Building them does not create GNS3
+templates or place nodes in a project.
 
 ### 3. Create the templates and topology
 
@@ -191,28 +207,31 @@ appliance once in the GUI; the Open vSwitch image is registered as a Docker
 template alongside the device images. Then:
 
 ```bash
-python scripts/gns3/run.py register_templates --check   # registry vs inventory
-python scripts/gns3/run.py register_templates           # one template per image
-python scripts/gns3/run.py build_topology --plan        # what would be created
-python scripts/gns3/run.py build_topology               # create project, nodes, links
+uv run python scripts/gns3/run.py register_templates --check   # registry vs inventory
+uv run python scripts/gns3/run.py register_templates           # one template per image
+uv run python scripts/gns3/run.py build_topology --plan         # what would be created
+uv run python scripts/gns3/run.py build_topology                # create project, nodes, links
 ```
 
 `build_topology` reads `initial_devices.yaml`, `infrastructure.yaml`, and
 `links.yaml`, so node names, addresses, and cabling come from those files rather
-than being entered by hand. It also derives the GNS3 port numbers the switch
-specifications leave as a `TODO`; `--write-ports` writes that mapping out.
+than being entered by hand. It derives GNS3 adapter and port numbers from the
+declared link and switch-port roles; `--write-ports` writes the resolved mapping
+out. The [switch reference](testbeds/metropolis/switch/README.md) is generated
+from those declarations.
 
 ### 4. Start the lab and load the router configurations
 
 ```bash
-python scripts/gns3/run.py lab_lifecycle --start
-python scripts/gns3/run.py build_topology --configure-routers
+uv run python scripts/gns3/run.py lab_lifecycle --start
+uv run python scripts/gns3/run.py build_topology --configure-routers
 ```
 
-The lifecycle command starts switches, then routers, then publishers, then
-polling clients, so nothing exhausts its retries against a node that is still
-booting. `--configure-routers` logs into each VyOS console, applies its script,
-and reports any address the router does not come back with.
+The lifecycle command starts switches and routers first, then field instruments
+and actuators, controllers and services, and finally polling clients.
+`--configure-routers` logs into each VyOS console, applies its script and the
+generated firewall policy, and reports any address the router does not come
+back with.
 
 The builder reads `device_instances/initial_devices.yaml` and supplies each
 node's environment to its Docker template. The shared startup script applies
@@ -229,8 +248,11 @@ Check each node's console for startup or connection messages and confirm routing
 between the subnets you care about. Then capture on the links you selected:
 
 ```bash
-python scripts/gns3/run.py capture_traffic --list
-python scripts/gns3/run.py capture_traffic --links link-core-plant --duration 60
+uv run python scripts/gns3/run.py capture_traffic --list
+uv run python scripts/gns3/run.py capture_traffic --coverage
+uv run python scripts/gns3/run.py capture_traffic --links link-core-plant --duration 60
+# To select every built, capturable physical link after reviewing coverage:
+uv run python scripts/gns3/run.py capture_traffic --all-built --coverage --duration 60
 ```
 
 The capture command retains the GNS3 server-side original and copies each
@@ -239,18 +261,40 @@ a manifest and hashes. For dosing, capture `attach-dosing-analyzer` for local
 Modbus, both dosing drive attachments for cyclic EtherNet/IP, and
 `link-plant-cell-dosing-uplink` for routed SCADA polling. For filtration,
 capture `attach-filtration-dp`, both backwash actuator attachments, and
-`link-plant-cell-filtration-uplink`. See the
+`link-plant-cell-filtration-uplink`. For disinfection, capture
+`attach-disinfection-analyzer`, both pump attachments,
+`link-plant-cell-disinfection-uplink`, and `attach-hmi-disinfection` for local
+and routed traffic. For remote sites, capture `attach-reservoir-level`,
+`attach-reservoir-pump`, and `link-reservoir-wan`; use
+`attach-raw-water-level`, `attach-raw-water-pump`, and `link-raw-water-wan`
+for the raw-water site. `--coverage` distinguishes built links from declared
+segments that are not cabled. A single uplink does not observe all local
+traffic; inspect the copied PCAPs before claiming coverage. See the
 [GNS3 capture guide](scripts/gns3/README.md#capture-coverage-and-files).
+
+For a combined run on an already started lab, collect PCAPs and device logs
+under one run ID:
+
+```bash
+uv run python scripts/gns3/run.py experiment_run --duration 60 \
+  --docker-host local=ssh://gns3@gns3-vm
+```
+
+Replace the Docker host URI with your GNS3 compute's connection. Add
+`--start-lab` for a fresh lab or `--configure-routers` to apply router
+configuration before capturing. The command records a run manifest and
+timeline, and reports missing capture or log sources; it does not launch an
+attack script. See the [experiment guide](scripts/gns3/README.md#experiment-device-logs).
 
 ### 6. Generate attack traffic
 
-With the lab running, use the experiment toolkit. Every tool takes a dry run
-first:
+With the lab running, inspect an attack command with `--dry-run` before sending
+traffic. Live attack commands require the lab acknowledgement:
 
 ```bash
-python scripts/attacks/run.py network_recon_scan --dry-run      # nothing sent
+uv run python scripts/attacks/run.py network_recon_scan --dry-run      # nothing sent
 export METROPOLIS_LAB_ACK=yes
-python scripts/attacks/run.py network_recon_scan                # scans the lab
+uv run python scripts/attacks/run.py network_recon_scan                # scans the lab
 ```
 
 See [scripts/attacks/README.md](scripts/attacks/README.md) for the full list,
@@ -264,35 +308,45 @@ Worth repeating, because these bound what you can conclude:
 - **Firewall runtime behavior is unverified.** Offline policy checks and router
   command generation exist, but enforcement needs the user's GNS3 check. Same-
   VLAN traffic is outside the router policy; the simulated WAN has no IPsec.
-- **Encryption stops at CoAP.** MQTT over TLS works, with a lab CA and a
-  verified handshake, and the sensor, SCADA, the HMI, and the historian can all
-  use it. CoAP has no DTLS, so there is no encrypted CoAP traffic to capture.
-- **A light process model, not a hydraulic one.** The PLC's registers are
-  coupled to the pump coil and to each other, so telemetry moves and the sensor
-  agrees with the registers. It is not a validated model of a water-treatment
-  process, so a register write is not a model of operational damage.
-- **Scenario playback is not built.** Templates, topology, router configuration,
-  lifecycle, and capture are automated; running a *scripted* experiment that
-  starts services, replays traffic, and stops captures on cue is not.
+- **Some protocols remain plaintext.** MQTT over TLS works with the lab CA for
+  the sensor, SCADA, HMI, and historian. CoAP has no DTLS in this testbed, and
+  the remote-site WAN has no IPsec yet.
+- **Process behavior is simplified.** Intake has a small coupled PLC model;
+  newer cells and remote instruments emit independent readings. A register
+  write is not a validated model of physical process damage.
+- **Attack playback is separate from experiment collection.** `experiment_run`
+  coordinates startup, capture, logs, and run metadata. It does not schedule or
+  launch an attack; run the selected attack command separately and record its
+  timing with the experiment.
 
 ## Dataset layout
 
-Each experiment should have a versioned dataset folder, for example
+Metropolis has a versioned dataset folder, for example
 `testbeds/metropolis/datasets/water_treatment_v1/`:
 
 ```text
 testbeds/metropolis/datasets/water_treatment_v1/
-├── topology/          # Sites, address plan, routers, switches, and links
-├── device_instances/  # Named nodes, addresses, roles, and image settings
-├── protocol_profiles/ # Modbus maps, MQTT topics, and security settings
-├── scenarios/         # Normal operation and individual experiments
-├── metadata/          # Capture points, labels, timestamps, and run details
-└── captures/          # PCAPs; generated captures are Git-ignored
+├── topology/                 # Sites, networks, links, firewall policy
+├── device_instances/         # Nodes, addresses, roles, and image settings
+├── protocol_profiles/        # Reserved for protocol definitions
+├── scenarios/                # Reserved for scenario definitions
+├── metadata/                 # Reserved for dataset metadata
+├── captures/<run-id>/        # Copied PCAPs and capture manifest
+└── runs/<run-id>/            # Run manifest, timeline, logs, and features
+    ├── manifest.json
+    ├── timeline.jsonl
+    ├── logs/                  # Device records, syslog, and raw output
+    └── features/              # Extracted and cleaned packet CSVs/reports
 ```
 
 Keep reusable device behaviour under `testbeds/metropolis/devices/`, and per-run
 assignments under the versioned dataset. Create a new dataset version rather
 than silently changing the configuration behind an existing capture set.
+Generated captures and runs are excluded from Git. The empty
+`protocol_profiles/`, `scenarios/`, and `metadata/` directories do not yet hold
+the current device settings or experiment definitions.
+See the [dataset guide](testbeds/metropolis/datasets/water_treatment_v1/README.md)
+and [feature pipeline](scripts/README.md#dataset-processing-pipeline).
 
 ## Python package
 
@@ -317,19 +371,26 @@ print(plan["testbed_id"], len(plan["networks"]))
 ```
 
 The loader accepts `testbed_id` and `dataset_version` for future testbeds and
-versions. Data ingestion, feature extraction, provenance modelling, and
+versions. Stage-one PCAP feature extraction and stage-two conservative cleaning
+are implemented as scripts; labelling, provenance modelling, and model
 evaluation remain future work. For a runnable example that imports the package
 and loads the v1 plan into a pandas table, see
 [`scripts/test_metropolis_import.ipynb`](scripts/test_metropolis_import.ipynb).
 The address plan ships in built distributions, so the loader works without a
 checkout.
 
-To cross-check the address plan, device inventory, router interfaces and static
-routes, and switch VLAN specs, run:
+To cross-check the address plan, device inventory, links, router interfaces and
+OSPF declarations, and switch VLAN specs, run:
 
 ```bash
 uv run python scripts/validate_metropolis_topology.py
+uv run python scripts/gns3/run.py render_firewall --check
 ```
+
+This topology check is separate from `pytest`: it validates the selected
+dataset's declared nodes, addresses, links, router scripts, and switch roles.
+The unit tests exercise reusable device and tooling behavior. Adding another
+instance of an existing device model should not require a new unit test.
 
 Add `--report testbeds/metropolis/datasets/water_treatment_v1/topology/validation-report.md`
 to save a readable cross-reference.
@@ -345,6 +406,8 @@ testbeds/metropolis/                      Metropolis testbed assets
   datasets/                               Versioned topology, instances, scenarios, and captures
 scripts/attacks/                          Attack traffic generator
 scripts/gns3/                             GNS3 controller automation
+scripts/extract_metropolis_features.py    PCAP feature extraction
+scripts/clean_metropolis_features.py      Conservative feature cleaning
 scripts/run_gotham_pipeline.py            Gotham CSV cleaning and labelling
 src/metropolis/                           Python research package
 tests/                                    Tests for the Python package and toolkit
@@ -359,8 +422,9 @@ uv run pytest
 uv build
 ```
 
-GitHub Actions runs lint, formatting checks, tests, package builds, and an import
-smoke test. These checks do not build or start the GNS3 testbed.
+GitHub Actions runs lint, formatting checks, unit tests, standalone topology
+validation, package builds, and an import smoke test. These checks do not build
+or start the GNS3 testbed.
 
 ## Citation
 

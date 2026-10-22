@@ -237,5 +237,13 @@ if __name__ == "__main__":
         from filtration_controller import main as filtration_main
 
         filtration_main()
+    elif cell_role == "disinfection":
+        from disinfection_controller import main as disinfection_main
+
+        disinfection_main()
+    elif cell_role == "remote_site":
+        from remote_site_controller import main as remote_site_main
+
+        remote_site_main()
     else:
         main()

@@ -29,6 +29,15 @@ assert hmi_spec and hmi_spec.loader
 hmi_web = importlib.util.module_from_spec(hmi_spec)
 sys.modules[hmi_spec.name] = hmi_web
 hmi_spec.loader.exec_module(hmi_web)
+sys.path.insert(0, str(DEVICES / "operations/hmi"))
+sys.path.insert(0, str(DEVICES / "runtime"))
+hmi_sim_spec = importlib.util.spec_from_file_location(
+    "hmi_simulator_tests", DEVICES / "operations/hmi/hmi_simulator.py"
+)
+assert hmi_sim_spec and hmi_sim_spec.loader
+hmi_simulator = importlib.util.module_from_spec(hmi_sim_spec)
+sys.modules[hmi_sim_spec.name] = hmi_simulator
+hmi_sim_spec.loader.exec_module(hmi_simulator)
 
 
 class Publisher:
@@ -207,6 +216,36 @@ def test_filtration_profile_and_alarm_payloads():
     assert payload["confirmed_outputs"] == 3
     assert payload["quality"] == "degraded"
     assert payload["alarms"] == [scada.ALARM_NAMES[4]]
+
+
+def test_disinfection_profile_keeps_hmi_command_and_plc_reading_distinct():
+    panel = hmi_web.HmiState(
+        "MET-HMI-DISINFECTION-01",
+        1.0,
+        cell="disinfection",
+        setpoint_command="residual_setpoint",
+        setpoint_unit="mg/L",
+        setpoint_max=10.0,
+    )
+    panel.set_setpoint(1.5)
+    request = panel.take_pending_command()
+    target = scada.Target("disinfection", "10.20.13.10", "disinfection", "status")
+    assert scada.validate_command(target, request, now=datetime.now(timezone.utc)) == 15
+    request["value"] = 11.0
+    with pytest.raises(ValueError, match="between 0 and 10"):
+        scada.validate_command(target, request, now=datetime.now(timezone.utc))
+
+    telemetry = scada.decode_registers(target, [9, 1, 1000, 7, 15, 0])
+    assert telemetry["residual_mg_l"] == 0.9
+    assert telemetry["setpoint"] == 1.5
+    assert telemetry["pump_status"] == 1
+    assert telemetry["dose_output_percent"] == 100
+
+
+def test_hmi_uses_inventory_node_name_over_image_default(monkeypatch):
+    monkeypatch.setenv("NODE_HOSTNAME", "MET-HMI-DISINFECTION-01")
+    monkeypatch.setenv("DEVICE_NAME", "MET-HMI-INTAKE-01")
+    assert hmi_simulator.configured_name() == "MET-HMI-DISINFECTION-01"
 
 
 def test_future_timestamp_is_not_accepted():

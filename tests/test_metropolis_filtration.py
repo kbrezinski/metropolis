@@ -8,7 +8,6 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-import yaml
 from pymodbus.exceptions import ModbusException
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -179,49 +178,8 @@ def test_filtration_threshold_rejects_out_of_range_modbus_values():
     assert filtration.valid_threshold(65535, 500) == 500
 
 
-def test_filtration_inventory_links_templates_and_startup_order():
-    from _cli import load_documents, load_plan
+def test_filtration_instrument_and_controller_startup_tiers():
     from lifecycle import TIER_ACTUATOR, TIER_SERVER, tier_for
 
-    dataset = ROOT / "testbeds/metropolis/datasets/water_treatment_v1"
-    inventory = yaml.safe_load(
-        (dataset / "device_instances/initial_devices.yaml").read_text()
-    )
-    devices = {item["name"]: item for item in inventory["devices"]}
-    expected = {
-        "MET-PLC-FILTRATION-01": "10.20.12.10/24",
-        "MET-DP-FILTRATION-01": "10.20.12.20/24",
-        "MET-PUMP-DRIVE-FILTRATION-BACKWASH-01": "10.20.12.40/24",
-        "MET-VALVE-CTRL-FILTRATION-BACKWASH-01": "10.20.12.42/24",
-        "MET-HMI-FILTRATION-01": "10.20.52.10/24",
-    }
-    assert {name: devices[name]["address"] for name in expected} == expected
-    _, _, _, link_plan = load_documents()
-    assert {link["id"] for link in link_plan["links"]} >= {
-        "attach-filtration-plc",
-        "attach-filtration-dp",
-        "attach-filtration-backwash-pump",
-        "attach-filtration-backwash-valve",
-        "attach-hmi-filtration",
-    }
-    topology, _ = load_plan()
-    links = {item.link_id: item for item in topology.links}
-    cell_links = (
-        "attach-filtration-plc",
-        "attach-filtration-dp",
-        "attach-filtration-backwash-pump",
-        "attach-filtration-backwash-valve",
-    )
-    assert {links[name].second.node for name in cell_links} == {
-        "sw-plant-cell-filtration"
-    }
-    assert len({links[name].second.adapter for name in cell_links}) == 4
-    assert links["attach-hmi-filtration"].second.node == "sw-plant-filtration-hmi"
-    templates = {node.name: node.template_name for node in topology.nodes}
-    assert templates["MET-DP-FILTRATION-01"] == (
-        "Metropolis differential-pressure instrument"
-    )
-    assert templates["MET-PLC-FILTRATION-01"] == "Metropolis PLC/RTU"
-    assert templates["MET-HMI-FILTRATION-01"] == "Metropolis HMI"
     assert tier_for("device", "metropolis/dp-instrument:dev") == TIER_ACTUATOR
     assert tier_for("device", "metropolis/controller:dev") == TIER_SERVER

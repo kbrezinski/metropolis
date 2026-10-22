@@ -6,15 +6,14 @@ This is a living, concise plan. Record new ideas and decisions here when we disc
 
 Expand the GNS3 water-treatment network one cell at a time. Prioritize credible packet timing, polling rates, and value-change patterns; physically accurate values and cross-cell process coupling are not required. Check images, links, subnets, routes, and capture coverage for each addition. Retain syslog events and collection metadata for later analysis; treat ordinary Docker output as simulator diagnostics.
 
-Intake, dosing, and filtration HMI requests now reach PLC setpoint registers through SCADA and receive readback acknowledgements. The three cells report communication and actuator alarms, and the panels distinguish stale and unavailable telemetry. Filtration has five declared and implemented nodes on VLANs 12 and 52, with local Modbus polling, cyclic EtherNet/IP backwash I/O, and central SCADA polling. These behaviors have offline checks; their startup, packet timing, and alarm paths have not been verified in live GNS3.
+The intake, dosing, filtration, and disinfection cells have declared and implemented nodes. Their HMIs send setpoints through SCADA and receive PLC register readback acknowledgements. The reservoir and raw-water sites now have networked level instruments and pump drives around their RTUs, with read-only central SCADA polling. Local devices use Modbus TCP and cyclic EtherNet/IP; the WAN carries routed RTU polls without IPsec. These paths have offline checks, but startup, packet timing, and alarms have not been verified in live GNS3. Measurements are simple and independent of physical process behavior.
 
 ### Testbed features
 
-- [ ] Scope disinfection on existing VLANs 13 and 53: a PLC, networked residual-quality analyzer, suitable disinfection actuator, HMI, and central SCADA polling. Choose the actuator and protocol from the intended process behavior.
-- [ ] Give the reservoir and raw-water sites networked field instruments and actuators around their existing RTUs, then add central SCADA polling so the WAN carries regular operational traffic. Keep all new field links networked rather than hardwired.
+- [ ] Add route-based site-to-site IPsec tunnels between the WAN hub and both remote-site routers. Route operational traffic through the tunnels, keep the simulated WAN as the untrusted underlay, and add offline checks for tunnel configuration and routed paths.
 - [ ] Give the declared DMZ and enterprise networks a purposeful, controlled data or administration path, such as a DMZ relay and enterprise consumer; define the service and firewall flows before adding hosts.
 - [ ] Explore paired plant and operations aggregation switches with dual-uplink access switches, then consider DMZ, WAN, and remote-site redundancy. Revisit router uplinks and Open vSwitch RSTP before adding loops; these are proposals, not declared nodes.
-- [ ] Consider one additional interoperable protocol where it has a realistic peer and observable traffic, such as OPC UA for supervisory exchange or DNP3 for remote telemetry. Separately decide whether CoAP security/features, MQTT ACLs, or a remote-site tunnel variant serve a research scenario; document simulator fidelity limits.
+- [ ] Consider one additional interoperable protocol where it has a realistic peer and observable traffic, such as OPC UA for supervisory exchange or DNP3 for remote telemetry. Separately decide whether CoAP security/features or MQTT ACLs serve a research scenario; document simulator fidelity limits.
 
 ### GNS3 tooling and cleanup
 
@@ -22,6 +21,7 @@ Intake, dosing, and filtration HMI requests now reach PLC setpoint registers thr
 - [ ] Make the GNS3 builder detect stale image, environment, and adapter settings when it reuses a node by name; plan how to report or reconcile drift before expanding the inventory.
 - [ ] Fill the empty `protocol_profiles/` directory with the current register maps, MQTT topics, EtherNet/IP assemblies, service settings, and timing defaults; check profiles against inventory and simulator configuration. Preserve stable per-cell SCADA polling rates as targets are added.
 - [ ] Add the existing firewall policy as an optional document in `metropolis.topology`, including load/save and validation; have the GNS3 compiler consume that model instead of reading the YAML separately.
+- [ ] Make user-defined dataset checks as thorough as the bundled testbed checks: remove the fixed `water_treatment_v1` path from the detailed validator, catch duplicate assigned device IPs in generic checks, and keep reference-topology assertions separate from reusable device and builder tests.
 
 ### Attack scripts — later
 
