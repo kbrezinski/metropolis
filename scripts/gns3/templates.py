@@ -71,7 +71,12 @@ TEMPLATES: tuple[ImageTemplate, ...] = (
     spec(
         "Metropolis PLC/RTU",
         "metropolis/controller:dev",
-        description="Modbus TCP controller; PLC or RTU role by DEVICE_ROLE",
+        description="Modbus TCP controller with intake EtherNet/IP actuator client",
+    ),
+    spec(
+        "Metropolis networked actuator",
+        "metropolis/actuator:dev",
+        description="EtherNet/IP duty/standby pump drive or valve controller",
     ),
     spec(
         "Metropolis MQTT/CoAP sensor",

@@ -12,6 +12,8 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/* \
     && pip install --no-cache-dir pymodbus==3.8.6
 COPY testbeds/metropolis/devices/controllers/plc/modbus_controller.py /opt/metropolis/modbus_controller.py
+COPY testbeds/metropolis/devices/controllers/plc/process_model.py /opt/metropolis/process_model.py
+COPY testbeds/metropolis/devices/runtime/ethernet_ip.py /opt/metropolis/ethernet_ip.py
 COPY testbeds/metropolis/devices/runtime/network-entrypoint.sh /usr/local/bin/metropolis-entrypoint
 RUN chmod +x /usr/local/bin/metropolis-entrypoint
 

@@ -79,6 +79,33 @@ def test_every_registered_template_is_used_or_accounted_for(plan):
     assert len(used) == len(topology.nodes), "node names must be unique"
 
 
+def test_intake_actuators_have_distinct_built_ports(plan):
+    topology, _ = plan
+    links = {item.link_id: item for item in topology.links}
+    names = (
+        "attach-intake-duty-drive",
+        "attach-intake-standby-drive",
+        "attach-intake-valve-controller",
+    )
+    switch_ports = []
+    for link_id in names:
+        link = links[link_id]
+        assert link.first.adapter == 0
+        assert link.second.node == "sw-plant-cell-intake"
+        switch_ports.append(link.second.adapter)
+    assert len(set(switch_ports)) == 3
+    actuator_nodes = [
+        node
+        for node in topology.nodes
+        if node.name.startswith("MET-PUMP-DRIVE-")
+        or node.name == "MET-VALVE-CTRL-INTAKE-01"
+    ]
+    assert len(actuator_nodes) == 3
+    assert {node.template_name for node in actuator_nodes} == {
+        "Metropolis networked actuator"
+    }
+
+
 def test_switch_port_numbers_follow_the_specification_order():
     _, _, infrastructure, _ = load_documents()
     mapping = port_map(infrastructure)

@@ -22,9 +22,10 @@ from client import Gns3Client
 # Startup tiers. A lower tier starts first. Anything unlisted is a device.
 TIER_SWITCH = 0
 TIER_ROUTER = 1
-TIER_SERVER = 2
-TIER_PRODUCER = 3
-TIER_CLIENT = 4
+TIER_ACTUATOR = 2
+TIER_SERVER = 3
+TIER_PRODUCER = 4
+TIER_CLIENT = 5
 
 INFRASTRUCTURE_TIERS = {"switch": TIER_SWITCH, "router": TIER_ROUTER}
 
@@ -50,6 +51,8 @@ def tier_for(kind: str, image: str | None) -> int:
     """The startup tier for a node, from its kind and image."""
     if kind in INFRASTRUCTURE_TIERS:
         return INFRASTRUCTURE_TIERS[kind]
+    if image == "metropolis/actuator:dev":
+        return TIER_ACTUATOR
     if image in SERVER_IMAGES:
         return TIER_SERVER
     if image in PRODUCER_IMAGES:

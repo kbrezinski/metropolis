@@ -70,13 +70,13 @@ def small() -> Topology:
 
 def test_every_node_becomes_a_graph_node(bundled):
     graph, kinds, _ = _graphs(bundled)
-    assert graph.number_of_nodes() == 48
+    assert graph.number_of_nodes() == 51
     assert set(graph.nodes()) == set(kinds)
 
 
 def test_every_link_becomes_a_graph_edge(bundled):
     graph, _, _ = _graphs(bundled)
-    assert graph.number_of_edges() == 42
+    assert graph.number_of_edges() == 45
 
 
 def test_node_kinds_come_from_the_topology(bundled):
@@ -89,7 +89,7 @@ def test_node_kinds_come_from_the_topology(bundled):
     counts: dict[str, int] = {}
     for kind in kinds.values():
         counts[kind] = counts.get(kind, 0) + 1
-    assert counts == {"router": 6, "switch": 8, "segment": 13, "device": 21}
+    assert counts == {"router": 6, "switch": 8, "segment": 13, "device": 24}
 
 
 def test_endpoint_labels_carry_their_address(bundled):

@@ -27,6 +27,7 @@ makes the server match it.
 
 ```bash
 # 1. Build the images, then register a template for each
+# Include metropolis/actuator:dev for the intake duty/standby drives and valve.
 python scripts/gns3/run.py register_templates --check
 python scripts/gns3/run.py register_templates
 

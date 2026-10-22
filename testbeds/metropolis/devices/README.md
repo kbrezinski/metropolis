@@ -37,6 +37,7 @@ publish Docker ports — they bind to their own GNS3 interfaces.
 | Device | Source | What it does | Suggested network |
 |---|---|---|---|
 | PLC / RTU | `controllers/plc/` | Modbus TCP server with a small holding-register and coil map; one image serves either role | Plant VLANs 10-13, or remote site LANs 14-15 |
+| Networked actuator | `field/actuators/` | EtherNet/IP explicit-message pump drive or valve controller | Intake VLAN 10, `10.20.10.0/24` |
 | MQTT and CoAP sensor | `field/sensors/` | Publishes MQTT telemetry; answers CoAP discovery and status on UDP 5683 | Plant or remote-site LAN |
 | MQTT broker | `services/mqtt_broker/` | Authenticated Mosquitto broker for telemetry and HMI commands | VLAN 23, `10.20.23.0/24` |
 | SCADA collector | `operations/scada/` | Polls a Modbus controller and republishes the snapshot over MQTT | VLAN 20, `10.20.20.0/24` |
@@ -52,9 +53,11 @@ publish Docker ports — they bind to their own GNS3 interfaces.
 | Mirai chain | `attack/mirai/` | Command console, scan listener, loaders, and an inert bot agent | Attack lab `10.99.10.0/24` |
 | Merlin C2 | `attack/merlin/` | C2 console and an inert agent | Attack lab `10.99.10.0/24` |
 
-Actuators are represented by writable Modbus coils on the PLC and RTU — pump run
-and valve open — rather than separate containers. Experiment runs collect Docker
-output with `scripts/gns3/run.py experiment_run`.
+The intake PLC commands a duty pump drive, a standby pump drive, and a valve
+controller as separate GNS3 Docker nodes. Its Modbus coils remain the operator
+commands; its discrete inputs 0–2 report confirmed duty, standby, and valve
+status. Other PLC/RTU instances retain the internal coil model. Experiment runs
+collect Docker output with `scripts/gns3/run.py experiment_run`.
 
 ## Build the images
 
@@ -63,6 +66,7 @@ Dockerfiles can copy the shared model code.
 
 ```bash
 docker build -f testbeds/metropolis/devices/controllers/plc/Dockerfile -t metropolis/controller:dev .
+docker build -f testbeds/metropolis/devices/field/actuators/Dockerfile -t metropolis/actuator:dev .
 docker build -f testbeds/metropolis/devices/field/sensors/Dockerfile -t metropolis/mqtt-sensor:dev .
 docker build -f testbeds/metropolis/devices/services/mqtt_broker/Dockerfile -t metropolis/mqtt-broker:dev .
 docker build -f testbeds/metropolis/devices/operations/scada/Dockerfile -t metropolis/scada:dev .
@@ -127,6 +131,7 @@ Beyond the shared `NODE_*` values above:
 | Image | Variables |
 |---|---|
 | `metropolis/controller:dev` | `DEVICE_ROLE=PLC`, `MODBUS_HOST=0.0.0.0`, `MODBUS_PORT=502`, `PROCESS_LEVEL=650`, `PROCESS_FLOW=120`, `PROCESS_QUALITY=950` |
+| `metropolis/actuator:dev` | `ACTUATOR_ROLE=pump_drive\|valve_controller`, `ACTUATOR_FAULTED=false`, `EIP_PORT=44818` |
 | `metropolis/mqtt-sensor:dev` | `SENSOR_TYPE`, `SENSOR_VALUE`, `PLC_HOST`, `SENSOR_REGISTER`, `SENSOR_DIVISOR`, `MQTT_USERNAME`, `MQTT_PASSWORD`, `MQTT_HOST`, `MQTT_PORT=1883`, `MQTT_TOPIC`, `PUBLISH_MODE=persistent\|per-message`, `COAP_ENABLED=true`, `COAP_PORT=5683` |
 | `metropolis/mqtt-broker:dev` | Builds its password file at startup. Synthetic accounts: `lab_device` / `LabOnly_Device_2026` and `lab_operator` / `LabOnly_MQTT_2026`. Listens on TCP 1883. |
 | `metropolis/scada:dev` | `PLC_HOST`, `MODBUS_PORT=502`, `MODBUS_UNIT_ID=1`, `MQTT_USERNAME`, `MQTT_PASSWORD`, `MQTT_HOST`, `MQTT_PORT`, `MQTT_TOPIC`, `POLL_INTERVAL=5` |
@@ -204,12 +209,22 @@ Holding registers, using zero-based protocol addresses:
 | 2 | Water quality | Engineering units × 10; 950 = 95.0% |
 | 3 | Heartbeat counter | Increments once per second |
 
-Coils 0 and 1 model a pump-run command and a valve-open command.
+Coils 0 and 1 are the pump-run and valve-open commands. On the intake PLC,
+the controller sends these commands over EtherNet/IP to `10.20.10.40` (duty
+drive), `.41` (standby drive), and `.42` (valve controller). If the duty drive
+does not respond, the standby drive is commanded to run. The process model uses
+confirmed pump and valve state. All three nodes share the PLC's existing
+`10.20.10.0/24` VLAN; no additional route is needed. Set
+`ACTUATOR_FAULTED=true` on the duty drive to exercise standby takeover. The
+EtherNet/IP simulator
+implements RegisterSession and SendRRData with CIP Get/Set Attribute Single on
+lab-specific class `0x64`, instance 1, attribute 1 (Boolean active state), on
+TCP 44818. It does not implement a vendor drive profile or cyclic I/O.
 
-There is no hydraulic cause and effect: writing a register changes what the
-device reports and nothing else. `TODO(Metropolis)`: define a realistic process
-model and per-cell register maps before treating generated traffic as
-operationally representative.
+The controller's coupled process model changes level, flow, and quality over
+time. It is a traffic-generating approximation, not a hydraulic simulation.
+`TODO(Metropolis)`: define per-cell process models and register maps before
+treating generated traffic as operationally representative.
 
 ## Routine traffic, Telnet, DNS, and time
 

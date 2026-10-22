@@ -315,6 +315,33 @@ links:
       - node: MET-SENSOR-INTAKE-01
       - node: sw-plant-cell-intake
 
+  - id: attach-intake-duty-drive
+    kind: access
+    description: Intake duty pump drive on the plant intake segment
+    network_id: plant-intake
+    cidr: 10.20.10.0/24
+    endpoints:
+      - node: MET-PUMP-DRIVE-INTAKE-DUTY-01
+      - node: sw-plant-cell-intake
+
+  - id: attach-intake-standby-drive
+    kind: access
+    description: Intake standby pump drive on the plant intake segment
+    network_id: plant-intake
+    cidr: 10.20.10.0/24
+    endpoints:
+      - node: MET-PUMP-DRIVE-INTAKE-STANDBY-01
+      - node: sw-plant-cell-intake
+
+  - id: attach-intake-valve-controller
+    kind: access
+    description: Intake valve controller on the plant intake segment
+    network_id: plant-intake
+    cidr: 10.20.10.0/24
+    endpoints:
+      - node: MET-VALVE-CTRL-INTAKE-01
+      - node: sw-plant-cell-intake
+
   - id: attach-intake-legacy
     kind: access
     description: Legacy Telnet gateway on the plant intake segment

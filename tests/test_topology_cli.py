@@ -33,7 +33,7 @@ def test_show_can_read_a_dataset_directory(capsys):
     out = capsys.readouterr().out
     # The same topology as the bundled copy, read from disk instead.
     assert "networks 24" in out
-    assert "devices 21" in out
+    assert "devices 24" in out
     assert "plant-intake" in out
 
 

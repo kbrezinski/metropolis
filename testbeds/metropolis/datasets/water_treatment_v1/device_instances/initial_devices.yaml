@@ -10,7 +10,7 @@ devices:
     subnet: 10.20.10.0/24
     address: 10.20.10.10/24
     gateway: 10.20.10.1
-    protocols: [modbus-tcp]
+    protocols: [modbus-tcp, ethernet-ip]
     environment:
       NODE_HOSTNAME: MET-PLC-INTAKE-01
       NODE_IP: 10.20.10.10/24
@@ -19,6 +19,51 @@ devices:
       PROCESS_LEVEL: "650"
       PROCESS_FLOW: "120"
       PROCESS_QUALITY: "950"
+      EIP_DUTY_HOST: 10.20.10.40
+      EIP_STANDBY_HOST: 10.20.10.41
+      EIP_VALVE_HOST: 10.20.10.42
+
+  - name: MET-PUMP-DRIVE-INTAKE-DUTY-01
+    model: testbeds/metropolis/devices/field/actuators
+    image: metropolis/actuator:dev
+    site: treatment_plant
+    subnet: 10.20.10.0/24
+    address: 10.20.10.40/24
+    gateway: 10.20.10.1
+    protocols: [ethernet-ip]
+    environment:
+      NODE_HOSTNAME: MET-PUMP-DRIVE-INTAKE-DUTY-01
+      NODE_IP: 10.20.10.40/24
+      NODE_GATEWAY: 10.20.10.1
+      ACTUATOR_ROLE: pump_drive
+
+  - name: MET-PUMP-DRIVE-INTAKE-STANDBY-01
+    model: testbeds/metropolis/devices/field/actuators
+    image: metropolis/actuator:dev
+    site: treatment_plant
+    subnet: 10.20.10.0/24
+    address: 10.20.10.41/24
+    gateway: 10.20.10.1
+    protocols: [ethernet-ip]
+    environment:
+      NODE_HOSTNAME: MET-PUMP-DRIVE-INTAKE-STANDBY-01
+      NODE_IP: 10.20.10.41/24
+      NODE_GATEWAY: 10.20.10.1
+      ACTUATOR_ROLE: pump_drive
+
+  - name: MET-VALVE-CTRL-INTAKE-01
+    model: testbeds/metropolis/devices/field/actuators
+    image: metropolis/actuator:dev
+    site: treatment_plant
+    subnet: 10.20.10.0/24
+    address: 10.20.10.42/24
+    gateway: 10.20.10.1
+    protocols: [ethernet-ip]
+    environment:
+      NODE_HOSTNAME: MET-VALVE-CTRL-INTAKE-01
+      NODE_IP: 10.20.10.42/24
+      NODE_GATEWAY: 10.20.10.1
+      ACTUATOR_ROLE: valve_controller
 
   - name: MET-RTU-RESERVOIR-01
     model: testbeds/metropolis/devices/controllers/plc
