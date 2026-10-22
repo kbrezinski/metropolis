@@ -49,8 +49,8 @@ def main() -> int:
         "--attack-allow",
         action="append",
         default=[],
-        metavar="SOURCE:TARGET:PROTOCOL:PORT",
-        help="Temporarily permit one inventoried attack-lab source to one target; repeat as needed",
+        metavar="SOURCE-NET:DEST-NET:PROTOCOL:PORT",
+        help="Temporarily permit one attack-lab source CIDR to a destination CIDR; repeat as needed",
     )
     parser.add_argument(
         "--links", nargs="+", help="Declared PCAP links; default is all built links"

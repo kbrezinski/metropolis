@@ -106,8 +106,9 @@ notes](testbeds/metropolis/datasets/water_treatment_v1/README.md).
 define interfaces and OSPF area 0. OSPF neighbors are limited to
 router transit links and the shared WAN; device-facing LANs are passive, and
 enterprise and attack-test networks are advertised passively for return routing. When routers are
-configured through the GNS3 tooling, `topology/firewall-policy.yaml` generates
-default-deny VyOS 1.3 zone rules, including narrow OSPF control-plane
+configured through the GNS3 tooling, `topology/firewall-policy.yaml` grants
+selected LANs or CIDRs access by protocol and port to all hosts in those
+networks, with default-deny VyOS 1.3 zone rules and narrow OSPF control-plane
 allowances. The loader removes the exact static routes installed by earlier
 Metropolis scripts. Attack-lab access requires a recorded per-run exception.
 The simulated WAN still has no IPsec, and same-VLAN traffic bypasses the

@@ -46,19 +46,54 @@ def test_policy_schema_and_all_baseline_paths(documents):
     Draft202012Validator(schema).validate(policy)
     commands, report = compile_policy(DATASET, infrastructure, inventory)
     assert len(commands) == 6
-    assert len(report["baseline_flows"]) == len(policy["flows"])
+    assert len(report["baseline_flows"]) == 27
     assert report["local_subnet_flows"] == []
-    routed = {flow["id"]: flow["routers"] for flow in report["baseline_flows"]}
-    assert routed["scada-intake-modbus"] == ["MET-OT-CORE", "MET-PLANT"]
-    assert routed["scada-reservoir-modbus"] == [
+    routed = {
+        (flow["id"], flow["source"], flow["destination"]): flow["routers"]
+        for flow in report["baseline_flows"]
+    }
+    assert routed[("scada-modbus", "scada", "plant-intake")] == [
+        "MET-OT-CORE",
+        "MET-PLANT",
+    ]
+    assert routed[("scada-modbus", "scada", "reservoir")] == [
         "MET-OT-CORE",
         "MET-OT-WAN",
         "MET-RESERVOIR",
     ]
-    assert routed["reservoir-syslog"] == ["MET-RESERVOIR", "MET-OT-WAN", "MET-OT-CORE"]
+    assert routed[("router-syslog", "router/MET-PLANT", "ot-services")] == [
+        "MET-PLANT",
+        "MET-OT-CORE",
+    ]
+    assert routed[("router-syslog", "router/MET-OT-CORE", "ot-services")] == [
+        "MET-OT-CORE"
+    ]
+    assert routed[("router-syslog", "router/MET-RESERVOIR", "ot-services")] == [
+        "MET-RESERVOIR",
+        "MET-OT-WAN",
+        "MET-OT-CORE",
+    ]
+    assert len(policy["flows"]) < len(report["baseline_flows"])
 
 
-def test_exact_baseline_allow_and_default_drop(documents):
+def _has_rule(lines, source, destination, protocol, port):
+    for line in lines:
+        if not line.endswith(f"source address '{source}'"):
+            continue
+        prefix = line.rsplit(" source address", 1)[0]
+        if all(
+            f"{prefix} {part}" in lines
+            for part in (
+                f"destination address '{destination}'",
+                f"protocol '{protocol}'",
+                f"destination port '{port}'",
+            )
+        ):
+            return True
+    return False
+
+
+def test_subnet_baseline_allow_and_default_drop(documents):
     inventory, infrastructure = documents
     commands, _ = compile_policy(DATASET, infrastructure, inventory)
     core = "\n".join(commands["MET-OT-CORE"])
@@ -66,27 +101,21 @@ def test_exact_baseline_allow_and_default_drop(documents):
     dmz = "\n".join(commands["MET-OT-DMZ"])
     assert "set zone-policy zone MET_e3v20 default-action 'drop'" in core
     assert "set zone-policy zone MET_e3v20 interface 'eth3.20'" in core
-    assert (
-        "set firewall name MET_e3v20_e0 rule 100 source address '10.20.20.10'" in core
-    )
-    assert (
-        "set firewall name MET_e3v20_e0 rule 100 destination address '10.20.10.10'"
-        in core
-    )
-    assert "set firewall name MET_e3v20_e0 rule 100 destination port '502'" in core
-    assert "set firewall name MET_e0_e1v10 rule 100 destination port '502'" in plant
+    assert _has_rule(core.splitlines(), "10.20.20.0/24", "10.20.10.0/24", "tcp", 502)
+    assert _has_rule(core.splitlines(), "10.20.20.0/24", "10.20.11.0/24", "tcp", 502)
+    assert _has_rule(plant.splitlines(), "10.20.20.0/24", "10.20.11.0/24", "tcp", 502)
     assert "set firewall name MET_e0_e3v20 rule 20 state established 'enable'" in core
     assert "set zone-policy zone MET_LOCAL local-zone" in dmz
     assert not any(
-        "source address '10.99.10." in line
+        "source address '10.99.10.0/24'" in line
         for lines in commands.values()
         for line in lines
     )
 
 
-def test_attack_exception_is_narrow_and_follows_the_route(documents):
+def test_attack_exception_is_run_scoped_subnet_rule_and_follows_route(documents):
     inventory, infrastructure = documents
-    exception = parse_attack_exception("MET-MERLIN-AGENT-01:MET-PLC-INTAKE-01:tcp:502")
+    exception = parse_attack_exception("attack-lab:plant-intake:tcp:502")
     commands, report = compile_policy(DATASET, infrastructure, inventory, [exception])
     assert report["attack_exceptions"][0]["routers"] == [
         "MET-OT-DMZ",
@@ -95,38 +124,76 @@ def test_attack_exception_is_narrow_and_follows_the_route(documents):
     ]
     for router in report["attack_exceptions"][0]["routers"]:
         lines = commands[router]
-        assert any("source address '10.99.10.21'" in line for line in lines)
-        assert any("destination address '10.20.10.10'" in line for line in lines)
+        assert _has_rule(lines, "10.99.10.0/24", "10.20.10.0/24", "tcp", 502)
     assert not any(
-        "source address '10.99.10.21'" in line for line in commands["MET-OT-WAN"]
+        "source address '10.99.10.0/24'" in line for line in commands["MET-OT-WAN"]
     )
 
 
-def test_invalid_attack_source_and_missing_device_fail_closed(documents):
+def test_invalid_attack_source_and_unknown_network_fail_closed(documents):
     inventory, infrastructure = documents
-    outside = parse_attack_exception("MET-SCADA-01:MET-PLC-INTAKE-01:tcp:502")
+    outside = parse_attack_exception("scada:plant-intake:tcp:502")
     with pytest.raises(ValueError, match="not on attack-lab"):
         compile_policy(DATASET, infrastructure, inventory, [outside])
-    changed = copy.deepcopy(inventory)
-    changed["devices"] = [
-        device for device in changed["devices"] if device["name"] != "MET-PLC-INTAKE-01"
+    unknown = parse_attack_exception("attack-lab:MET-PLC-INTAKE-01:tcp:502")
+    with pytest.raises(ValueError, match="unknown firewall network selector"):
+        compile_policy(DATASET, infrastructure, inventory, [unknown])
+    outside_target = parse_attack_exception("attack-lab:attack-lab:tcp:502")
+    with pytest.raises(ValueError, match="attack target is on attack-lab"):
+        compile_policy(DATASET, infrastructure, inventory, [outside_target])
+    uncabled = parse_attack_exception("attack-lab:plant-dosing:tcp:502")
+    changed = copy.deepcopy(infrastructure)
+    changed["segments"] = [
+        segment
+        for segment in changed["segments"]
+        if segment["network_id"] != "plant-dosing"
     ]
-    with pytest.raises(ValueError, match="not inventoried"):
-        compile_policy(DATASET, infrastructure, changed)
-    uncabled = parse_attack_exception("MET-MIRAI-BOT-01:MET-PLC-INTAKE-01:tcp:502")
     with pytest.raises(ValueError, match="no declared link"):
-        compile_policy(DATASET, infrastructure, inventory, [uncabled])
+        compile_policy(DATASET, changed, inventory, [uncabled])
 
 
-def test_inventory_address_change_updates_rules(documents):
+def test_baseline_cannot_permit_attack_lab(documents, tmp_path):
+    inventory, infrastructure = documents
+    topology = tmp_path / "topology"
+    topology.mkdir()
+    for name in ("address-plan.yaml", "firewall-policy.yaml", "links.yaml"):
+        (topology / name).write_bytes((DATASET / "topology" / name).read_bytes())
+    policy_path = topology / "firewall-policy.yaml"
+    policy = yaml.safe_load(policy_path.read_text())
+    policy["flows"].append(
+        {
+            "id": "unsafe",
+            "source": "attack-lab",
+            "destination": "plant-intake",
+            "protocol": "tcp",
+            "port": 502,
+        }
+    )
+    policy_path.write_text(yaml.safe_dump(policy))
+    with pytest.raises(ValueError, match="baseline policy cannot permit attack-lab"):
+        compile_policy(tmp_path, infrastructure, inventory)
+
+
+def test_new_hosts_in_existing_vlan_inherit_rule_without_policy_change(documents):
     inventory, infrastructure = documents
     changed = copy.deepcopy(inventory)
     scada = next(item for item in changed["devices"] if item["name"] == "MET-SCADA-01")
     scada["address"] = "10.20.20.99/24"
-    commands, _ = compile_policy(DATASET, infrastructure, changed)
-    core = "\n".join(commands["MET-OT-CORE"])
-    assert "source address '10.20.20.99'" in core
-    assert "source address '10.20.20.10'" not in core
+    original_commands, _ = compile_policy(DATASET, infrastructure, inventory)
+    changed_commands, _ = compile_policy(DATASET, infrastructure, changed)
+    assert changed_commands == original_commands
+
+
+def test_vlan_alias_and_cidr_subrange(documents):
+    inventory, infrastructure = documents
+    exception = parse_attack_exception("10.99.10.0/25:vlan-11:tcp:502")
+    commands, report = compile_policy(DATASET, infrastructure, inventory, [exception])
+    record = report["attack_exceptions"][0]
+    assert record["source_cidr"] == "10.99.10.0/25"
+    assert record["destination_cidr"] == "10.20.11.0/24"
+    assert _has_rule(
+        commands["MET-PLANT"], "10.99.10.0/25", "10.20.11.0/24", "tcp", 502
+    )
 
 
 def test_missing_ospf_advertisement_rejects_policy(documents, tmp_path):
@@ -163,15 +230,35 @@ def test_missing_declared_router_cable_rejects_flow(documents, tmp_path):
 @pytest.mark.parametrize(
     "value",
     [
-        "MET-MERLIN-AGENT-01:MET-PLC-INTAKE-01:tcp:0",
-        "MET-MERLIN-AGENT-01:MET-PLC-INTAKE-01:all:502",
-        "MET-MERLIN-AGENT-01:MET-PLC-INTAKE-01:icmp:502",
-        "MET-MERLIN-AGENT-01:MET-PLC-INTAKE-01:tcp:nope",
+        "attack-lab:plant-intake:tcp:0",
+        "attack-lab:plant-intake:all:502",
+        "attack-lab:plant-intake:icmp:502",
+        "attack-lab:plant-intake:tcp:nope",
     ],
 )
-def test_attack_exception_rejects_broad_or_invalid_protocols(value):
+def test_attack_exception_rejects_invalid_protocols_and_ports(value):
     with pytest.raises(ValueError):
         parse_attack_exception(value)
+
+
+@pytest.mark.parametrize(
+    "selector",
+    ["10.20.10.0/23", "vlan-999", "2001:db8::/64", "10.20.254.0/30"],
+)
+def test_invalid_or_non_lan_selector_fails_closed(documents, selector):
+    inventory, infrastructure = documents
+    exception = (
+        parse_attack_exception(f"attack-lab:{selector}:tcp:502")
+        if ":" not in selector
+        else None
+    )
+    if exception is None:
+        # IPv6 cannot fit the four-part CLI grammar either.
+        with pytest.raises(ValueError):
+            parse_attack_exception(f"attack-lab:{selector}:tcp:502")
+    else:
+        with pytest.raises(ValueError):
+            compile_policy(DATASET, infrastructure, inventory, [exception])
 
 
 def test_reapply_deletes_only_metropolis_owned_config():

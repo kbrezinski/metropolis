@@ -62,9 +62,15 @@ Every command takes `--help`. `build_topology --plan`, `capture_traffic --list`,
 
 ## Routed firewall policy
 
-`topology/firewall-policy.yaml` lists baseline flows by inventoried source and
-destination name, protocol, and destination port. `render_firewall --check`
-resolves current addresses and checks the forward and return paths over declared OSPF peers; without
+`topology/firewall-policy.yaml` lists baseline flows by source and destination
+LAN, protocol, and destination port. Each source or destination accepts an
+address-plan network ID (such as `scada` or `plant-intake`), a `vlan-N` alias,
+or a CIDR contained in one declared LAN. A list of selectors expands to each
+source/destination combination. Rules match the full selected CIDRs, so hosts
+added to those networks inherit the permission. `router/NAME` is a special
+source for syslog emitted by a router's local zone; it uses that router's
+egress address. `render_firewall --check` resolves selectors and checks the
+forward and return paths over declared OSPF peers; without
 `--check`, it prints the flow report and generated VyOS commands as JSON. The
 policy is validated against `schemas/firewall-policy.schema.json`.
 `build_topology --configure-routers` and `experiment_run --configure-routers`
@@ -75,8 +81,8 @@ names appear in the router's reported configuration. Actual packet enforcement
 still requires the user's offline GNS3 validation.
 
 Every routed interface has its own default-drop zone, including a local zone
-for traffic to and from each router. Permitted new flows match exact source and
-destination IPs, protocol, and port; established and related return traffic is
+for traffic to and from each router. Permitted new device flows match source and
+destination CIDRs, protocol, and port; established and related return traffic is
 allowed. Undeclared DMZ, enterprise, and attack-lab flows are denied. A router
 firewall cannot filter two devices sharing one VLAN, such as the intake PLC and
 its drives. OSPF supplies return routes for SCADA and syslog traffic.
@@ -108,20 +114,23 @@ of those old static routes. Running a `.sh` router script manually does not
 remove routes already saved on an appliance; use the loader for this migration.
 
 For a controlled attack experiment, add `--attack-allow
-SOURCE:TARGET:tcp|udp|icmp:PORT` to `experiment_run`, together with
-`--configure-routers`. Use `-` as the port for ICMP. The source must be an
-inventoried node on the attack-lab network; repeat the option to permit more
-than one exact flow. For example:
+SOURCE-NET:DEST-NET:tcp|udp|icmp:PORT` to `experiment_run`, together with
+`--configure-routers`. Use `-` as the port for ICMP. The source CIDR must be
+within `attack-lab`; the destination must be a different declared LAN. Use a
+network ID, VLAN alias, or contained CIDR to choose each side. Repeat the
+option for more than one protocol/port combination. For example:
 
 ```bash
 python scripts/gns3/run.py experiment_run --configure-routers --duration 60 \
-  --attack-allow MET-MERLIN-AGENT-01:MET-PLC-INTAKE-01:tcp:502 \
+  --attack-allow attack-lab:plant-intake:tcp:502 \
   --docker-host local=ssh://gns3@gns3-vm
 ```
 
-The compiler rejects a selected source or target without a declared physical
-link. Some inventoried Mirai support nodes are not cabled in this dataset, so
-they cannot be selected until links and switch ports are added.
+The compiler rejects selectors outside the declared LANs, LANs without a
+declared link, and paths without the required cabled OSPF neighbors. An
+exception can use a narrower contained CIDR, such as `10.99.10.0/25`, when
+the whole attack network is too broad. These are network permissions; local
+traffic within one VLAN does not pass through a router firewall.
 
 The exception is recorded in the run manifest and timeline. The runner
 reapplies the baseline in `finally`, including after capture errors or Ctrl-C,

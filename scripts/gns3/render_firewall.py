@@ -18,8 +18,8 @@ def main() -> int:
         "--attack-allow",
         action="append",
         default=[],
-        metavar="SOURCE:TARGET:PROTOCOL:PORT",
-        help="Show a temporary attack-lab allowance; repeat for multiple flows",
+        metavar="SOURCE-NET:DEST-NET:PROTOCOL:PORT",
+        help="Show a temporary attack-lab network allowance; repeat for multiple flows",
     )
     parser.add_argument(
         "--check", action="store_true", help="Print a summary instead of VyOS commands"

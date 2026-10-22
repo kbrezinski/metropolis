@@ -1,4 +1,4 @@
-"""Compile dataset flows into VyOS 1.3 zone-policy commands, without GNS3.
+"""Compile network-level flows into VyOS 1.3 zone-policy commands offline.
 
 Every routed flow is installed at each router it crosses. A flow within one
 subnet bypasses the routers and is deliberately omitted from the policy.
@@ -9,6 +9,7 @@ from __future__ import annotations
 import re
 from collections import deque
 from dataclasses import dataclass
+from itertools import product
 from ipaddress import IPv4Address, IPv4Interface, IPv4Network, ip_interface, ip_network
 from pathlib import Path
 
@@ -28,8 +29,8 @@ MANAGED_RULESET = re.compile(r"\bfirewall name (MET_[A-Za-z0-9_]+)\b")
 @dataclass(frozen=True)
 class Flow:
     name: str
-    source: str
-    destination: str
+    source: tuple[str, ...]
+    destination: tuple[str, ...]
     protocol: str
     port: int | None
 
@@ -40,6 +41,13 @@ class Router:
     interfaces: dict[str, IPv4Interface]
     advertised: set[IPv4Network]
     ospf_active: set[str]
+
+
+@dataclass(frozen=True)
+class Endpoint:
+    selector: str
+    network: IPv4Network | None
+    router: str | None = None
 
 
 def _routers(infrastructure: dict) -> dict[str, Router]:
@@ -77,8 +85,8 @@ def _routers(infrastructure: dict) -> dict[str, Router]:
 def _flow(record: dict) -> Flow:
     try:
         name = record["id"]
-        source = record["source"]
-        destination = record["destination"]
+        source = _selectors(record["source"])
+        destination = _selectors(record["destination"])
         protocol = record["protocol"]
         port = record.get("port")
     except (KeyError, TypeError) as exc:
@@ -90,18 +98,30 @@ def _flow(record: dict) -> Flow:
             raise ValueError(f"{name}: ICMP has no port")
     elif type(port) is not int or not 1 <= port <= 65535:
         raise ValueError(f"{name}: TCP/UDP port must be 1–65535")
-    if not all(
-        isinstance(value, str) and value for value in (name, source, destination)
-    ):
-        raise ValueError(f"{name}: flow identifiers must be nonempty strings")
+    if not isinstance(name, str) or not name:
+        raise ValueError("flow ID must be a nonempty string")
     return Flow(name, source, destination, protocol, port)
 
 
+def _selectors(value: str | list[str]) -> tuple[str, ...]:
+    entries = [value] if isinstance(value, str) else value
+    if (
+        not isinstance(entries, list)
+        or not entries
+        or any(not isinstance(item, str) or not item for item in entries)
+        or len(set(entries)) != len(entries)
+    ):
+        raise ValueError(f"invalid firewall network selector: {value!r}")
+    return tuple(entries)
+
+
 def parse_attack_exception(value: str) -> Flow:
-    """Parse SOURCE:DESTINATION:PROTOCOL:PORT; use '-' for ICMP's port."""
+    """Parse SOURCE-NET:DEST-NET:PROTOCOL:PORT; '-' means no ICMP port."""
     parts = value.split(":")
     if len(parts) != 4:
-        raise ValueError("attack exception must be SOURCE:TARGET:tcp|udp|icmp:PORT")
+        raise ValueError(
+            "attack exception must be SOURCE-NET:DEST-NET:tcp|udp|icmp:PORT"
+        )
     source, destination, protocol, port_text = parts
     try:
         port = None if port_text == "-" else int(port_text)
@@ -153,6 +173,76 @@ def _owner(routers: dict[str, Router], address: IPv4Address) -> tuple[str, str]:
             f"{address}: expected one directly connected router, got {matches}"
         )
     return matches[0]
+
+
+def _resolve_endpoint(
+    selector: str,
+    networks: list[dict],
+    infrastructure: dict,
+    links: list[dict],
+    routers: dict[str, Router],
+    *,
+    source: bool,
+) -> Endpoint:
+    if selector.startswith("router/"):
+        name = selector.removeprefix("router/")
+        if not source or name not in routers:
+            raise ValueError(f"invalid router source selector {selector!r}")
+        return Endpoint(selector, None, name)
+    by_id = [item for item in networks if item["id"] == selector]
+    by_vlan = []
+    if selector.startswith("vlan-") and selector[5:].isdecimal():
+        by_vlan = [
+            item for item in networks if item.get("vlan_id") == int(selector[5:])
+        ]
+    if by_id or by_vlan:
+        matches = by_id or by_vlan
+        if len(matches) != 1:
+            raise ValueError(f"{selector}: expected one address-plan network")
+        declared = matches[0]
+        network = ip_network(declared["cidr"], strict=True)
+    else:
+        try:
+            network = ip_network(selector, strict=True)
+        except ValueError as exc:
+            raise ValueError(f"unknown firewall network selector {selector!r}") from exc
+        if not isinstance(network, IPv4Network):
+            raise ValueError(f"{selector}: firewall selectors must be IPv4 CIDRs")
+        matches = [
+            item
+            for item in networks
+            if network.subnet_of(ip_network(item["cidr"], strict=True))
+        ]
+        if len(matches) != 1:
+            raise ValueError(f"{selector}: CIDR must fit one declared network")
+        declared = matches[0]
+    if not isinstance(network, IPv4Network):
+        raise ValueError(f"{selector}: firewall selectors must be IPv4 CIDRs")
+    if declared.get("kind") != "lan":
+        raise ValueError(f"{selector}: firewall endpoint must be a LAN")
+    if not _network_cabled(declared, infrastructure, links):
+        raise ValueError(f"{selector}: network has no declared link")
+    _owner(routers, network.network_address)
+    return Endpoint(selector, network)
+
+
+def _network_cabled(network: dict, infrastructure: dict, links: list[dict]) -> bool:
+    network_id = network["id"]
+    segment_names = {
+        item["name"]
+        for item in infrastructure.get("segments", [])
+        if item["network_id"] == network_id
+    }
+    for link in links:
+        if link.get("network_id") == network_id:
+            return True
+        if network.get("vlan_id") in link.get(
+            "vlans", []
+        ) and segment_names.intersection(
+            endpoint["node"] for endpoint in link["endpoints"]
+        ):
+            return True
+    return False
 
 
 def _path(
@@ -247,20 +337,18 @@ def compile_policy(
 ) -> tuple[dict[str, list[str]], dict]:
     """Return router commands and an offline coverage report.
 
-    Policy endpoints are inventory names, except a router may originate a flow.
-    Attack exceptions must originate on the declared attack-lab network.
+    Policy endpoints are address-plan network IDs, VLAN IDs, or contained CIDRs.
+    Router-originated syslog uses ``router/NAME`` as a source selector.
+    Attack exceptions must originate within the declared attack-lab network.
     """
     document = yaml.safe_load(
         (dataset / "topology/firewall-policy.yaml").read_text(encoding="utf-8")
     )
-    if document.get("schema_version") != "1.0" or document.get(
+    if document.get("schema_version") != "2.0" or document.get(
         "testbed_id"
     ) != inventory.get("testbed_id"):
         raise ValueError("firewall policy version or testbed does not match inventory")
     routers = _routers(infrastructure)
-    devices = {item["name"]: item for item in inventory["devices"]}
-    if len(devices) != len(inventory["devices"]):
-        raise ValueError("duplicate device name in inventory")
     baseline = [_flow(item) for item in document["flows"]]
     exceptions = attack_exceptions or []
     if len({flow.name for flow in baseline}) != len(baseline):
@@ -268,20 +356,18 @@ def compile_policy(
     address_plan = yaml.safe_load(
         (dataset / "topology/address-plan.yaml").read_text(encoding="utf-8")
     )
+    networks = address_plan["networks"]
+    if len({item["id"] for item in networks}) != len(networks):
+        raise ValueError("duplicate address-plan network ID")
     link_plan = yaml.safe_load((dataset / "topology/links.yaml").read_text("utf-8"))
     links = link_plan["links"]
-    cabled_nodes = {
-        endpoint["node"] for link in links for endpoint in link["endpoints"]
-    }
     switch_names = {
         item["name"]
         for group in ("switches", "segments")
         for item in infrastructure.get(group, [])
     }
     attack_networks = [
-        ip_network(item["cidr"])
-        for item in address_plan["networks"]
-        if item["id"] == "attack-lab"
+        ip_network(item["cidr"]) for item in networks if item["id"] == "attack-lab"
     ]
     if len(attack_networks) > 1 or (exceptions and not attack_networks):
         raise ValueError("attack exceptions require one attack-lab network")
@@ -328,79 +414,91 @@ def compile_policy(
                 (str(address.ip), "0.0.0.0/0", "89", None)
             )
     report = {"baseline_flows": [], "attack_exceptions": [], "local_subnet_flows": []}
-    for flow in baseline + exceptions:
-        if flow.destination not in devices:
-            raise ValueError(
-                f"{flow.name}: destination {flow.destination} is not inventoried"
-            )
-        if flow.destination not in cabled_nodes or (
-            flow.source in devices and flow.source not in cabled_nodes
-        ):
-            raise ValueError(f"{flow.name}: source or destination has no declared link")
-        if flow.source in devices:
-            source_ip = ip_interface(devices[flow.source]["address"]).ip
-        elif flow.source in routers:
-            source_ip = None
-        else:
-            raise ValueError(f"{flow.name}: source {flow.source} is not inventoried")
-        destination_ip = ip_interface(devices[flow.destination]["address"]).ip
-        if flow in exceptions:
-            if source_ip is None or source_ip not in attack_networks[0]:
-                raise ValueError(f"{flow.name}: attack source is not on attack-lab")
-            if destination_ip in attack_networks[0]:
-                raise ValueError(f"{flow.name}: attack target is on attack-lab")
-        elif attack_networks and (
-            (source_ip is not None and source_ip in attack_networks[0])
-            or destination_ip in attack_networks[0]
-        ):
-            raise ValueError(
-                f"{flow.name}: baseline policy cannot permit attack-lab traffic"
-            )
-        try:
-            path, resolved_source = _path(
-                routers, adjacency, flow.source, source_ip, destination_ip
-            )
-        except ValueError as exc:
-            raise ValueError(f"{flow.name}: {exc}") from exc
-        if path and source_ip is not None:
+    for flow, category in [
+        *((flow, "baseline_flows") for flow in baseline),
+        *((flow, "attack_exceptions") for flow in exceptions),
+    ]:
+        for source_name, destination_name in product(flow.source, flow.destination):
             try:
-                reverse, _ = _path(
-                    routers, adjacency, flow.destination, destination_ip, source_ip
+                source = _resolve_endpoint(
+                    source_name, networks, infrastructure, links, routers, source=True
                 )
+                destination = _resolve_endpoint(
+                    destination_name,
+                    networks,
+                    infrastructure,
+                    links,
+                    routers,
+                    source=False,
+                )
+                if destination.network is None:
+                    raise ValueError("destination must select a declared LAN")
+                source_ip = source.network.network_address if source.network else None
+                destination_ip = destination.network.network_address
+                if category == "attack_exceptions":
+                    if source.network is None or not source.network.subnet_of(
+                        attack_networks[0]
+                    ):
+                        raise ValueError("attack source is not on attack-lab")
+                    if destination.network.subnet_of(attack_networks[0]):
+                        raise ValueError("attack target is on attack-lab")
+                elif attack_networks and (
+                    (
+                        source.network is not None
+                        and source.network.subnet_of(attack_networks[0])
+                    )
+                    or destination.network.subnet_of(attack_networks[0])
+                ):
+                    raise ValueError("baseline policy cannot permit attack-lab traffic")
+                path, resolved_source = _path(
+                    routers, adjacency, source.router or "", source_ip, destination_ip
+                )
+                if path and source_ip is not None:
+                    reverse, _ = _path(
+                        routers, adjacency, "", destination_ip, source_ip
+                    )
+                    if reverse != [
+                        (name, outgoing, incoming)
+                        for name, incoming, outgoing in reversed(path)
+                    ]:
+                        raise ValueError("return route is asymmetric")
+                for (first, _, outgoing), (second, incoming, _) in zip(path, path[1:]):
+                    if not _cabled_between(
+                        links, switch_names, first, outgoing, second, incoming
+                    ):
+                        raise ValueError(
+                            f"no declared cable from {first} {outgoing} "
+                            f"to {second} {incoming}"
+                        )
             except ValueError as exc:
-                raise ValueError(f"{flow.name}: return path: {exc}") from exc
-            if reverse != [
-                (name, outgoing, incoming)
-                for name, incoming, outgoing in reversed(path)
-            ]:
-                raise ValueError(f"{flow.name}: return route is asymmetric")
-        for (first, _, outgoing), (second, incoming, _) in zip(path, path[1:]):
-            if not _cabled_between(
-                links, switch_names, first, outgoing, second, incoming
-            ):
                 raise ValueError(
-                    f"{flow.name}: no declared cable from {first} {outgoing} "
-                    f"to {second} {incoming}"
-                )
-        record = {
-            "id": flow.name,
-            "source": flow.source,
-            "destination": flow.destination,
-            "protocol": flow.protocol,
-            "port": flow.port,
-            "routers": [name for name, _, _ in path],
-        }
-        category = "attack_exceptions" if flow in exceptions else "baseline_flows"
-        report[category].append(record)
-        if not path:
-            report["local_subnet_flows"].append(flow.name)
-            continue
-        for name, incoming, outgoing in path:
-            allowed = pairs[name].setdefault((incoming, outgoing), set())
-            allowed.add(
-                (str(resolved_source), str(destination_ip), flow.protocol, flow.port)
+                    f"{flow.name} ({source_name} -> {destination_name}): {exc}"
+                ) from exc
+            source_cidr = (
+                str(source.network) if source.network else f"{resolved_source}/32"
             )
-            pairs[name].setdefault((outgoing, incoming), set())
+            record = {
+                "id": flow.name,
+                "source": source_name,
+                "destination": destination_name,
+                "source_cidr": source_cidr,
+                "destination_cidr": str(destination.network),
+                "protocol": flow.protocol,
+                "port": flow.port,
+                "routers": [name for name, _, _ in path],
+            }
+            report[category].append(record)
+            if not path:
+                report["local_subnet_flows"].append(
+                    f"{flow.name}:{source_name}:{destination_name}"
+                )
+                continue
+            for name, incoming, outgoing in path:
+                allowed = pairs[name].setdefault((incoming, outgoing), set())
+                allowed.add(
+                    (source_cidr, str(destination.network), flow.protocol, flow.port)
+                )
+                pairs[name].setdefault((outgoing, incoming), set())
     commands = {}
     for name, router in routers.items():
         lines = []

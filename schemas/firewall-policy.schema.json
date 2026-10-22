@@ -1,11 +1,11 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://metropolis.local/schemas/firewall-policy.schema.json",
-  "title": "Metropolis routed firewall flow policy",
+  "title": "Metropolis routed network firewall policy",
   "type": "object",
   "required": ["schema_version", "testbed_id", "flows"],
   "properties": {
-    "schema_version": {"const": "1.0"},
+    "schema_version": {"const": "2.0"},
     "testbed_id": {"type": "string", "minLength": 1},
     "flows": {
       "type": "array",
@@ -14,13 +14,26 @@
         "required": ["id", "source", "destination", "protocol"],
         "properties": {
           "id": {"type": "string", "minLength": 1},
-          "source": {"type": "string", "minLength": 1},
-          "destination": {"type": "string", "minLength": 1},
+          "source": {"$ref": "#/$defs/selectors"},
+          "destination": {"$ref": "#/$defs/selectors"},
           "protocol": {"enum": ["tcp", "udp", "icmp"]},
           "port": {"type": "integer", "minimum": 1, "maximum": 65535}
         },
         "additionalProperties": false
       }
+    }
+  },
+  "$defs": {
+    "selectors": {
+      "oneOf": [
+        {"type": "string", "minLength": 1},
+        {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"type": "string", "minLength": 1}
+        }
+      ]
     }
   },
   "additionalProperties": false
