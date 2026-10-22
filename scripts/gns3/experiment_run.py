@@ -22,6 +22,7 @@ from _cli import (
 )
 from collect_device_logs import docker_host_mapping
 from experiment import run_experiment
+from firewall_policy import compile_policy, parse_attack_exception
 from router_config import DEFAULT_PASSWORD, DEFAULT_USERNAME
 from topology import build_plan
 
@@ -45,6 +46,13 @@ def main() -> int:
     parser.add_argument("--router-username", default=DEFAULT_USERNAME)
     parser.add_argument("--startup-timeout", type=float, default=120.0)
     parser.add_argument(
+        "--attack-allow",
+        action="append",
+        default=[],
+        metavar="SOURCE:TARGET:PROTOCOL:PORT",
+        help="Temporarily permit one inventoried attack-lab source to one target; repeat as needed",
+    )
+    parser.add_argument(
         "--links", nargs="+", help="Declared PCAP links; default is all built links"
     )
     parser.add_argument(
@@ -57,6 +65,8 @@ def main() -> int:
     args = parser.parse_args()
     if args.duration <= 0 or args.startup_timeout <= 0:
         parser.error("duration and startup timeout must be positive")
+    if args.attack_allow and not args.configure_routers:
+        parser.error("--attack-allow requires --configure-routers")
     run_id = args.run_id or (
         datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
         + "_"
@@ -72,6 +82,16 @@ def main() -> int:
         parser.error(str(exc))
     dataset = args.dataset.resolve()
     address_plan, inventory, infrastructure, link_plan = load_documents(dataset)
+    try:
+        exceptions = [parse_attack_exception(value) for value in args.attack_allow]
+        firewall_commands, firewall_report = compile_policy(
+            dataset, infrastructure, inventory, exceptions
+        )
+        baseline_firewall_commands, _ = compile_policy(
+            dataset, infrastructure, inventory
+        )
+    except (ValueError, KeyError, FileNotFoundError) as exc:
+        parser.error(f"firewall policy: {exc}")
     declared = {link["id"] for link in link_plan["links"]}
     unknown = set(args.links or []) - declared
     if unknown:
@@ -101,6 +121,9 @@ def main() -> int:
             ).hexdigest()
             for path in files
         },
+        "firewall_policy_sha256": hashlib.sha256(
+            (dataset / "topology/firewall-policy.yaml").read_bytes()
+        ).hexdigest(),
     }
     try:
         manifest = run_experiment(
@@ -117,6 +140,9 @@ def main() -> int:
             selected_links=args.links,
             start_lab=args.start_lab,
             configure_routers=args.configure_routers,
+            firewall_commands=firewall_commands,
+            baseline_firewall_commands=baseline_firewall_commands,
+            firewall_exceptions=firewall_report["attack_exceptions"],
             router_username=args.router_username,
             router_password=os.environ.get(
                 "METROPOLIS_ROUTER_PASSWORD", DEFAULT_PASSWORD

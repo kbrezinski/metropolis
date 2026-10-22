@@ -7,8 +7,8 @@
 #   eth1 -> plant aggregation switch, 802.1Q trunk
 # The plant switch trunk must carry VLANs 10-13 and 50-53.
 # VLAN IDs match the third octet of their subnets.
-# TODO(Metropolis): Add plant-zone firewall policy after documenting the
-# required HMI-to-PLC, SCADA-to-PLC, engineering, and monitoring flows.
+# The GNS3 --configure-routers path adds generated firewall zone rules from
+# topology/firewall-policy.yaml; this standalone script configures routing only.
 
 source /opt/vyatta/etc/functions/script-template
 

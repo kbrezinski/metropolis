@@ -10,8 +10,8 @@
 # TODO(Metropolis): Configure a route-based IPsec VTI to each remote router,
 # bind each peer to its reserved overlay subnet, and set routes through the
 # VTIs. Supply unique lab-only peer secrets outside this checked-in script.
-# TODO(Metropolis): Add WAN input/forward firewall policy and document the
-# permitted SCADA, MQTT, time, logging, and management flows.
+# The GNS3 --configure-routers path adds generated firewall zone rules from
+# topology/firewall-policy.yaml; this standalone script configures routing only.
 
 source /opt/vyatta/etc/functions/script-template
 
@@ -24,6 +24,8 @@ set interfaces ethernet eth1 address '172.31.255.1/24'
 
 set protocols static route 10.20.14.0/24 next-hop '172.31.255.21'
 set protocols static route 10.20.15.0/24 next-hop '172.31.255.11'
+set protocols static route 10.20.20.0/24 next-hop '10.20.254.9'
+set protocols static route 10.20.30.0/24 next-hop '10.20.254.9'
 
 set system host-name 'MET-OT-WAN'
 set system syslog host 10.20.30.11 facility all level info

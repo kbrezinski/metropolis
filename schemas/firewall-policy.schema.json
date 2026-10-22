@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://metropolis.local/schemas/firewall-policy.schema.json",
+  "title": "Metropolis routed firewall flow policy",
+  "type": "object",
+  "required": ["schema_version", "testbed_id", "flows"],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "testbed_id": {"type": "string", "minLength": 1},
+    "flows": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "source", "destination", "protocol"],
+        "properties": {
+          "id": {"type": "string", "minLength": 1},
+          "source": {"type": "string", "minLength": 1},
+          "destination": {"type": "string", "minLength": 1},
+          "protocol": {"enum": ["tcp", "udp", "icmp"]},
+          "port": {"type": "integer", "minimum": 1, "maximum": 65535}
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

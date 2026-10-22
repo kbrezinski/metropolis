@@ -20,6 +20,7 @@ import sys
 from pathlib import Path
 
 from _cli import (
+    DATASET,
     add_appliance_arguments,
     add_server_arguments,
     connect,
@@ -31,6 +32,7 @@ from _cli import (
 from builder import build, port_map_yaml
 from client import Gns3Client
 from collect_device_logs import docker_host_mapping
+from firewall_policy import compile_policy
 from router_config import (
     DEFAULT_PASSWORD,
     DEFAULT_USERNAME,
@@ -90,6 +92,14 @@ def main() -> int:
     topology, inventory = load_plan(
         router_template=args.router_template, switch_template=args.switch_template
     )
+    firewall_commands = None
+    infrastructure = None
+    if args.configure_routers:
+        _, _, infrastructure, _ = load_documents()
+        try:
+            firewall_commands, _ = compile_policy(DATASET, infrastructure, inventory)
+        except ValueError as exc:
+            parser.error(f"firewall policy: {exc}")
 
     if args.plan:
         print(f"{len(topology.nodes)} nodes, {len(topology.links)} links")
@@ -160,7 +170,7 @@ def main() -> int:
         print(f"port map written to {args.write_ports}")
 
     if args.configure_routers:
-        _, _, infrastructure, _ = load_documents()
+        assert infrastructure is not None
         scripts = router_scripts(infrastructure)
         project = client.project_by_name(args.project)
         if project is None:
@@ -172,6 +182,7 @@ def main() -> int:
             scripts,
             username=args.router_username,
             password=args.router_password,
+            firewall_commands=firewall_commands,
         )
         failed = 0
         for router_result in results:

@@ -28,6 +28,9 @@ def run_experiment(
     selected_links: list[str] | None = None,
     start_lab: bool = False,
     configure_routers: bool = False,
+    firewall_commands: dict[str, list[str]] | None = None,
+    baseline_firewall_commands: dict[str, list[str]] | None = None,
+    firewall_exceptions: list[dict] | None = None,
     router_username: str = DEFAULT_USERNAME,
     router_password: str = DEFAULT_PASSWORD,
     startup_timeout: float = 120.0,
@@ -36,6 +39,14 @@ def run_experiment(
     capture_fn=capture_for,
 ) -> dict:
     """Start telemetry before optional lab startup, and stop it after capture."""
+    if firewall_exceptions and (
+        not configure_routers
+        or firewall_commands is None
+        or baseline_firewall_commands is None
+    ):
+        raise ValueError(
+            "attack exceptions require router configuration and a baseline policy"
+        )
     collector = collector_factory(
         client,
         project.project_id,
@@ -62,6 +73,15 @@ def run_experiment(
         ],
     )
     timeline = collector.run_dir / "timeline.jsonl"
+    exception_records = firewall_exceptions or []
+    collector.manifest["firewall"] = {
+        "policy_sha256": (metadata or {}).get("firewall_policy_sha256", ""),
+        "attack_exceptions": exception_records,
+        "configuration_requested": configure_routers and firewall_commands is not None,
+        "restored_baseline": False,
+        "failures": [],
+    }
+    collector._write_manifest()
 
     def record(event: str, **attributes) -> None:
         with timeline.open("a", encoding="utf-8") as output:
@@ -86,6 +106,7 @@ def run_experiment(
             duration
             + (startup_timeout if start_lab else 0)
             + (startup_timeout if configure_routers else 0)
+            + (startup_timeout if exception_records else 0)
             + 60,
         ),
         kwargs={"stop_event": stop_event},
@@ -96,6 +117,7 @@ def run_experiment(
     capture_manifest = None
     orchestration_failures: list[str] = []
     interrupted = False
+    exception_apply_attempted = False
     try:
         record("run_started", project_status=project.status)
         if start_lab:
@@ -111,12 +133,14 @@ def run_experiment(
             )
             orchestration_failures.extend(started.failed)
         if configure_routers:
+            exception_apply_attempted = bool(exception_records)
             results = configure_project_routers(
                 client,
                 project.project_id,
                 router_scripts(infrastructure),
                 username=router_username,
                 password=router_password,
+                firewall_commands=firewall_commands,
             )
             router_failures = [
                 f"{item.node}: {item.error or ', '.join(item.missing)}"
@@ -125,10 +149,19 @@ def run_experiment(
             ]
             record(
                 "router_configuration_completed",
-                configured=[item.node for item in results if not item.error],
+                configured=[
+                    item.node for item in results if not item.error and not item.missing
+                ],
                 failures=router_failures,
+                attack_exceptions=exception_records,
             )
             orchestration_failures.extend(router_failures)
+            collector.manifest["firewall"]["failures"].extend(router_failures)
+            if not exception_records:
+                collector.manifest["firewall"]["restored_baseline"] = (
+                    firewall_commands is not None and not router_failures
+                )
+            collector._write_manifest()
         declared = [link["id"] for link in link_plan["links"]]
         resolution = resolve_links(client, project.project_id, topology, declared)
         chosen = selected_links if selected_links is not None else resolution.capturable
@@ -172,6 +205,41 @@ def run_experiment(
     except Exception as exc:  # noqa: BLE001 - always stop telemetry and retain manifest
         orchestration_failures.append(f"experiment failed: {exc}")
     finally:
+        if exception_apply_attempted:
+            try:
+                if baseline_firewall_commands is None:
+                    raise RuntimeError("baseline firewall policy was not supplied")
+                restored = configure_project_routers(
+                    client,
+                    project.project_id,
+                    router_scripts(infrastructure),
+                    username=router_username,
+                    password=router_password,
+                    firewall_commands=baseline_firewall_commands,
+                )
+                restore_failures = [
+                    f"{item.node}: {item.error or ', '.join(item.missing)}"
+                    for item in restored
+                    if item.error or item.missing
+                ]
+                collector.manifest["firewall"][
+                    "restored_baseline"
+                ] = not restore_failures
+                collector.manifest["firewall"]["failures"].extend(restore_failures)
+                orchestration_failures.extend(
+                    f"firewall restore: {reason}" for reason in restore_failures
+                )
+                record(
+                    "firewall_baseline_restored",
+                    restored=not restore_failures,
+                    failures=restore_failures,
+                )
+            except (Exception, KeyboardInterrupt) as exc:  # noqa: BLE001
+                reason = f"firewall baseline restore failed: {exc}"
+                collector.manifest["firewall"]["failures"].append(reason)
+                orchestration_failures.append(reason)
+                record("firewall_baseline_restore_failed", reason=reason)
+            collector._write_manifest()
         stop_event.set()
         thread.join(timeout=60)
         if thread.is_alive():

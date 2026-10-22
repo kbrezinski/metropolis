@@ -1,15 +1,15 @@
 #!/bin/vbash
 # Metropolis water-treatment OT testbed: DMZ, enterprise, and attack-test edge.
-# This draft configures routing only; it does not apply firewall policy.
+# This standalone script configures routing only. The GNS3 --configure-routers
+# path adds generated zone rules from topology/firewall-policy.yaml.
 #
 # GNS3 interface map:
 #   eth0 -> OT core router, transit 10.20.254.4/30
 #   eth1 -> DMZ switch, 10.20.40.0/24
 #   eth2 -> enterprise switch, 10.30.10.0/24
 #   eth3 -> isolated attack-test switch, 10.99.10.0/24
-# TODO(Metropolis): Define and apply deny-by-default policies for enterprise,
-# DMZ, OT, and attack-test traffic. The routes below currently provide a path
-# from 10.99.10.0/24 into OT; no firewall rule blocks it yet.
+# Routes below provide a path from 10.99.10.0/24 into OT. Generated firewall
+# rules block new attack-lab flows unless a run selects an exact exception.
 
 source /opt/vyatta/etc/functions/script-template
 

@@ -26,6 +26,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from client import Gns3Client
+from firewall_policy import managed_deletes
 
 log = logging.getLogger("gns3.routers")
 
@@ -70,7 +71,12 @@ def config_commands(path: Path) -> list[str]:
     commands = []
     for line in path.read_text(encoding="utf-8").splitlines():
         stripped = line.strip()
-        if not stripped or stripped.startswith("#"):
+        if (
+            not stripped
+            or stripped.startswith("#")
+            or stripped in {"configure", "exit"}
+            or stripped.startswith("source ")
+        ):
             continue
         commands.append(stripped)
     return commands
@@ -183,28 +189,56 @@ def apply_router_config(
     username: str = DEFAULT_USERNAME,
     password: str = DEFAULT_PASSWORD,
     boot_timeout: float = BOOT_TIMEOUT,
+    firewall_commands: list[str] | None = None,
 ) -> RouterResult:
     """Log in to a router's console and apply its configuration script."""
-    commands = config_commands(script)
+    script_commands = config_commands(script)
+    commands = [
+        command for command in script_commands if command not in {"commit", "save"}
+    ]
+    commands += firewall_commands or []
+    commands += ["commit", "save"]
     expected = expected_interfaces(script)
     result = RouterResult(node=script.stem)
 
     try:
         with Console(host, port, boot_timeout) as console:
             buffer = console.login(username, password)
+            existing = ""
+            if firewall_commands is not None:
+                console.send("show configuration commands")
+                existing = console.expect(OP_PROMPT, CONFIG_TIMEOUT, clear=True).decode(
+                    "utf-8", errors="replace"
+                )
             console.send("configure")
-            buffer = console.expect(CONFIG_PROMPT, CONFIG_TIMEOUT, buffer)
+            buffer = console.expect(CONFIG_PROMPT, CONFIG_TIMEOUT, clear=True)
+
+            if firewall_commands is not None:
+                commands = managed_deletes(existing) + commands
 
             for command in commands:
                 console.send(command)
                 # Each prompt means the line was accepted. A rejected line still
                 # returns a prompt, so the read-back below is what confirms the
                 # configuration actually took.
-                buffer = console.expect(CONFIG_PROMPT, CONFIG_TIMEOUT, buffer)
+                buffer = console.expect(CONFIG_PROMPT, CONFIG_TIMEOUT, clear=True)
+                if command == "commit" and any(
+                    marker in buffer.lower()
+                    for marker in (b"commit failed", b"configuration error")
+                ):
+                    raise RouterError(
+                        f"firewall/router commit failed: {buffer.decode(errors='replace')}"
+                    )
                 result.commands += 1
 
             console.send("run show interfaces")
             output = console.expect(CONFIG_PROMPT, CONFIG_TIMEOUT, clear=True)
+            firewall_output = b""
+            if firewall_commands is not None:
+                console.send("run show configuration commands")
+                firewall_output = console.expect(
+                    CONFIG_PROMPT, CONFIG_TIMEOUT, clear=True
+                )
     except RouterError as exc:
         result.error = str(exc)
         return result
@@ -215,6 +249,20 @@ def apply_router_config(
         for address in sorted(addresses):
             if address not in text:
                 result.missing.append(f"eth{number} {address}")
+    if firewall_commands is not None:
+        configured = firewall_output.decode("utf-8", errors="replace")
+        expected_names = {
+            command.split()[3]
+            for command in firewall_commands
+            if command.startswith("set firewall name ")
+        } | {
+            command.split()[3]
+            for command in firewall_commands
+            if command.startswith("set zone-policy zone ")
+        }
+        for name in sorted(expected_names):
+            if name not in configured:
+                result.missing.append(f"firewall {name}")
     return result
 
 
@@ -225,6 +273,7 @@ def configure_project_routers(
     *,
     username: str = DEFAULT_USERNAME,
     password: str = DEFAULT_PASSWORD,
+    firewall_commands: dict[str, list[str]] | None = None,
 ) -> list[RouterResult]:
     """Configure every router in a project from its script.
 
@@ -246,7 +295,14 @@ def configure_project_routers(
         host, port = console
         results.append(
             apply_router_config(
-                host, port, Path(script_path), username=username, password=password
+                host,
+                port,
+                Path(script_path),
+                username=username,
+                password=password,
+                firewall_commands=(
+                    firewall_commands[name] if firewall_commands is not None else None
+                ),
             )
         )
     return results

@@ -7,8 +7,8 @@
 #   eth2 -> WAN hub router, transit 10.20.254.8/30
 #   eth3 -> OT operations aggregation switch, 802.1Q trunk
 # The operations switch trunk must carry VLANs 20-23 and 30.
-# TODO(Metropolis): Add explicit inter-zone firewall policy here or at the
-# boundary devices. Static routes provide reachability; they do not restrict it.
+# The GNS3 --configure-routers path adds generated firewall zone rules from
+# topology/firewall-policy.yaml; this standalone script configures routing only.
 
 source /opt/vyatta/etc/functions/script-template
 

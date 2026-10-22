@@ -19,6 +19,7 @@ makes the server match it.
 | `lifecycle.py` | Startup and shutdown order, and waiting for readiness |
 | `capture.py` | Capture control on chosen links |
 | `device_logs.py` | Read-only Docker stdout/stderr collection and normalization |
+| `firewall_policy.py` | Resolve permitted flows and render VyOS 1.3 zone policies |
 | `experiment.py` | One run ID and manifest for PCAP, device logs, and router syslog |
 | `run.py` | Single entry point for the commands below |
 | `_cli.py` | Argument and server plumbing shared by the commands |
@@ -36,6 +37,7 @@ python scripts/gns3/run.py build_topology --plan
 python scripts/gns3/run.py build_topology --write-ports derived-ports.yaml
 
 # 3. Start the lab, then load the router configurations
+python scripts/gns3/run.py render_firewall --check  # offline policy and route check
 python scripts/gns3/run.py lab_lifecycle --order
 python scripts/gns3/run.py lab_lifecycle --start
 python scripts/gns3/run.py build_topology --configure-routers
@@ -56,7 +58,50 @@ python scripts/gns3/run.py lab_lifecycle --stop
 ```
 
 Every command takes `--help`. `build_topology --plan`, `capture_traffic --list`,
-and `lab_lifecycle --order` contact no server, so they are safe to run anywhere.
+`lab_lifecycle --order`, and `render_firewall` contact no server.
+
+## Routed firewall policy
+
+`topology/firewall-policy.yaml` lists baseline flows by inventoried source and
+destination name, protocol, and destination port. `render_firewall --check`
+resolves current addresses and checks the forward and return routes; without
+`--check`, it prints the flow report and generated VyOS commands as JSON. The
+policy is validated against `schemas/firewall-policy.schema.json`.
+`build_topology --configure-routers` and `experiment_run --configure-routers`
+apply the generated rules after the router interface and route commands. The
+loader removes only its own `MET_` zones and rule sets before reapplying them;
+unrelated VyOS firewall configuration is left alone. It checks that the managed
+names appear in the router's reported configuration. Actual packet enforcement
+still requires the user's offline GNS3 validation.
+
+Every routed interface has its own default-drop zone, including a local zone
+for traffic to and from each router. Permitted new flows match exact source and
+destination IPs, protocol, and port; established and related return traffic is
+allowed. Undeclared DMZ, enterprise, and attack-lab flows are denied. A router
+firewall cannot filter two devices sharing one VLAN, such as the intake PLC and
+its drives. The WAN hub has explicit return routes for SCADA and syslog traffic.
+
+For a controlled attack experiment, add `--attack-allow
+SOURCE:TARGET:tcp|udp|icmp:PORT` to `experiment_run`, together with
+`--configure-routers`. Use `-` as the port for ICMP. The source must be an
+inventoried node on the attack-lab network; repeat the option to permit more
+than one exact flow. For example:
+
+```bash
+python scripts/gns3/run.py experiment_run --configure-routers --duration 60 \
+  --attack-allow MET-MERLIN-AGENT-01:MET-PLC-INTAKE-01:tcp:502 \
+  --docker-host local=ssh://gns3@gns3-vm
+```
+
+The compiler rejects a selected source or target without a declared physical
+link. Some inventoried Mirai support nodes are not cabled in this dataset, so
+they cannot be selected until links and switch ports are added.
+
+The exception is recorded in the run manifest and timeline. The runner
+reapplies the baseline in `finally`, including after capture errors or Ctrl-C,
+and reports a failed restoration. Confirm the router policy state before the
+next run if restoration failed. Apply attack traffic separately while the run
+captures; `experiment_run` does not launch an attack script.
 
 ## Capture coverage and files
 

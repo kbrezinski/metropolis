@@ -48,6 +48,9 @@ def validate_topology(repository_root: Path) -> list[Check]:
     link_plan = yaml.safe_load(
         (dataset_root / "topology" / "links.yaml").read_text(encoding="utf-8")
     )
+    firewall_policy = yaml.safe_load(
+        (dataset_root / "topology" / "firewall-policy.yaml").read_text(encoding="utf-8")
+    )
     infrastructure = yaml.safe_load(
         (dataset_root / "device_instances" / "infrastructure.yaml").read_text(
             encoding="utf-8"
@@ -76,6 +79,7 @@ def validate_topology(repository_root: Path) -> list[Check]:
                         ("device-inventory.schema.json", inventory),
                         ("infrastructure.schema.json", infrastructure),
                         ("link-plan.schema.json", link_plan),
+                        ("firewall-policy.schema.json", firewall_policy),
                     ],
                 )
             ),
@@ -91,6 +95,7 @@ def validate_topology(repository_root: Path) -> list[Check]:
                     ("initial_devices.yaml", inventory.get("testbed_id")),
                     ("infrastructure.yaml", infrastructure.get("testbed_id")),
                     ("links.yaml", link_plan.get("testbed_id")),
+                    ("firewall-policy.yaml", firewall_policy.get("testbed_id")),
                 )
                 if value != testbed_id
             ),

@@ -7,8 +7,8 @@
 # This is routed WAN connectivity, not an IPsec tunnel yet.
 # TODO(Metropolis): Configure the matching IPsec peer/VTI to the WAN hub using
 # overlay 10.20.254.16/30; do not put the peer secret in this file.
-# TODO(Metropolis): Add station firewall policy after defining RTU/PLC-to-SCADA,
-# MQTT, time, logging, and remote-management flows.
+# The GNS3 --configure-routers path adds generated firewall zone rules from
+# topology/firewall-policy.yaml; this standalone script configures routing only.
 
 source /opt/vyatta/etc/functions/script-template
 

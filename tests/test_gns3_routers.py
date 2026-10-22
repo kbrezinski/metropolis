@@ -55,6 +55,7 @@ class ScriptedSocket:
         op_prompt: bytes = b"vyos@vyos:~$ ",
         config_prompt: bytes = b"vyos@vyos# ",
         interfaces: bytes = b"",
+        configuration: bytes = b"",
         respond: bool = True,
     ):
         self.banner = banner
@@ -62,6 +63,7 @@ class ScriptedSocket:
         self.op_prompt = op_prompt
         self.config_prompt = config_prompt
         self.interfaces = interfaces
+        self.configuration = configuration
         self.respond = respond
         self.sent: list[bytes] = []
         self.pending = bytearray(banner)
@@ -86,6 +88,10 @@ class ScriptedSocket:
         elif self.stage == "password":
             self.pending += self.op_prompt
             self.stage = "operational"
+        elif command == "show configuration commands":
+            self.pending += self.configuration + self.op_prompt
+        elif command == "run show configuration commands":
+            self.pending += self.configuration + self.config_prompt
         elif command == "run show interfaces":
             self.pending += self.interfaces + self.config_prompt
         else:
@@ -228,6 +234,55 @@ def test_apply_reports_addresses_the_router_does_not_have(scripted):
 
     assert result.applied is True
     assert result.missing, "unreported addresses should be listed"
+
+
+def test_apply_replaces_owned_firewall_and_checks_readback(scripted):
+    script = ROUTERS / "backbone/router_ot_wan.sh"
+    expected = expected_interfaces(script)
+    reported = " ".join(sorted({a for group in expected.values() for a in group}))
+    firewall = [
+        "set zone-policy zone MET_e0 interface 'eth0'",
+        "set firewall name MET_e0_e1 default-action 'drop'",
+    ]
+    existing = b"\n".join(
+        [
+            b"set zone-policy zone MET_e0 interface eth0",
+            b"set firewall name MET_e0_e1 default-action drop",
+            b"set firewall name USER_POLICY default-action accept",
+        ]
+    )
+    fake = scripted(interfaces=reported.encode(), configuration=existing)
+    result = apply_router_config(
+        "127.0.0.1",
+        1,
+        script,
+        boot_timeout=1.0,
+        firewall_commands=firewall,
+    )
+    sent = b"".join(fake.sent).decode()
+    assert result.error is None
+    assert result.missing == []
+    assert "delete zone-policy zone MET_e0\n" in sent
+    assert "delete firewall name MET_e0_e1\n" in sent
+    assert "delete firewall name USER_POLICY" not in sent
+    for command in firewall:
+        assert command in sent
+
+
+def test_apply_reports_firewall_missing_from_router_readback(scripted):
+    script = ROUTERS / "backbone/router_ot_wan.sh"
+    expected = expected_interfaces(script)
+    reported = " ".join(sorted({a for group in expected.values() for a in group}))
+    scripted(interfaces=reported.encode(), configuration=b"")
+    result = apply_router_config(
+        "127.0.0.1",
+        1,
+        script,
+        boot_timeout=1.0,
+        firewall_commands=["set zone-policy zone MET_e0 interface 'eth0'"],
+    )
+    assert result.error is None
+    assert result.missing == ["firewall MET_e0"]
 
 
 def test_apply_returns_an_error_when_login_never_completes(scripted):

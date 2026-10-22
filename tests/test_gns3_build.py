@@ -497,6 +497,18 @@ def test_startup_order_puts_switches_first_and_pollers_last():
     ]
 
 
+def test_actuators_start_before_the_intake_controller():
+    nodes = [{"name": "MET-PLC-INTAKE-01"}, {"name": "MET-PUMP-DRIVE-INTAKE-DUTY-01"}]
+    images = {
+        "MET-PLC-INTAKE-01": "metropolis/controller:dev",
+        "MET-PUMP-DRIVE-INTAKE-DUTY-01": "metropolis/actuator:dev",
+    }
+    assert startup_order(nodes, {}, images) == [
+        "MET-PUMP-DRIVE-INTAKE-DUTY-01",
+        "MET-PLC-INTAKE-01",
+    ]
+
+
 def test_start_all_starts_in_order_and_reports_failures():
     class Flaky(FakeClient):
         def __init__(self):

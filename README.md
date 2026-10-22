@@ -102,11 +102,12 @@ location. See the [router scripts](testbeds/metropolis/router/), [switch
 specifications](testbeds/metropolis/switch/README.md), and [v1 dataset
 notes](testbeds/metropolis/datasets/water_treatment_v1/README.md).
 
-**The routing is a draft.** Router scripts define interfaces and static routes,
-but there are no firewall rules, the simulated WAN has no IPsec, and the
-attack-test network is not yet restricted from the OT networks. The scripts
-carry `TODO` reminders for that work. Do not treat the current draft as a
-secured network.
+**The routing and firewall still need runtime validation.** Router scripts
+define interfaces and static routes. When routers are configured through the
+GNS3 tooling, `topology/firewall-policy.yaml` generates default-deny VyOS 1.3
+zone rules for routed traffic; attack-lab access requires a recorded per-run
+exception. The simulated WAN still has no IPsec, and same-VLAN traffic bypasses
+the routers. See the [firewall run guide](scripts/gns3/README.md#routed-firewall-policy).
 
 ## Device models
 
@@ -245,8 +246,9 @@ service normally looks like.
 
 Worth repeating, because these bound what you can conclude:
 
-- **No firewall or IPsec.** The attack-test network is not restricted from the
-  OT networks, and routing provides reachability rather than containment.
+- **Firewall runtime behavior is unverified.** Offline policy checks and router
+  command generation exist, but enforcement needs the user's GNS3 check. Same-
+  VLAN traffic is outside the router policy; the simulated WAN has no IPsec.
 - **Encryption stops at CoAP.** MQTT over TLS works, with a lab CA and a
   verified handshake, and the sensor, SCADA, the HMI, and the historian can all
   use it. CoAP has no DTLS, so there is no encrypted CoAP traffic to capture.

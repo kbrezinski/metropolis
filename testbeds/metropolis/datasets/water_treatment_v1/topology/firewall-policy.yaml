@@ -1,0 +1,23 @@
+# Routed, baseline application flows. Endpoints resolve through initial_devices.yaml
+# and infrastructure.yaml; same-subnet traffic never reaches a router firewall.
+schema_version: "1.0"
+testbed_id: metropolis
+flows:
+  - {id: scada-intake-modbus, source: MET-SCADA-01, destination: MET-PLC-INTAKE-01, protocol: tcp, port: 502}
+  - {id: scada-reservoir-modbus, source: MET-SCADA-01, destination: MET-RTU-RESERVOIR-01, protocol: tcp, port: 502}
+  - {id: scada-raw-water-modbus, source: MET-SCADA-01, destination: MET-RTU-RAW-WATER-01, protocol: tcp, port: 502}
+  - {id: control-client-modbus, source: MET-CONTROL-CLIENT-01, destination: MET-PLC-INTAKE-01, protocol: tcp, port: 502}
+  - {id: sensor-mqtt, source: MET-SENSOR-INTAKE-01, destination: MET-MQTT-BROKER-01, protocol: tcp, port: 1883}
+  - {id: scada-mqtt, source: MET-SCADA-01, destination: MET-MQTT-BROKER-01, protocol: tcp, port: 1883}
+  - {id: historian-mqtt, source: MET-HISTORIAN-01, destination: MET-MQTT-BROKER-01, protocol: tcp, port: 1883}
+  - {id: hmi-mqtt, source: MET-HMI-INTAKE-01, destination: MET-MQTT-BROKER-01, protocol: tcp, port: 1883}
+  - {id: engineering-hmi, source: MET-ENGINEERING-01, destination: MET-HMI-INTAKE-01, protocol: tcp, port: 8080}
+  - {id: control-client-dns-udp, source: MET-CONTROL-CLIENT-01, destination: MET-DNS-01, protocol: udp, port: 53}
+  - {id: control-client-dns-tcp, source: MET-CONTROL-CLIENT-01, destination: MET-DNS-01, protocol: tcp, port: 53}
+  - {id: control-client-ntp, source: MET-CONTROL-CLIENT-01, destination: MET-NTP-01, protocol: udp, port: 123}
+  - {id: plant-syslog, source: MET-PLANT, destination: MET-NTP-01, protocol: udp, port: 514}
+  - {id: core-syslog, source: MET-OT-CORE, destination: MET-NTP-01, protocol: udp, port: 514}
+  - {id: dmz-syslog, source: MET-OT-DMZ, destination: MET-NTP-01, protocol: udp, port: 514}
+  - {id: wan-syslog, source: MET-OT-WAN, destination: MET-NTP-01, protocol: udp, port: 514}
+  - {id: reservoir-syslog, source: MET-RESERVOIR, destination: MET-NTP-01, protocol: udp, port: 514}
+  - {id: raw-water-syslog, source: MET-RAW-WATER, destination: MET-NTP-01, protocol: udp, port: 514}
