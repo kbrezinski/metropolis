@@ -45,6 +45,8 @@
     "stopped_at_utc": {"type": "string", "format": "date-time"},
     "status": {"enum": ["running", "complete", "failed", "interrupted"]},
     "timeline_path": {"type": "string"},
+    "attack_events_path": {"type": "string"},
+    "selected_capture_links": {"type": "array", "uniqueItems": true, "items": {"type": "string"}},
     "captures": {"type": "array", "items": {"type": "string"}},
     "capture": {
       "type": "object",

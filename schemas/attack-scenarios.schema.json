@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://metropolis.local/schemas/attack-scenarios.schema.json",
+  "title": "Versioned Metropolis attack scenario catalog",
+  "type": "object",
+  "required": ["schema_version", "scenarios"],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "scenarios": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["id", "family", "tool", "origin_kind", "capture_focus"],
+        "properties": {
+          "id": {"type": "string", "pattern": "^[a-z0-9_.-]+\\.v1$"},
+          "family": {"type": "string", "minLength": 1},
+          "tool": {"type": "string", "minLength": 1},
+          "origin_kind": {"enum": ["invoking_host", "mixed", "external_script"]},
+          "capture_focus": {"type": "string", "minLength": 1}
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

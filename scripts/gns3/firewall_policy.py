@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import re
 from collections import deque
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from itertools import product
 from ipaddress import IPv4Address, IPv4Interface, IPv4Network, ip_interface, ip_network
 from pathlib import Path
@@ -22,6 +22,8 @@ ADDRESS = re.compile(
 )
 OSPF_NETWORK = re.compile(r"^set protocols ospf area 0 network '([^']+)'$")
 OSPF_ACTIVE = re.compile(r"^set protocols ospf passive-interface-exclude '([^']+)'$")
+BFD_INTERFACE = re.compile(r"^set interfaces ethernet (eth\d+) ip ospf bfd$")
+BFD_PEER = re.compile(r"^set protocols bfd peer '([^']+)'$")
 MANAGED_ZONE = re.compile(r"\bzone-policy zone (MET_[A-Za-z0-9_]+)\b")
 MANAGED_RULESET = re.compile(r"\bfirewall name (MET_[A-Za-z0-9_]+)\b")
 
@@ -41,6 +43,8 @@ class Router:
     interfaces: dict[str, IPv4Interface]
     advertised: set[IPv4Network]
     ospf_active: set[str]
+    bfd_active: set[str] = field(default_factory=set)
+    bfd_peers: set[IPv4Address] = field(default_factory=set)
 
 
 @dataclass(frozen=True)
@@ -48,6 +52,7 @@ class Endpoint:
     selector: str
     network: IPv4Network | None
     router: str | None = None
+    address: IPv4Address | None = None
 
 
 def _routers(infrastructure: dict) -> dict[str, Router]:
@@ -58,6 +63,8 @@ def _routers(infrastructure: dict) -> dict[str, Router]:
         interfaces: dict[str, IPv4Interface] = {}
         advertised: set[IPv4Network] = set()
         ospf_active: set[str] = set()
+        bfd_active: set[str] = set()
+        bfd_peers: set[IPv4Address] = set()
         for line in path.read_text(encoding="utf-8").splitlines():
             match = ADDRESS.fullmatch(line.strip())
             if match:
@@ -69,6 +76,12 @@ def _routers(infrastructure: dict) -> dict[str, Router]:
             match = OSPF_ACTIVE.fullmatch(line.strip())
             if match:
                 ospf_active.add(match.group(1))
+            match = BFD_INTERFACE.fullmatch(line.strip())
+            if match:
+                bfd_active.add(match.group(1))
+            match = BFD_PEER.fullmatch(line.strip())
+            if match:
+                bfd_peers.add(IPv4Address(match.group(1)))
         if not interfaces:
             raise ValueError(f"{name}: router script has no interfaces")
         connected = {address.network for address in interfaces.values()}
@@ -78,7 +91,11 @@ def _routers(infrastructure: dict) -> dict[str, Router]:
                 f"missing {sorted(str(item) for item in connected - advertised)}, "
                 f"extra {sorted(str(item) for item in advertised - connected)}"
             )
-        routers[name] = Router(name, interfaces, advertised, ospf_active)
+        if not bfd_active <= ospf_active:
+            raise ValueError(f"{name}: BFD must use active OSPF interfaces")
+        routers[name] = Router(
+            name, interfaces, advertised, ospf_active, bfd_active, bfd_peers
+        )
     return routers
 
 
@@ -162,6 +179,14 @@ def managed_deletes(configuration: str) -> list[str]:
 
 
 def _owner(routers: dict[str, Router], address: IPv4Address) -> tuple[str, str]:
+    exact = [
+        (router.name, interface)
+        for router in routers.values()
+        for interface, configured in router.interfaces.items()
+        if address == configured.ip
+    ]
+    if len(exact) == 1:
+        return exact[0]
     matches = [
         (router.name, interface)
         for router in routers.values()
@@ -218,6 +243,17 @@ def _resolve_endpoint(
         declared = matches[0]
     if not isinstance(network, IPv4Network):
         raise ValueError(f"{selector}: firewall selectors must be IPv4 CIDRs")
+    if not source and network.prefixlen == 32:
+        owners = [
+            router.name
+            for router in routers.values()
+            if any(
+                address.ip == network.network_address
+                for address in router.interfaces.values()
+            )
+        ]
+        if len(owners) == 1:
+            return Endpoint(selector, None, owners[0], network.network_address)
     if declared.get("kind") != "lan":
         raise ValueError(f"{selector}: firewall endpoint must be a LAN")
     if not _network_cabled(declared, infrastructure, links):
@@ -410,9 +446,27 @@ def compile_policy(
                 pairs[name].setdefault((interface, "local"), set()).add(
                     (str(peer_address.ip), "0.0.0.0/0", "89", None)
                 )
+                if interface in router.bfd_active:
+                    peer = routers[peer_name]
+                    if (
+                        peer_interface not in peer.bfd_active
+                        or peer_address.ip not in router.bfd_peers
+                        or address.ip not in peer.bfd_peers
+                    ):
+                        raise ValueError(
+                            f"{name} {interface}: BFD peer {peer_name} is not configured on both ends"
+                        )
+                    pairs[name].setdefault((interface, "local"), set()).add(
+                        (f"{peer_address.ip}/32", f"{address.ip}/32", "udp", 3784)
+                    )
             pairs[name].setdefault(("local", interface), set()).add(
                 (str(address.ip), "0.0.0.0/0", "89", None)
             )
+            if interface in router.bfd_active:
+                for _, _, peer_address in peers:
+                    pairs[name].setdefault(("local", interface), set()).add(
+                        (f"{address.ip}/32", f"{peer_address.ip}/32", "udp", 3784)
+                    )
     report = {"baseline_flows": [], "attack_exceptions": [], "local_subnet_flows": []}
     for flow, category in [
         *((flow, "baseline_flows") for flow in baseline),
@@ -431,11 +485,19 @@ def compile_policy(
                     routers,
                     source=False,
                 )
-                if destination.network is None:
-                    raise ValueError("destination must select a declared LAN")
+                if destination.network is None and destination.address is None:
+                    raise ValueError(
+                        "destination must select a declared LAN or router IP"
+                    )
                 source_ip = source.network.network_address if source.network else None
-                destination_ip = destination.network.network_address
+                destination_ip = (
+                    destination.network.network_address
+                    if destination.network is not None
+                    else destination.address
+                )
                 if category == "attack_exceptions":
+                    if destination.network is None:
+                        raise ValueError("attack target must select a declared LAN")
                     if source.network is None or not source.network.subnet_of(
                         attack_networks[0]
                     ):
@@ -447,13 +509,24 @@ def compile_policy(
                         source.network is not None
                         and source.network.subnet_of(attack_networks[0])
                     )
-                    or destination.network.subnet_of(attack_networks[0])
+                    or (
+                        destination.network is not None
+                        and destination.network.subnet_of(attack_networks[0])
+                    )
                 ):
                     raise ValueError("baseline policy cannot permit attack-lab traffic")
                 path, resolved_source = _path(
                     routers, adjacency, source.router or "", source_ip, destination_ip
                 )
-                if path and source_ip is not None:
+                if destination.router:
+                    if not path and source_ip is not None:
+                        _, incoming = _owner(routers, source_ip)
+                        path = [(destination.router, incoming, "local")]
+                    if not path or path[-1][0] != destination.router:
+                        raise ValueError("router-local path did not reach the target")
+                    name, incoming, _ = path[-1]
+                    path[-1] = (name, incoming, "local")
+                if path and source_ip is not None and not destination.router:
                     reverse, _ = _path(
                         routers, adjacency, "", destination_ip, source_ip
                     )
@@ -482,7 +555,11 @@ def compile_policy(
                 "source": source_name,
                 "destination": destination_name,
                 "source_cidr": source_cidr,
-                "destination_cidr": str(destination.network),
+                "destination_cidr": (
+                    str(destination.network)
+                    if destination.network is not None
+                    else f"{destination_ip}/32"
+                ),
                 "protocol": flow.protocol,
                 "port": flow.port,
                 "routers": [name for name, _, _ in path],
@@ -496,7 +573,7 @@ def compile_policy(
             for name, incoming, outgoing in path:
                 allowed = pairs[name].setdefault((incoming, outgoing), set())
                 allowed.add(
-                    (source_cidr, str(destination.network), flow.protocol, flow.port)
+                    (source_cidr, record["destination_cidr"], flow.protocol, flow.port)
                 )
                 pairs[name].setdefault((outgoing, incoming), set())
     commands = {}

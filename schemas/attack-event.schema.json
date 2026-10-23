@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://metropolis.local/schemas/attack-event.schema.json",
+  "title": "Metropolis attack action record",
+  "type": "object",
+  "required": ["timestamp", "tool", "event", "run_id", "scenario_id", "scenario_catalog_version", "scenario_variant", "declared_capture_links", "traffic_origin"],
+  "properties": {
+    "timestamp": {"type": "string", "format": "date-time"},
+    "tool": {"type": "string", "minLength": 1},
+    "event": {"type": "string", "minLength": 1},
+    "run_id": {"type": ["string", "null"]},
+    "scenario_id": {"type": ["string", "null"]},
+    "scenario_catalog_version": {"type": ["string", "null"]},
+    "scenario_variant": {"type": "object"},
+    "declared_capture_links": {"type": "array", "uniqueItems": true, "items": {"type": "string"}},
+    "traffic_origin": {
+      "type": "object",
+      "required": ["kind"],
+      "properties": {
+        "kind": {"enum": ["invoking_host", "mixed", "external_script", "spoofed_source", "not_applicable"]},
+        "execution_hostname": {"type": "string"},
+        "reported_execution_ip": {"type": ["string", "null"], "format": "ipv4"},
+        "source_verification": {"const": "check_pcap"}
+      },
+      "additionalProperties": true
+    },
+    "external_script": {
+      "type": "object",
+      "required": ["path", "sha256", "provenance"],
+      "properties": {
+        "path": {"type": "string"},
+        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "provenance": {"type": "string"}
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": true
+}

@@ -1,0 +1,19 @@
+{
+  "schema_version": "1.0",
+  "scenarios": [
+    {"id": "recon.network.v1", "family": "scanner", "tool": "network_recon_scan", "origin_kind": "invoking_host", "capture_focus": "target attachment and routed path"},
+    {"id": "recon.discovery.v1", "family": "scanner", "tool": "iot_discovery", "origin_kind": "invoking_host", "capture_focus": "target attachment and routed path"},
+    {"id": "mqtt.authentication.v1", "family": "mqtt", "tool": "mqtt_bruteforce_attack", "origin_kind": "invoking_host", "capture_focus": "broker attachment and routed path"},
+    {"id": "mqtt.publish.v1", "family": "mqtt", "tool": "mqtt_flood_attack", "origin_kind": "invoking_host", "capture_focus": "broker attachment and subscriber path"},
+    {"id": "ssh.authentication.v1", "family": "ssh", "tool": "ssh_bruteforce_attack", "origin_kind": "invoking_host", "capture_focus": "engineering host attachment and routed path"},
+    {"id": "modbus.write.v1", "family": "modbus", "tool": "modbus_manipulation_attack", "origin_kind": "invoking_host", "capture_focus": "selected controller attachment and routed path"},
+    {"id": "coap.response.v1", "family": "coap", "tool": "coap_response_measurement", "origin_kind": "invoking_host", "capture_focus": "sensor attachment, routed path, and receiver when spoofing"},
+    {"id": "hping3.traffic.v1", "family": "hping3", "tool": "hping3_attack", "origin_kind": "invoking_host", "capture_focus": "target attachment and routed path"},
+    {"id": "mirai.telnet.v1", "family": "mirai", "tool": "mirai_infection_sim", "origin_kind": "invoking_host", "capture_focus": "Telnet target attachment and routed path"},
+    {"id": "mirai.scenario.v1", "family": "mirai", "tool": "mirai_scenario", "origin_kind": "invoking_host", "capture_focus": "Telnet target, control, report, and loader paths"},
+    {"id": "mirai.control.v1", "family": "mirai", "tool": "run_mirai_choreography", "origin_kind": "invoking_host", "capture_focus": "control, report, and loader paths"},
+    {"id": "merlin.scenario.v1", "family": "merlin", "tool": "merlin_scenario", "origin_kind": "mixed", "capture_focus": "agent and control attachments plus routed path"},
+    {"id": "merlin.control.v1", "family": "merlin", "tool": "run_merlin", "origin_kind": "invoking_host", "capture_focus": "control attachment and routed path"},
+    {"id": "external.shell.v1", "family": "external", "tool": "gotham_shell", "origin_kind": "external_script", "capture_focus": "researcher-selected source and destination links; packet source unverified"}
+  ]
+}

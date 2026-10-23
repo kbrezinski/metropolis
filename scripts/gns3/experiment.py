@@ -72,6 +72,9 @@ def run_experiment(
             if device["image"] == "metropolis/reachability-probe:dev"
         ],
     )
+    collector.manifest["attack_events_path"] = "attacks.jsonl"
+    (collector.run_dir / "attacks.jsonl").touch(exist_ok=True)
+    collector._write_manifest()
     timeline = collector.run_dir / "timeline.jsonl"
     exception_records = firewall_exceptions or []
     collector.manifest["firewall"] = {
@@ -165,6 +168,8 @@ def run_experiment(
         declared = [link["id"] for link in link_plan["links"]]
         resolution = resolve_links(client, project.project_id, topology, declared)
         chosen = selected_links if selected_links is not None else resolution.capturable
+        collector.manifest["selected_capture_links"] = list(chosen)
+        collector._write_manifest()
         coverage = coverage_report(
             resolution, chosen, link_plan, inventory, infrastructure
         )

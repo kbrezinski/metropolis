@@ -139,7 +139,8 @@ The emulated set includes Modbus TCP, EtherNet/IP, MQTT, and supporting services
 | HMI | Authenticated HTTP panel on TCP 8080; shows telemetry and controller status, and sends a command only after an operator submits a setpoint |
 | Historian | Subscribes to MQTT topics and logs what it receives |
 | Engineering workstation | OpenSSH shell and SFTP on TCP 22 |
-| Routine control client | Resolves the PLC via DNS, samples NTP, and makes bounded periodic Modbus reads and writes |
+| Routine control client | Resolves the PLC via DNS, samples NTP, makes bounded periodic Modbus reads and writes, and polls router uptime over read-only SNMP |
+| VyOS routers | Exchange OSPF and BFD control traffic on routed peer links; answer the control client's SNMP polls |
 | Legacy gateway | Telnet login and shell, for experiments needing legacy host access |
 | DNS and NTP | Local name resolution and time replies, so the network has background traffic |
 

@@ -561,7 +561,7 @@ devices:
     subnet: 10.20.21.0/24
     address: 10.20.21.20/24
     gateway: 10.20.21.1
-    protocols: [modbus-tcp, dns, ntp]
+    protocols: [modbus-tcp, dns, ntp, snmp-manager]
     environment:
       NODE_HOSTNAME: MET-CONTROL-CLIENT-01
       NODE_IP: 10.20.21.20/24
@@ -570,6 +570,8 @@ devices:
       DNS_SERVER: 10.20.30.10
       NTP_SERVER: 10.20.30.11
       CONTROL_INTERVAL: "30"
+      SNMP_COMMUNITY: metropolis_ro
+      SNMP_TARGETS: MET-PLANT=10.20.10.1,MET-OT-CORE=10.20.30.1,MET-OT-DMZ=10.20.40.1,MET-OT-WAN=172.31.255.1,MET-RESERVOIR=10.20.14.1,MET-RAW-WATER=10.20.15.1
 
   - name: MET-LEGACY-GATEWAY-01
     model: testbeds/metropolis/devices/field/legacy_gateway

@@ -1,6 +1,6 @@
 #!/bin/vbash
 # Metropolis water-treatment OT testbed: DMZ, enterprise, and attack-test edge.
-# This standalone script configures routing only. The GNS3 --configure-routers
+# This script configures routing and SNMP. The GNS3 --configure-routers
 # path adds generated zone rules from topology/firewall-policy.yaml.
 #
 # GNS3 interface map:
@@ -18,6 +18,7 @@ configure
 set interfaces ethernet eth0 description 'Transit to OT core'
 set interfaces ethernet eth0 address '10.20.254.6/30'
 set interfaces ethernet eth0 ip ospf network 'point-to-point'
+set interfaces ethernet eth0 ip ospf bfd
 set interfaces ethernet eth1 description 'OT DMZ network'
 set interfaces ethernet eth1 address '10.20.40.1/24'
 set interfaces ethernet eth2 description 'Enterprise network'
@@ -32,6 +33,10 @@ set protocols ospf passive-interface-exclude 'eth0'
 set protocols ospf area 0 network '10.20.254.4/30'
 set protocols ospf area 0 network '10.20.40.0/24'
 set protocols ospf area 0 network '10.30.10.0/24'
+set protocols bfd peer '10.20.254.5'
+
+set service snmp community metropolis_ro authorization ro
+set service snmp community metropolis_ro client 10.20.21.20
 set protocols ospf area 0 network '10.99.10.0/24'
 
 set system host-name 'MET-OT-DMZ'

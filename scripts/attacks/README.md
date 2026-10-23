@@ -23,6 +23,48 @@ python scripts/attacks/run.py network_recon_scan
 Every attack command takes `--dry-run` and `--help`. Nothing is sent until you set
 `METROPOLIS_LAB_ACK=yes`.
 
+## Versioned scenarios and experiment runs
+
+The address-free [scenario catalog](scenarios/v1.json) names the existing
+traffic-generating attack families and the kind of capture path to inspect.
+The selected dataset still supplies targets and link IDs. A scenario is a
+versioned description of a tool's traffic; its CLI options choose the action
+for a particular run. New-cell attack cases are separate from this catalog.
+
+Start `experiment_run` in one terminal with a chosen `--run-id` and sufficient
+duration. Before launching the attack from another terminal, wait for the run
+manifest to list the selected links and confirm in GNS3 that each link is
+capturing:
+
+```bash
+python scripts/gns3/run.py experiment_run --run-id intake_write_001 --duration 120
+METROPOLIS_LAB_ACK=yes python scripts/attacks/run.py modbus_manipulation_attack \
+  --run-id intake_write_001 --capture-link attach-intake-plc \
+  --node MET-PLC-INTAKE-01 --action set-setpoint --value 600
+```
+
+Use `--dataset` on both commands for a custom testbed. Repeat `--capture-link`
+for each declared `links.yaml` ID chosen for the attack. The attack command
+checks that those IDs exist and are in the running experiment's selected
+capture list. Each action includes the run ID, scenario ID, selected mode or
+action in `scenario_variant`, declared links, UTC event time, and traffic-origin
+description. The command appends to
+`runs/<run-id>/attacks.jsonl`; the run manifest names that file. The experiment
+timeline remains for orchestration, and the device/syslog files remain for
+service output. A declared or selected link is not proof of a PCAP: review
+`captures/<run-id>/manifest.json` after the run for actual captured links and
+failures. A live bound command writes to the run bundle even when `--output`
+is supplied; an alternative output path is rejected.
+
+The native tools send from the machine invoking the runner. The record includes
+that machine's hostname; `--execution-ip` can add its reported lab IP. These
+values identify the executor, while the PCAP establishes the observed packet
+source. `merlin_scenario` also observes traffic sent by its selected simulated
+agent; its origin is recorded as mixed with the agent node and address. In
+CoAP `--mode spoof`, the record keeps the claimed packet source separate from
+the executor. An external shell script can start other senders, so its packet
+source remains unverified. Dry runs never append to an existing run bundle.
+
 ## Files and entry point
 
 Keep using `scripts/attacks/run.py` to start an attack. The Python commands
@@ -65,8 +107,11 @@ Set `METROPOLIS_DATASET` to that directory to avoid repeating `--dataset`, or
 pass `--inventory PATH` for a standalone `initial_devices.yaml`. Each targetable
 end device needs a `name`, private IPv4 `address`, and relevant `protocols` in
 that file. Keep `environment.NODE_IP` in sync with `address` when it is set;
-the runner rejects a mismatch. The scripts use current inventory addresses
-and service port settings.
+the runner rejects a mismatch. Custom PLCs need `CELL_ROLE` or an explicit
+`--profile` for Modbus actions; a custom dataset must provide
+`protocol_profiles/modbus_actions_v1.yaml` or use `--profile-file`. An unlisted
+`--host` is recorded with unverified node attribution. The scripts use current
+inventory addresses and service port settings.
 The bundled node names remain preferred for the bundled dataset; they are not
 required in a custom dataset. If several nodes offer the same service, choose
 one with `--node NAME`. If the service is absent, the command reports it.
@@ -117,9 +162,41 @@ does not make an unrelated image compatible.
 The Mirai and Merlin choreography tools need the attack-lab nodes running first — see
 [Run the fake botnet](#run-the-fake-botnet).
 
-The Gotham CoAP amplification recipe is retained separately at
-`coap/Dockerfile`. It is a Dockerfile, not a Python attack
-entry point, and is not discovered or run by `scripts/attacks/run.py`.
+The Gotham CoAP amplification recipe is retained at `coap/Dockerfile`. These
+standalone Docker recipes package additional command-line C examples from
+Phenomite's AMP-Research archive:
+
+| Recipe | Reason to retain it as a reference |
+|---|---|
+| [DNS](dns/Dockerfile), [NTP](ntp/Dockerfile) | Protocols already represented in the lab |
+| [SNMP](snmp/Dockerfile), [BFD](bfd/Dockerfile) | Network-device management and adjacency traffic for possible future infrastructure |
+| [SSDP](ssdp/Dockerfile) | Networked-device discovery traffic |
+| [IPsec](ipsec/Dockerfile) | Relevant to the planned site-to-site VPN |
+
+Each recipe clones and compiles the upstream source, retains its MIT license
+and the cloned commit ID inside the image, and opens Bash. Its source and
+license SHA-256 hashes are checked against the bundled
+`examples/AMP-Research-master` archive. That archive has no Git metadata, so
+its original commit cannot be verified. If upstream files change, the build
+stops until the new source is reviewed and its expected hashes are updated.
+These are manual reference images: `scripts/attacks/run.py` does not build or
+launch them, and they have no GNS3 runtime integration. Current Metropolis
+services are not assumed to have the historical amplification behaviors these
+examples target. AMP's CoAP C program is already the source used by the Gotham
+recipe; its UDP Modbus payload does not match the lab's Modbus TCP controllers.
+
+```bash
+for kind in dns ntp snmp bfd ssdp ipsec; do
+  docker build -f scripts/attacks/$kind/Dockerfile \
+    -t metropolis/amp-$kind:reference scripts/attacks/$kind
+done
+docker run --rm --network none metropolis/amp-dns:reference /opt/dns/amplification
+```
+
+The last command prints the upstream CLI usage without sending traffic; the
+upstream program exits nonzero when required arguments are absent. Actual use
+needs a researcher-supplied reflector list and raw-socket privileges; the
+images do not select targets from the Metropolis dataset.
 
 ## Install
 
@@ -307,10 +384,12 @@ These tools change state. The important ones:
   on the topic for future subscribers. Clear it afterwards with
   `--mode clear-retain` on the same topic — cleanup does not restore whatever
   was there before.
-- **Modbus writes.** `--restore` puts the register back the way it found it, but
-  the control client writes the PLC on its own schedule, so pause it or note the
-  values. `--action overwrite-heartbeat` keeps writing register 3 while the PLC
-  keeps counting; it cannot be restored.
+- **Modbus writes.** The attack resolves the selected node's cell action from
+  the [versioned Modbus action profiles](../../testbeds/metropolis/datasets/water_treatment_v1/protocol_profiles/modbus_actions_v1.yaml).
+  An action absent from that cell is rejected. A custom dataset can supply its
+  own profile file; use `--profile-file` and `--profile` for an unlisted host.
+  `--restore` puts the addressed value back when possible, but a controller may
+  refresh it on its own schedule. Heartbeat overwrites cannot be restored.
 - **CoAP spoofing.** `--mode spoof` sends requests with someone else's source
   address. Responses go to the receiver, so check that host's capture — the
   sender can only tell you what it emitted.
@@ -341,6 +420,14 @@ A `finished` event always appears at the end; the outcome is in the
 When capturing, record the run's JSONL alongside the pcap, plus the baseline
 traffic, image versions, routes, and capture point. Vary topics and client IDs
 between runs so a future detector cannot key on the fixture names.
+
+The `--gotham-script` alternative uses the distinct `external.shell.v1`
+scenario and records the selected file path, SHA-256, and user-supplied
+provenance in its action record. Its arguments are not
+recorded because they may contain credentials. This hash identifies the
+supplied file, not an upstream Gotham revision. The AMP Docker recipes are
+manual imports and have no action record unless the researcher records their
+execution separately.
 
 ## Reference
 

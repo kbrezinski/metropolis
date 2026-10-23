@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -30,7 +31,9 @@ def custom_dataset(tmp_path):
     target = root / "device_instances/initial_devices.yaml"
     target.parent.mkdir(parents=True)
     records = [
-        device("PLC-A", "10.77.1.10", ["modbus-tcp"], DEVICE_ROLE="PLC"),
+        device(
+            "PLC-A", "10.77.1.10", ["modbus-tcp"], DEVICE_ROLE="PLC", CELL_ROLE="intake"
+        ),
         device("SENSOR-A", "10.77.1.20", ["coap"], COAP_PORT="5683"),
         device(
             "BROKER-A",
@@ -70,6 +73,13 @@ def custom_dataset(tmp_path):
     ]
     target.write_text(
         yaml.safe_dump({"testbed_id": "custom", "devices": records}), encoding="utf-8"
+    )
+    profile = root / "protocol_profiles/modbus_actions_v1.yaml"
+    profile.parent.mkdir()
+    shutil.copyfile(
+        ROOT
+        / "testbeds/metropolis/datasets/water_treatment_v1/protocol_profiles/modbus_actions_v1.yaml",
+        profile,
     )
     return root, target, records
 
@@ -142,7 +152,11 @@ def test_missing_service_reports_why(custom_dataset):
 
 def test_ambiguous_service_requires_explicit_node(custom_dataset):
     _, target, records = custom_dataset
-    records.append(device("PLC-B", "10.77.1.11", ["modbus-tcp"], DEVICE_ROLE="PLC"))
+    records.append(
+        device(
+            "PLC-B", "10.77.1.11", ["modbus-tcp"], DEVICE_ROLE="PLC", CELL_ROLE="intake"
+        )
+    )
     target.write_text(
         yaml.safe_dump({"testbed_id": "custom", "devices": records}), encoding="utf-8"
     )
@@ -185,6 +199,8 @@ def test_explicit_private_host_and_port_can_target_an_unlisted_appliance(
             "10.77.9.10",
             "--port",
             "1502",
+            "--profile",
+            "intake",
             "--action",
             "set-level",
         )
@@ -208,6 +224,8 @@ def test_explicit_unlisted_host_rejects_public_address(custom_dataset):
         "8.8.8.8",
         "--port",
         "502",
+        "--profile",
+        "intake",
         "--action",
         "set-level",
     )

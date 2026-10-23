@@ -26,6 +26,11 @@ flows:
   - {id: engineering-dns-udp, source: engineering, destination: ot-services, protocol: udp, port: 53}
   - {id: engineering-dns-tcp, source: engineering, destination: ot-services, protocol: tcp, port: 53}
   - {id: engineering-ntp, source: engineering, destination: ot-services, protocol: udp, port: 123}
+  - id: engineering-router-snmp
+    source: 10.20.21.20/32
+    destination: [10.20.10.1/32, 10.20.30.1/32, 10.20.40.1/32, 172.31.255.1/32, 10.20.14.1/32, 10.20.15.1/32]
+    protocol: udp
+    port: 161
   - id: router-syslog
     source: [router/MET-PLANT, router/MET-OT-CORE, router/MET-OT-DMZ, router/MET-OT-WAN, router/MET-RESERVOIR, router/MET-RAW-WATER]
     destination: ot-services

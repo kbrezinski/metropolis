@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib.util
 import socket
 import struct
+import subprocess
 import sys
 import types
 from pathlib import Path
@@ -124,3 +125,57 @@ def test_ntp_rejects_incomplete_response(monkeypatch):
     monkeypatch.setattr(socket, "socket", lambda *args: FakeSocket())
     with pytest.raises(ValueError, match="Invalid NTP"):
         control_client.sample_ntp("10.20.30.11")
+
+
+def test_snmp_target_parser_and_read_only_poll(monkeypatch):
+    assert control_client.snmp_targets("core=10.0.0.1,remote=10.0.0.2") == [
+        ("core", "10.0.0.1"),
+        ("remote", "10.0.0.2"),
+    ]
+    with pytest.raises(ValueError, match="Invalid SNMP target"):
+        control_client.snmp_targets("core=10.0.0.1,core=10.0.0.2")
+    calls = []
+
+    def fake_run(command, **kwargs):
+        calls.append((command, kwargs))
+        return subprocess.CompletedProcess(
+            command, 0, "Timeticks: (123) 0:00:01.23\n", ""
+        )
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    assert "123" in control_client.sample_snmp("10.0.0.1", "lab-read-only")
+    command, kwargs = calls[0]
+    assert command[:3] == ["snmpget", "-v2c", "-c"]
+    assert command[-2:] == ["10.0.0.1", "1.3.6.1.2.1.1.3.0"]
+    assert kwargs["timeout"] == 4
+
+
+def test_snmp_poll_survives_modbus_failure_without_logging_community(
+    monkeypatch, caplog
+):
+    class EndCycle(Exception):
+        pass
+
+    monkeypatch.setenv("SNMP_TARGETS", "core=10.0.0.1")
+    monkeypatch.setenv("SNMP_COMMUNITY", "private-lab-string")
+    monkeypatch.setattr(control_client, "lookup_plc", lambda *args: "10.0.0.2")
+    monkeypatch.setattr(
+        control_client,
+        "control_cycle",
+        lambda *args: (_ for _ in ()).throw(ConnectionError("PLC unavailable")),
+    )
+    calls = []
+
+    def failing_poll(host, community):
+        calls.append((host, community))
+        raise RuntimeError("request with private-lab-string failed")
+
+    monkeypatch.setattr(control_client, "sample_snmp", failing_poll)
+    monkeypatch.setattr(
+        control_client.time, "sleep", lambda _: (_ for _ in ()).throw(EndCycle)
+    )
+    with pytest.raises(EndCycle):
+        control_client.main()
+    assert calls == [("10.0.0.1", "private-lab-string")]
+    assert "SNMP poll failed: router=core" in caplog.text
+    assert "private-lab-string" not in caplog.text

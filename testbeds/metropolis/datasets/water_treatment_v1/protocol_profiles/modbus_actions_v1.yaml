@@ -1,0 +1,56 @@
+# Attack action maps for the lab's Modbus controller profiles. These describe
+# protocol addresses and meanings, not whether a write will persist after the
+# simulator refreshes an operational register.
+schema_version: "1.0"
+profile_version: "1.0.0"
+profiles:
+  intake:
+    actions:
+      set-level: {area: holding-register, address: 0, value: argument, repeat: false, meaning: process_level_x10_percent}
+      set-flow: {area: holding-register, address: 1, value: argument, repeat: false, meaning: process_flow_x10}
+      set-quality: {area: holding-register, address: 2, value: argument, repeat: false, meaning: process_quality_x10_percent}
+      set-setpoint: {area: holding-register, address: 4, value: argument, repeat: false, meaning: level_setpoint_x10_percent}
+      force-pump: {area: coil, address: 0, value: "true", repeat: false, meaning: pump_run_request}
+      release-pump: {area: coil, address: 0, value: "false", repeat: false, meaning: pump_run_request}
+      open-valve: {area: coil, address: 1, value: "true", repeat: false, meaning: valve_open_request}
+      close-valve: {area: coil, address: 1, value: "false", repeat: false, meaning: valve_open_request}
+      overwrite-heartbeat: &heartbeat {area: holding-register, address: 3, value: zero, repeat: true, meaning: controller_heartbeat}
+      freeze-heartbeat: *heartbeat
+
+  dosing:
+    actions:
+      set-ph: {area: holding-register, address: 0, value: argument, repeat: false, meaning: analyzer_ph_x100}
+      set-turbidity: {area: holding-register, address: 1, value: argument, repeat: false, meaning: analyzer_turbidity_x10}
+      set-dose-setpoint: {area: holding-register, address: 4, value: argument, repeat: false, meaning: dose_setpoint_x10_percent}
+      enable-dosing: {area: coil, address: 0, value: "true", repeat: false, meaning: dosing_enable}
+      disable-dosing: {area: coil, address: 0, value: "false", repeat: false, meaning: dosing_enable}
+      overwrite-heartbeat: *heartbeat
+      freeze-heartbeat: *heartbeat
+
+  filtration:
+    actions:
+      set-pressure: {area: holding-register, address: 0, value: argument, repeat: false, meaning: differential_pressure_x10_kpa}
+      set-backwash-threshold: {area: holding-register, address: 4, value: argument, repeat: false, meaning: backwash_threshold_x10_kpa}
+      enable-backwash: {area: coil, address: 0, value: "true", repeat: false, meaning: automatic_backwash_enable}
+      disable-backwash: {area: coil, address: 0, value: "false", repeat: false, meaning: automatic_backwash_enable}
+      overwrite-heartbeat: *heartbeat
+      freeze-heartbeat: *heartbeat
+
+  disinfection:
+    actions:
+      set-residual: {area: holding-register, address: 0, value: argument, repeat: false, meaning: residual_chlorine_x10_mg_per_l}
+      set-residual-target: {area: holding-register, address: 4, value: argument, repeat: false, meaning: residual_target_x10_mg_per_l}
+      enable-feed: {area: coil, address: 0, value: "true", repeat: false, meaning: chemical_feed_enable}
+      disable-feed: {area: coil, address: 0, value: "false", repeat: false, meaning: chemical_feed_enable}
+      overwrite-heartbeat: *heartbeat
+      freeze-heartbeat: *heartbeat
+
+  reservoir: &remote_site
+    actions:
+      set-level: {area: holding-register, address: 0, value: argument, repeat: false, meaning: remote_level_x10_percent}
+      force-pump: {area: coil, address: 0, value: "true", repeat: false, meaning: remote_pump_request}
+      release-pump: {area: coil, address: 0, value: "false", repeat: false, meaning: remote_pump_request}
+      overwrite-heartbeat: *heartbeat
+      freeze-heartbeat: *heartbeat
+
+  raw_water: *remote_site

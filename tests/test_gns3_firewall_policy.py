@@ -239,6 +239,53 @@ def _has_rule(lines, source, destination, protocol, port):
     return False
 
 
+def test_bfd_rules_follow_declared_ospf_peers(lab):
+    dataset, infrastructure, inventory = lab
+    first, second = (Path(item["config"]) for item in infrastructure["routers"])
+    with first.open("a", encoding="utf-8") as script:
+        script.write("set interfaces ethernet eth0 ip ospf bfd\n")
+        script.write("set protocols bfd peer '10.0.0.2'\n")
+    with second.open("a", encoding="utf-8") as script:
+        script.write("set interfaces ethernet eth0 ip ospf bfd\n")
+        script.write("set protocols bfd peer '10.0.0.1'\n")
+
+    commands, _ = compile_policy(dataset, infrastructure, inventory)
+    assert _has_rule(commands["router-a"], "10.0.0.2/32", "10.0.0.1/32", "udp", 3784)
+    assert _has_rule(commands["router-b"], "10.0.0.1/32", "10.0.0.2/32", "udp", 3784)
+
+    second.write_text(
+        second.read_text().replace("set protocols bfd peer '10.0.0.1'\n", "")
+    )
+    with pytest.raises(ValueError, match="BFD peer router-b is not configured"):
+        compile_policy(dataset, infrastructure, inventory)
+
+
+def test_router_local_snmp_flow_uses_exact_interface_address(lab):
+    dataset, infrastructure, inventory = lab
+    path = dataset / "topology/firewall-policy.yaml"
+    policy = yaml.safe_load(path.read_text())
+    policy["flows"].append(
+        {
+            "id": "management",
+            "source": "10.1.0.10/32",
+            "destination": ["10.1.0.1/32", "10.2.0.1/32"],
+            "protocol": "udp",
+            "port": 161,
+        }
+    )
+    path.write_text(yaml.safe_dump(policy))
+
+    commands, report = compile_policy(dataset, infrastructure, inventory)
+    assert _has_rule(commands["router-a"], "10.1.0.10/32", "10.1.0.1/32", "udp", 161)
+    assert _has_rule(commands["router-a"], "10.1.0.10/32", "10.2.0.1/32", "udp", 161)
+    assert _has_rule(commands["router-b"], "10.1.0.10/32", "10.2.0.1/32", "udp", 161)
+    flows = [flow for flow in report["baseline_flows"] if flow["id"] == "management"]
+    assert [flow["routers"] for flow in flows] == [
+        ["router-a"],
+        ["router-a", "router-b"],
+    ]
+
+
 def test_subnet_baseline_allow_and_default_drop(lab):
     dataset, infrastructure, inventory = lab
     commands, _ = compile_policy(dataset, infrastructure, inventory)

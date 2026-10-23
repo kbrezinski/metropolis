@@ -115,6 +115,31 @@ capture a transit or WAN-underlay link to confirm hello and update packets.
 `render_firewall --check` validates the declared OSPF peers and their cables
 without contacting GNS3.
 
+BFD is configured on each active router-to-router OSPF interface. Each VyOS
+router declares its direct BFD peers, including both remote routers on the
+shared WAN. The generated zone policy permits UDP 3784 only between the exact
+peer interface addresses on those links. `render_firewall --check` rejects a
+BFD setting that is missing on either end of a declared adjacency. BFD control
+packets should appear on the three core transit links and the shared WAN
+links, not on passive device LANs. In GNS3, check `show protocols bfd peer` alongside
+`show ip ospf neighbor` and capture the transit and WAN links. Actual BFD
+session establishment and failover timing have not been verified here.
+
+The existing `MET-CONTROL-CLIENT-01` on engineering VLAN 21 polls the standard
+read-only sysUpTime OID on all six VyOS routers once per control cycle
+(`CONTROL_INTERVAL`, 30 seconds in the bundled inventory). `SNMP_TARGETS`
+holds router name and address pairs in that device's inventory environment.
+The control-client image includes `snmpget`; rebuild it on the GNS3 compute
+before starting the topology. Router scripts enable read-only SNMPv2c and
+restrict the community to the client's address. The firewall allows UDP 161
+from that client to the listed router interface addresses, including router
+local zones; replies use established-state rules. SNMP requests and replies
+should appear on the engineering uplink and routed paths to each router.
+The community is an intentionally clear-text lab value and must stay inside
+the isolated testbed. Container output is simulator diagnostics; PCAPs are the
+network traffic record. The Open vSwitch nodes are not SNMP targets. Runtime
+poll success and packet coverage still need a GNS3 check.
+
 For an existing project, run `build_topology --configure-routers` to migrate
 all six routers. The loader reads each running configuration, removes only the
 exact static routes installed by the earlier Metropolis scripts, commits the
@@ -234,6 +259,10 @@ share one run ID: the run manifest, timeline, `logs/devices.jsonl`, and
 `logs/syslog.jsonl` are under `runs/<run-id>/`; PCAPs and their detailed manifest
 are under `captures/<run-id>/`. The run manifest includes the capture manifest,
 link IDs, PCAP paths, hashes, timestamps, unavailable declarations and failures.
+It also names `attacks.jsonl`, where a separately launched attack command can
+append actions with the same run ID, scenario version, declared capture points,
+and traffic origin. The selected link list is written while the run is active;
+check the completed capture manifest before treating a point as captured.
 `--start-lab` leaves nodes running after the experiment; stop them with
 `lab_lifecycle --stop` when appropriate.
 
@@ -274,7 +303,8 @@ and unauthenticated TCP Docker endpoints are rejected. This reads Docker logs
 and does not execute commands inside containers or change device state.
 
 Output is under `datasets/<version>/runs/<run-id>/`: `manifest.json`,
-`timeline.jsonl` for run actions and project status, `logs/devices.jsonl`,
+`timeline.jsonl` for run actions and project status, `attacks.jsonl` for attack
+actions, `logs/devices.jsonl`,
 `logs/syslog.jsonl`, and one raw file per Docker node in `logs/raw/`. A standalone
 `collect_device_logs` run leaves the timeline empty; `experiment_run` fills it.
 PCAPs remain in `datasets/<version>/captures/<run-id>/`; their packet records

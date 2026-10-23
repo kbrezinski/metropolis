@@ -557,6 +557,29 @@ def test_validator_requires_syslog_receiver_when_routers_are_declared(sandbox):
     assert "no inventoried syslog receiver for declared routers" in result.stdout
 
 
+def test_validator_rejects_snmp_target_address_drift(sandbox):
+    inventory = load_document(sandbox, 2)
+    manager = next(
+        (
+            device
+            for device in inventory["devices"]
+            if "snmp-manager" in device["protocols"]
+        ),
+        None,
+    )
+    if manager is None:
+        pytest.skip("selected topology has no SNMP manager")
+    targets = manager["environment"]["SNMP_TARGETS"].split(",")
+    first_name, _ = targets[0].split("=", 1)
+    targets[0] = f"{first_name}=192.0.2.123"
+    manager["environment"]["SNMP_TARGETS"] = ",".join(targets)
+    save_document(sandbox, 2, inventory)
+
+    result = run_validator(sandbox)
+    assert result.returncode != 0
+    assert "SNMP target 192.0.2.123 is not a router interface" in result.stdout
+
+
 def test_bundled_validator_catches_broker_certificate_default_drift(sandbox):
     inventory = load_document(sandbox, 2)
     broker = next(

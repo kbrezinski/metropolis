@@ -8,7 +8,7 @@
 # The plant switch trunk must carry VLANs 10-13 and 50-53.
 # VLAN IDs match the third octet of their subnets.
 # The GNS3 --configure-routers path adds generated firewall zone rules from
-# topology/firewall-policy.yaml; this standalone script configures routing only.
+# topology/firewall-policy.yaml; this script configures routing and SNMP.
 
 source /opt/vyatta/etc/functions/script-template
 
@@ -17,6 +17,7 @@ configure
 set interfaces ethernet eth0 description 'Transit to OT core'
 set interfaces ethernet eth0 address '10.20.254.2/30'
 set interfaces ethernet eth0 ip ospf network 'point-to-point'
+set interfaces ethernet eth0 ip ospf bfd
 
 set interfaces ethernet eth1 description '802.1Q trunk to plant aggregation switch'
 set interfaces ethernet eth1 vif 10 description 'Intake PLC network'
@@ -49,6 +50,11 @@ set protocols ospf area 0 network '10.20.50.0/24'
 set protocols ospf area 0 network '10.20.51.0/24'
 set protocols ospf area 0 network '10.20.52.0/24'
 set protocols ospf area 0 network '10.20.53.0/24'
+set protocols bfd peer '10.20.254.1'
+
+# Read-only lab SNMP from the engineering control client.
+set service snmp community metropolis_ro authorization ro
+set service snmp community metropolis_ro client 10.20.21.20
 
 set system host-name 'MET-PLANT'
 set system syslog host 10.20.30.11 facility all level info

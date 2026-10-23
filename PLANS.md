@@ -19,12 +19,12 @@ The intake, dosing, filtration, and disinfection cells have declared and impleme
 
 - [ ] Define an expected normal-flow and capture-point matrix for populated cells and remote RTUs: endpoints, protocols, polling and cyclic rates, fault traffic, and local versus routed links. Mark declared but unpopulated networks separately; keep Docker output as simulator diagnostics.
 - [ ] Make the GNS3 builder detect stale image, environment, and adapter settings when it reuses a node by name; plan how to report or reconcile drift before expanding the inventory.
-- [ ] Fill the empty `protocol_profiles/` directory with the current register maps, MQTT topics, EtherNet/IP assemblies, service settings, and timing defaults; check profiles against inventory and simulator configuration. Preserve stable per-cell SCADA polling rates as targets are added.
+- [ ] Extend `protocol_profiles/` beyond the versioned Modbus attack action map with the full register maps, MQTT topics, EtherNet/IP assemblies, service settings, and timing defaults; check profiles against inventory and simulator configuration. Preserve stable per-cell SCADA polling rates as targets are added.
 - [ ] Add the existing firewall policy as an optional document in `metropolis.topology`, including load/save and validation; have the GNS3 compiler consume that model instead of reading the YAML separately.
 
 ### Attack scripts — later
 
-- [ ] Scope attack scripts after normal traffic is established: define versioned scenarios for existing attack families, align actions with the experiment run ID and capture points, make Modbus actions cell-profile aware, and record external-script provenance and traffic origin. Keep cases for new cells in this separate work item.
+- [ ] Add dedicated attack cases for newly populated cells after their normal packet patterns are confirmed. Keep this separate from adding the normal device traffic.
 
 ## 2. Data processing and model development — future
 

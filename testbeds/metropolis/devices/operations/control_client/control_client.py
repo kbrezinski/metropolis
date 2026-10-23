@@ -6,7 +6,9 @@ import logging
 import os
 import socket
 import struct
+import subprocess
 import time
+from ipaddress import IPv4Address
 
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 log = logging.getLogger("metropolis.control_client")
@@ -36,6 +38,45 @@ def sample_ntp(server: str) -> float:
     if seconds == 0:
         raise ValueError("NTP server has no transmit timestamp")
     return seconds - 2208988800 + fraction / 2**32
+
+
+def snmp_targets(value: str) -> list[tuple[str, str]]:
+    """Read manager targets from the selected dataset's device environment."""
+    targets = []
+    names = set()
+    for item in filter(None, (part.strip() for part in value.split(","))):
+        name, separator, address = item.partition("=")
+        if not separator or not name or name in names:
+            raise ValueError("Invalid SNMP target list")
+        targets.append((name, str(IPv4Address(address.strip()))))
+        names.add(name)
+    return targets
+
+
+def sample_snmp(host: str, community: str) -> str:
+    """Read the standard sysUpTime OID without changing router state."""
+    result = subprocess.run(
+        [
+            "snmpget",
+            "-v2c",
+            "-c",
+            community,
+            "-Oqv",
+            "-t",
+            "2",
+            "-r",
+            "0",
+            host,
+            "1.3.6.1.2.1.1.3.0",
+        ],
+        capture_output=True,
+        text=True,
+        timeout=4,
+        check=False,
+    )
+    if result.returncode or not result.stdout.strip():
+        raise RuntimeError("SNMP query failed")
+    return result.stdout.strip()
 
 
 def control_cycle(plc_host: str, port: int, unit_id: int, level: int, pump: bool):
@@ -71,6 +112,8 @@ def main() -> None:
     interval = max(5, float(os.getenv("CONTROL_INTERVAL", "30")))
     port = int(os.getenv("MODBUS_PORT", "502"))
     unit_id = int(os.getenv("MODBUS_UNIT_ID", "1"))
+    targets = snmp_targets(os.getenv("SNMP_TARGETS", ""))
+    community = os.getenv("SNMP_COMMUNITY", "")
     cycle = 0
     while True:
         try:
@@ -96,6 +139,15 @@ def main() -> None:
             cycle += 1
         except Exception as exc:  # Keep baseline traffic alive during node outages.
             log.warning("Routine control cycle failed: %s", exc)
+        for name, target in targets:
+            try:
+                if not community:
+                    raise RuntimeError("SNMP manager community is unset")
+                uptime = sample_snmp(target, community)
+                log.info("SNMP poll succeeded: router=%s uptime=%s", name, uptime)
+            except (OSError, RuntimeError, subprocess.TimeoutExpired):
+                # Never include command arguments or community in collected logs.
+                log.warning("SNMP poll failed: router=%s", name)
         time.sleep(interval)
 
 

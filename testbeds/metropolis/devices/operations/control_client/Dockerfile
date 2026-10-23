@@ -10,7 +10,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     CONTROL_INTERVAL=30
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends iproute2 hostname \
+    && apt-get install -y --no-install-recommends iproute2 hostname snmp \
     && rm -rf /var/lib/apt/lists/* \
     && pip install --no-cache-dir pymodbus==3.8.6 dnspython==2.7.0
 

@@ -98,21 +98,25 @@ critical options.
 
 ## Modbus
 
-**Targets:** the PLC and RTUs on TCP 502.
+**Targets:** the four plant PLCs and two remote RTUs on TCP 502. Select the
+actual node from the inventory with `--node`.
 
-SCADA reads the intake PLC's four holding registers — level, flow, quality, and
-heartbeat — and coils represent pump and valve state. The
-[register map](../../testbeds/metropolis/devices/README.md#modbus-tcp-register-map)
-has the addresses and scaling.
+SCADA polls each controller or RTU. Register and coil meanings differ by cell:
+the [versioned attack action profiles](../../testbeds/metropolis/datasets/water_treatment_v1/protocol_profiles/modbus_actions_v1.yaml)
+name writable actions for intake, dosing, filtration, disinfection, reservoir,
+and raw water. The [device register maps](../../testbeds/metropolis/devices/README.md#modbus-tcp-register-map)
+describe the simulators. `modbus_manipulation_attack` rejects an action that
+does not fit the selected cell. A custom dataset should provide its own
+`protocol_profiles/modbus_actions_v1.yaml`, or pass `--profile-file`.
 
 `MET-CONTROL-CLIENT-01` at `10.20.21.20` performs a routine read/write cycle on
 the intake PLC every 30 seconds, after a DNS lookup and an NTP sample. That gives
 a capture a normal Modbus-write baseline, and independent DNS and NTP background
 traffic. Pause it or record the values before a write experiment.
 
-Use the correct unit ID, function, and datastore addresses. The process values
-are synthetic: changing a register or coil changes what the device reports and
-nothing else, and is not a model of damage to a water-treatment process.
+Use the correct unit ID, function, and datastore addresses. Process values are
+synthetic; a controller may overwrite a written value on its next cycle, so a
+successful immediate readback does not prove a persistent physical effect.
 
 ## HMI
 
@@ -166,10 +170,10 @@ delivered commands without running them. Nothing is downloaded, forked, or
 executed. Treat the captures as botnet-*shaped* traffic, not as evidence about
 real Mirai behaviour.
 
-The router scripts provide a path from the attack subnet through the OT/DMZ
-router and OT core to the plant, plus the return path. Confirm it in the running
-GNS3 project before an experiment. The planned deny-by-default firewall policy
-is still a `TODO`, so the route alone does not enforce isolation. The example
+The router scripts provide OSPF routing, while the dataset firewall policy
+drops other routed traffic by default. For a source on the attack-lab subnet,
+use a run-scoped `--attack-allow` exception for the intended routed path.
+Confirm route and firewall behavior in the running GNS3 project. The example
 bot has no scan targets configured by default.
 
 ## Capturing an experiment
@@ -185,21 +189,11 @@ Record with each dataset:
 - Node, image, and tool versions
 - Addressing and service configuration
 - The capture point, and the normal baseline traffic from before the run
-- The tool's JSONL output, so tool actions line up with the packets
+- The tool's `attacks.jsonl` actions with shared run ID, scenario ID, declared
+  capture links, and traffic origin
 
 Synchronise your capture hosts; ordinary Docker containers share their host's
 clock. The Gotham CSV labelling utility does not label new Metropolis captures.
-
-## Not built yet
-
-These would help future experiments but do not exist and have no addresses:
-
-| Addition | What it would give you |
-|---|---|
-| Health monitor and log collector | Consistent latency, failure, and recovery evidence |
-| Dedicated receiver or victim node | A stable endpoint for experiments needing a separate receiving host |
-| Optional RTSP device models | More application targets |
-| Firewall and IPsec policy | Containment, rather than reachability, between zones |
 
 For Gotham methodology and attribution, see the
 [Gotham paper](https://doi.org/10.1109/TDSC.2023.3247166).

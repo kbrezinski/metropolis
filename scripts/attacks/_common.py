@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import ipaddress
 import json
 import math
 import os
+import re
 import shutil
+import socket
 import subprocess
 import sys
 import time
@@ -16,12 +19,70 @@ from pathlib import Path
 
 import yaml
 
+from _scenario import for_tool
+
 ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_INVENTORY = (
     ROOT
     / "testbeds/metropolis/datasets/water_treatment_v1"
     / "device_instances/initial_devices.yaml"
 )
+SAFE_RUN_ID = re.compile(r"^[A-Za-z0-9_-]+$")
+
+
+def _dataset_root(args) -> Path:
+    return (args.dataset or args.inventory.parent.parent).resolve()
+
+
+def _validate_run_context(options: argparse.ArgumentParser, args) -> None:
+    """Bind action records to declared links and an existing telemetry run."""
+    selected = args.capture_link
+    if len(selected) != len(set(selected)):
+        options.error("--capture-link values must be unique")
+    if args.run_id and not SAFE_RUN_ID.fullmatch(args.run_id):
+        options.error(
+            "--run-id may contain only letters, digits, underscores and hyphens"
+        )
+    if not selected and not args.run_id:
+        return
+    dataset = _dataset_root(args)
+    links_file = dataset / "topology/links.yaml"
+    if not links_file.is_file():
+        options.error(f"run/capture attribution needs a dataset with {links_file}")
+    document = yaml.safe_load(links_file.read_text(encoding="utf-8"))
+    declared = {
+        link["id"]
+        for link in document.get("links", [])
+        if isinstance(link, dict) and isinstance(link.get("id"), str)
+    }
+    unknown = set(selected) - declared
+    if unknown:
+        options.error(f"unknown declared capture link(s): {', '.join(sorted(unknown))}")
+    if not args.run_id:
+        return
+    run_dir = dataset / "runs" / args.run_id
+    manifest_file = run_dir / "manifest.json"
+    if not args.dry_run:
+        if not selected:
+            options.error("live --run-id requires at least one --capture-link")
+        if not manifest_file.is_file():
+            options.error(f"experiment run manifest does not exist: {manifest_file}")
+        manifest = json.loads(manifest_file.read_text(encoding="utf-8"))
+        if manifest.get("run_id") != args.run_id or manifest.get("status") != "running":
+            options.error("--run-id must identify a running experiment bundle")
+        selected_links = manifest.get("selected_capture_links")
+        if (
+            not isinstance(selected_links, list)
+            or not all(isinstance(link, str) for link in selected_links)
+            or not set(selected) <= set(selected_links)
+        ):
+            options.error(
+                "--capture-link must be among the running experiment's selected capture links"
+            )
+        action_path = (run_dir / "attacks.jsonl").resolve()
+        if args.output is not None and args.output.resolve() != action_path:
+            options.error("live --run-id writes to the experiment's attacks.jsonl")
+        args.output = action_path
 
 
 def gns3_client():
@@ -41,6 +102,23 @@ class AttackArgumentParser(argparse.ArgumentParser):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.add_argument(
+            "--run-id", help="Existing experiment run ID for action records"
+        )
+        self.add_argument(
+            "--capture-link",
+            action="append",
+            default=[],
+            help="Declared links.yaml capture ID to correlate; repeat for each point",
+        )
+        self.add_argument(
+            "--scenario-id",
+            help="Versioned scenario ID from scenarios/v1.json (defaults to this tool)",
+        )
+        self.add_argument(
+            "--execution-ip",
+            help="Reported IP of the machine running this command; verify packet source in PCAP",
+        )
+        self.add_argument(
             "--gotham-script",
             type=Path,
             help="Run this user-supplied Gotham .sh file instead of the Python attack",
@@ -54,6 +132,11 @@ class AttackArgumentParser(argparse.ArgumentParser):
 
     def parse_args(self, args=None, namespace=None):
         parsed = super().parse_args(args, namespace)
+        if parsed.execution_ip:
+            try:
+                parsed.execution_ip = ipv4(parsed.execution_ip)
+            except ValueError as exc:
+                self.error(f"--execution-ip: {exc}")
         if hasattr(parsed, "inventory"):
             if parsed.inventory and parsed.dataset:
                 self.error("use --dataset or --inventory, not both")
@@ -71,6 +154,17 @@ class AttackArgumentParser(argparse.ArgumentParser):
             )
             if not parsed.inventory.is_file():
                 self.error(f"device inventory does not exist: {parsed.inventory}")
+        selected_tool = (
+            "gotham_shell" if parsed.gotham_script else Path(sys.argv[0]).stem
+        )
+        scenario = for_tool(selected_tool)
+        if parsed.scenario_id and (
+            scenario is None or parsed.scenario_id != scenario["id"]
+        ):
+            self.error(f"{selected_tool} has no scenario {parsed.scenario_id!r}")
+        parsed.scenario = scenario
+        if hasattr(parsed, "inventory") and hasattr(parsed, "dry_run"):
+            _validate_run_context(self, parsed)
         if parsed.gotham_arg and not parsed.gotham_script:
             self.error("--gotham-arg requires --gotham-script")
         if parsed.gotham_script:
@@ -84,6 +178,11 @@ class AttackArgumentParser(argparse.ArgumentParser):
                 "gotham_shell",
                 script=str(script),
                 selected_by=Path(sys.argv[0]).stem,
+                external_script={
+                    "path": str(script),
+                    "sha256": hashlib.sha256(script.read_bytes()).hexdigest(),
+                    "provenance": "user-supplied shell script selected as a Gotham alternative",
+                },
             ) as run:
                 if parsed.dry_run:
                     returncode = 0
@@ -472,11 +571,74 @@ class Run:
         self.settings = settings
         self.file = None
 
+    def _origin(self) -> dict:
+        execution = {
+            "execution_host": "invoking_host",
+            "execution_hostname": socket.gethostname(),
+            "reported_execution_ip": getattr(self.args, "execution_ip", None),
+            "source_verification": "check_pcap",
+        }
+        if self.tool == "gotham_shell":
+            return {
+                "kind": "external_script",
+                **execution,
+                "packet_source": "unverified",
+            }
+        if getattr(self.args, "mode", None) == "spoof" and getattr(
+            self.args, "spoof_src", None
+        ):
+            return {
+                "kind": "spoofed_source",
+                **execution,
+                "claimed_source_ip": self.args.spoof_src,
+            }
+        scenario = getattr(self.args, "scenario", None)
+        kind = scenario["origin_kind"] if scenario else "not_applicable"
+        if kind == "mixed":
+            return {
+                "kind": kind,
+                **execution,
+                "gns3_node": self.settings.get("agent_node"),
+                "gns3_node_ip": self.settings.get("agent"),
+                "packet_source": "agent for agent-channel traffic; invoking host for operator traffic",
+            }
+        return {"kind": kind, **execution}
+
+    def _variant(self) -> dict:
+        if self.tool == "gotham_shell":
+            return {
+                "external_script_sha256": self.settings["external_script"]["sha256"]
+            }
+        fields = (
+            "action",
+            "mode",
+            "engine",
+            "protocol",
+            "profile",
+            "profile_version",
+            "message_type",
+            "udp_style",
+            "flood",
+        )
+        return {
+            field: value
+            for field in fields
+            if (value := self.settings.get(field, getattr(self.args, field, None)))
+            is not None
+        }
+
     def emit(self, event: str, **fields):
+        scenario = getattr(self.args, "scenario", None)
         record = {
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "tool": self.tool,
             "event": event,
+            "run_id": getattr(self.args, "run_id", None),
+            "scenario_id": scenario["id"] if scenario else None,
+            "scenario_catalog_version": "1.0" if scenario else None,
+            "scenario_variant": self._variant(),
+            "declared_capture_links": list(getattr(self.args, "capture_link", [])),
+            "traffic_origin": self._origin(),
             **fields,
         }
         line = json.dumps(record, sort_keys=True)

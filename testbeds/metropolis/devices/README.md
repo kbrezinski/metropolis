@@ -47,7 +47,7 @@ publish Docker ports — they bind to their own GNS3 interfaces.
 | HMI panel | `operations/hmi/` | Authenticated HTTP panel with MQTT telemetry, operator requests, and controller readback status | HMI VLANs 50-53 |
 | Historian | `operations/historian/` | Subscribes to MQTT and logs received events to its console | VLAN 22, `10.20.22.0/24` |
 | Engineering workstation | `operations/engineering_workstation/` | Real OpenSSH shell and SFTP, with Python Modbus and MQTT libraries | VLAN 21, `10.20.21.0/24` |
-| Routine control client | `operations/control_client/` | Resolves the PLC by DNS, samples NTP, and periodically reads and writes Modbus | VLAN 21, `10.20.21.0/24` |
+| Routine control client | `operations/control_client/` | Resolves the PLC by DNS, samples NTP, periodically reads and writes Modbus, and reads VyOS router uptime over SNMP | VLAN 21, `10.20.21.0/24` |
 | Legacy gateway | `field/legacy_gateway/` | Telnet login and shell, for experiments that need legacy host access | Intake VLAN 10 |
 | DNS | `services/dns/` | Local records for this dataset; no upstream forwarding | OT services VLAN 30 |
 | NTP | `services/ntp/` | Local time replies, using the host clock without changing it | OT services VLAN 30 |

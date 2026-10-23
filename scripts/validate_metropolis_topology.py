@@ -341,6 +341,16 @@ def validate_topology(
             tuple(_validate_router_syslog(inventory["devices"], router_sources)),
         )
     )
+    checks.append(
+        Check(
+            "SNMP manager targets and read-only router access match",
+            tuple(
+                _validate_router_snmp(
+                    inventory["devices"], router_sources, firewall_policy
+                )
+            ),
+        )
+    )
     if dataset_root.resolve() == bundled_root.resolve():
         checks.append(
             Check(
@@ -543,6 +553,83 @@ def _validate_router_syslog(
                 f"{name}: syslog hosts {sorted(configured)} differ from "
                 f"inventoried receiver {expected}"
             )
+    return problems
+
+
+def _validate_router_snmp(
+    devices: list[dict], router_sources: dict[str, Path], policy: dict | None
+) -> list[str]:
+    """Cross-check inventoried manager targets, VyOS access, and routed flow."""
+    problems: list[str] = []
+    managers = [device for device in devices if "snmp-manager" in device["protocols"]]
+    for manager in managers:
+        name = manager["name"]
+        source = str(ip_interface(manager["address"]).ip)
+        environment = manager.get("environment", {})
+        community = environment.get("SNMP_COMMUNITY", "")
+        targets = environment.get("SNMP_TARGETS", "")
+        if not community or not targets:
+            problems.append(f"{name}: SNMP community and targets are required")
+            continue
+        seen: set[str] = set()
+        for item in targets.split(","):
+            target_name, separator, target_ip = item.strip().partition("=")
+            if (
+                not separator
+                or target_name in seen
+                or target_name not in router_sources
+            ):
+                problems.append(f"{name}: invalid SNMP target {item!r}")
+                continue
+            seen.add(target_name)
+            try:
+                target_address = IPv4Address(target_ip)
+            except ValueError:
+                problems.append(f"{name}: invalid SNMP target address {target_ip!r}")
+                continue
+            router_file = router_sources[target_name]
+            if not router_file.is_file():
+                continue  # The infrastructure check reports the missing script.
+            script = router_file.read_text(encoding="utf-8")
+            addresses = {
+                ip_interface(value).ip
+                for value in re.findall(
+                    r"^set interfaces ethernet \S+(?: vif \d+)? address '([^']+)'$",
+                    script,
+                    re.M,
+                )
+            }
+            if target_address not in addresses:
+                problems.append(
+                    f"{name}: {target_name} SNMP target {target_address} "
+                    "is not a router interface"
+                )
+            if (
+                f"set service snmp community {community} authorization ro" not in script
+                or f"set service snmp community {community} client {source}"
+                not in script
+            ):
+                problems.append(
+                    f"{target_name}: read-only SNMP access from {source} is missing"
+                )
+            if policy is not None and not any(
+                flow.get("protocol") == "udp"
+                and flow.get("port") == 161
+                and f"{source}/32"
+                in (
+                    [flow["source"]]
+                    if isinstance(flow["source"], str)
+                    else flow["source"]
+                )
+                and f"{target_address}/32"
+                in (
+                    [flow["destination"]]
+                    if isinstance(flow["destination"], str)
+                    else flow["destination"]
+                )
+                for flow in policy.get("flows", [])
+            ):
+                problems.append(f"{name}: no UDP/161 firewall flow to {target_name}")
     return problems
 
 
