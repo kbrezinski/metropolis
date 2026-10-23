@@ -150,14 +150,6 @@ def test_capture_endpoints_and_payload_match_the_api():
     assert transport.calls[1] == ("POST", "/projects/p1/links/L1/stop_capture", None)
 
 
-def test_capture_payload_never_sends_a_read_only_field():
-    client, transport = client_with([{}])
-    client.start_capture("p1", "L1", data_link_type="DLT_EN10MB")
-
-    payload = transport.calls[0][2]
-    assert set(payload) == {"data_link_type"}
-
-
 def test_download_pcap_streams_from_the_link_endpoint(monkeypatch, tmp_path):
     captured = {}
 

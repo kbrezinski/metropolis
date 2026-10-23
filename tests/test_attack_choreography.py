@@ -16,11 +16,59 @@ import threading
 from pathlib import Path
 
 import pytest
+import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 ATTACKS = ROOT / "scripts/attacks"
 MIRAI = ROOT / "testbeds/metropolis/devices/attack/mirai"
 MERLIN = ROOT / "testbeds/metropolis/devices/attack/merlin"
+
+
+@pytest.fixture
+def choreography_inventory(tmp_path):
+    inventory = tmp_path / "initial_devices.yaml"
+    inventory.write_text(
+        yaml.safe_dump(
+            {
+                "testbed_id": "fixture",
+                "devices": [
+                    {
+                        "name": "MIRAI-CNC-A",
+                        "address": "10.77.4.10/24",
+                        "protocols": ["mirai-cnc"],
+                    },
+                    {
+                        "name": "MIRAI-LISTENER-A",
+                        "address": "10.77.4.11/24",
+                        "protocols": ["mirai-report"],
+                    },
+                    {
+                        "name": "MIRAI-LOADER-A",
+                        "address": "10.77.4.12/24",
+                        "protocols": ["payload-delivery"],
+                        "environment": {"LOADER_KIND": "wget"},
+                    },
+                    {
+                        "name": "MERLIN-CNC-A",
+                        "address": "10.77.4.20/24",
+                        "protocols": ["merlin-control"],
+                        "environment": {
+                            "MERLIN_CONTROL_PORT": "2323",
+                            "MERLIN_HTTP_PORT": "8444",
+                        },
+                    },
+                    {
+                        "name": "MERLIN-AGENT-A",
+                        "address": "10.77.4.21/24",
+                        "protocols": ["merlin-agent"],
+                        "environment": {"MERLIN_CNC_URL": "http://10.77.4.20:8444"},
+                    },
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    return inventory
 
 
 def invoke(name, *args, ack=True):
@@ -96,10 +144,10 @@ def test_mirai_cnc_registers_bots_and_records_commands():
 
     cnc = load_file("mirai_cnc_model", MIRAI / "cnc/start_cnc.py")
     registry = cnc.Registry()
-    bot = registry.check_in("10.99.10.100", "linux-x64-synthetic")
+    bot = registry.check_in("10.77.4.100", "linux-x64-synthetic")
     assert bot.bot_id == "bot-0001"
     # A repeat check-in from the same address is the same bot, not a new one.
-    assert registry.check_in("10.99.10.100", "linux-x64-synthetic") is bot
+    assert registry.check_in("10.77.4.100", "linux-x64-synthetic") is bot
     assert len(registry.as_rows()) == 1
 
     # Drive the operator console over a real socket pair.
@@ -133,7 +181,7 @@ def test_mirai_scan_listener_records_json_reports(peers, capsys):
     listener = load_file(
         "mirai_listener_model", MIRAI / "scan_listener/start_listener.py"
     )
-    payload = {"bot_id": "bot-0001", "vulnerable": "10.99.10.100:23"}
+    payload = {"bot_id": "bot-0001", "vulnerable": "10.77.4.100:23"}
     listener.record(json.dumps(payload), ("127.0.0.1", 40000))
     event = json.loads(capsys.readouterr().out.strip())
     assert event["event"] == "bot_report"
@@ -153,9 +201,9 @@ def test_mirai_loader_serves_only_an_inert_stub(peers):
 def test_mirai_bot_targets_are_private_only():
     """The bot refuses targets outside the private lab range."""
     bot = load_file("mirai_bot_model", MIRAI / "bot/start_bot.py")
-    assert bot.parse_targets("10.99.10.10,10.99.10.11:23") == [
-        ("10.99.10.10", 23),
-        ("10.99.10.11", 23),
+    assert bot.parse_targets("10.77.4.10,10.77.4.11:23") == [
+        ("10.77.4.10", 23),
+        ("10.77.4.11", 23),
     ]
     with pytest.raises(ValueError):
         bot.parse_targets("8.8.8.8:23")
@@ -169,8 +217,8 @@ def test_merlin_agent_refuses_commands_outside_the_allow_list():
     assert ok and "simulated" in detail
     refused, reason = agent.run_command("rm -rf /")
     assert not refused and reason.startswith("refused:")
-    assert agent.parse_url("http://10.99.10.20:8443") == ("10.99.10.20", 8443)
-    assert agent.parse_url("10.99.10.20") == ("10.99.10.20", 8443)
+    assert agent.parse_url("http://10.77.4.20:8443") == ("10.77.4.20", 8443)
+    assert agent.parse_url("10.77.4.20") == ("10.77.4.20", 8443)
 
 
 def test_merlin_cnc_listener_and_upload_lifecycle():
@@ -181,8 +229,8 @@ def test_merlin_cnc_listener_and_upload_lifecycle():
     state.start_listener("https", "0.0.0.0")
     assert state.listener_info()["scheme"] == "https"
 
-    agent = state.check_in("10.99.10.21", "linux-x64-synthetic")
-    assert state.check_in("10.99.10.21", "linux-x64-synthetic") is agent
+    agent = state.check_in("10.77.4.21", "linux-x64-synthetic")
+    assert state.check_in("10.77.4.21", "linux-x64-synthetic") is agent
     state.add_command(agent, "chmod 775 /opt/metropolis")
     assert state.take_commands(agent.agent_id) == ["chmod 775 /opt/metropolis"]
     assert state.take_commands(agent.agent_id) == []
@@ -198,20 +246,22 @@ def test_merlin_cnc_listener_and_upload_lifecycle():
         ("merlin/run_merlin.py", []),
     ],
 )
-def test_choreography_dry_runs_resolve_inventory(name, args):
+def test_choreography_dry_runs_resolve_inventory(name, args, choreography_inventory):
     """Both drivers resolve every node without sending traffic."""
-    result = invoke(name, *args, "--dry-run", ack=False)
+    result = invoke(
+        name, "--inventory", choreography_inventory, *args, "--dry-run", ack=False
+    )
     assert result.returncode == 0, result.stdout + result.stderr
     start = records(result)[0]
     assert start["dry_run"] is True
     if name == "mirai/run_mirai_choreography.py":
-        assert start["cnc"] == "10.99.10.10:23"
-        assert start["listener"] == "10.99.10.11:48101"
-        assert start["loader"] == "10.99.10.13:80"
+        assert start["cnc"] == "10.77.4.10:23"
+        assert start["listener"] == "10.77.4.11:48101"
+        assert start["loader"] == "10.77.4.12:80"
     else:
-        assert start["cnc"] == "10.99.10.20:23"
-        assert start["http"] == "10.99.10.20:8443"
-        assert start["agent"] == "10.99.10.21"
+        assert start["cnc"] == "10.77.4.20:2323"
+        assert start["http"] == "10.77.4.20:8444"
+        assert start["agent"] == "10.77.4.21"
 
 
 def test_choreography_requires_the_lab_acknowledgement():
@@ -220,10 +270,15 @@ def test_choreography_requires_the_lab_acknowledgement():
     assert invoke("merlin/run_merlin.py", ack=False).returncode == 2
 
 
-def test_choreography_rejects_unknown_nodes():
+def test_choreography_rejects_unknown_nodes(choreography_inventory):
     """An unknown node name fails during resolution, before any traffic."""
     result = invoke(
-        "mirai/run_mirai_choreography.py", "--cnc-node", "MET-NOPE-01", "--dry-run"
+        "mirai/run_mirai_choreography.py",
+        "--inventory",
+        choreography_inventory,
+        "--cnc-node",
+        "MISSING-A",
+        "--dry-run",
     )
     assert result.returncode == 2
     assert "not in the inventory" in result.stdout

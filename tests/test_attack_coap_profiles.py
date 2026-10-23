@@ -31,12 +31,12 @@ spec.loader.exec_module(sensor)
 def test_real_sensor_replies_to_both_message_types(confirmable):
     token = bytes.fromhex("beef1234")
     request = coap.build_get("/.well-known/core", token, 1234, confirmable)
-    reply = sensor.handle_get(request, "MET-SENSOR-INTAKE-01", "level", 65)
+    reply = sensor.handle_get(request, "SENSOR-A", "level", 65)
     assert coap.response_code(reply, token, 1234, confirmable) == 69
     assert ((reply[0] >> 4) & 3) == (2 if confirmable else 1)
     assert receiver.matching_reply(reply, bytes.fromhex("beef")) == 69
     assert receiver.matching_reply(reply, bytes.fromhex("dead")) is None
-    audit = sensor.audit_response(request, reply, ("10.20.30.20", 56830))
+    audit = sensor.audit_response(request, reply, ("10.77.3.20", 56830))
     assert audit["experiment_id"] == "beef"
     assert audit["resource"] == "/.well-known/core"
     assert audit["response_code"] == "2.05"
@@ -52,7 +52,7 @@ def test_mixed_resources_include_success_and_not_found():
         path, confirmable = coap.request_choice(args, index)
         token = bytes.fromhex("beef1234")
         request = coap.build_get(path, token, index, confirmable)
-        reply = sensor.handle_get(request, "MET-SENSOR-INTAKE-01", "level", readings)
+        reply = sensor.handle_get(request, "SENSOR-A", "level", readings)
         codes.append(coap.response_code(reply, token, index, confirmable))
     assert codes == [69] * 9 + [132]
 
@@ -114,7 +114,7 @@ def test_receiver_counts_real_loopback_reply(tmp_path):
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sender:
             sender.bind(("127.0.0.1", sensor_port))
             request = coap.build_get("/status", bytes.fromhex("beef1234"), 7)
-            reply = sensor.handle_get(request, "MET-SENSOR-INTAKE-01", "level", 65)
+            reply = sensor.handle_get(request, "SENSOR-A", "level", 65)
             sender.sendto(reply, ("127.0.0.1", listen_port))
         stdout, stderr = process.communicate(timeout=5)
         assert process.returncode == 0, stdout + stderr

@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import importlib.util
 import json
-import os
-import subprocess
 import sys
 from pathlib import Path
+
+import pytest
+import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 ATTACKS = ROOT / "scripts/attacks"
@@ -25,32 +26,48 @@ def events(output):
     return [json.loads(line) for line in output.splitlines() if line.startswith("{")]
 
 
-def test_dry_run_is_one_command_and_needs_no_gns3():
-    env = os.environ.copy()
-    env.pop("METROPOLIS_LAB_ACK", None)
-    result = subprocess.run(
-        [sys.executable, str(ATTACKS / "run.py"), "mirai_scenario", "--dry-run"],
-        env=env,
-        capture_output=True,
-        text=True,
-        timeout=15,
+@pytest.fixture
+def scenario_inventory(tmp_path):
+    devices = [
+        {
+            "name": "TELNET-A",
+            "address": "10.77.1.30/24",
+            "protocols": ["telnet"],
+            "environment": {"LEGACY_ROOT_PASSWORD": "test-secret"},
+        },
+        {
+            "name": "CNC-A",
+            "address": "10.77.4.10/24",
+            "protocols": ["mirai-cnc"],
+        },
+        {
+            "name": "LISTENER-A",
+            "address": "10.77.4.11/24",
+            "protocols": ["mirai-report"],
+        },
+        {
+            "name": "LOADER-A",
+            "address": "10.77.4.12/24",
+            "protocols": ["payload-delivery"],
+            "environment": {"LOADER_KIND": "wget"},
+        },
+    ]
+    inventory = tmp_path / "initial_devices.yaml"
+    inventory.write_text(
+        yaml.safe_dump({"testbed_id": "fixture", "devices": devices}), encoding="utf-8"
     )
-    assert result.returncode == 0, result.stdout + result.stderr
-    started = events(result.stdout)[0]
-    assert started["targets"] == ["MET-LEGACY-GATEWAY-01"]
-    assert started["cnc"] == "10.99.10.10:23"
-    assert started["dry_run"] is True
+    return inventory
 
 
 def test_verified_telnet_target_drives_only_its_simulated_identity(
-    monkeypatch, capsys, tmp_path
+    monkeypatch, capsys, tmp_path, scenario_inventory
 ):
     attempts = []
     played = []
 
     class FakeSession:
         def __init__(self, host, port, timeout):
-            assert host == "10.20.10.30"
+            assert host == "10.77.1.30"
             attempts.append(port)
 
         def login(self, username, password):
@@ -78,18 +95,26 @@ def test_verified_telnet_target_drives_only_its_simulated_identity(
     monkeypatch.setattr(
         sys,
         "argv",
-        ["mirai_scenario.py", "--output", str(output)],
+        [
+            "mirai_scenario.py",
+            "--inventory",
+            str(scenario_inventory),
+            "--output",
+            str(output),
+        ],
     )
     assert scenario.main() == 0
     records = events(capsys.readouterr().out)
     assert len(attempts) == 2
-    assert played[0]["bot_targets"] == [("10.20.10.30", 23)]
+    assert played[0]["bot_targets"] == [("10.77.1.30", 23)]
     assert any(row["event"] == "simulation_transition" for row in records)
     assert events(output.read_text(encoding="utf-8")) == records
     assert "LabOnly_Legacy_2026" not in output.read_text(encoding="utf-8")
 
 
-def test_failed_telnet_stage_skips_control_traffic(monkeypatch, capsys):
+def test_failed_telnet_stage_skips_control_traffic(
+    monkeypatch, capsys, scenario_inventory
+):
     class RejectingSession:
         def __init__(self, host, port, timeout):
             pass
@@ -108,7 +133,9 @@ def test_failed_telnet_stage_skips_control_traffic(monkeypatch, capsys):
     )
     monkeypatch.setattr(scenario.time, "sleep", lambda _: None)
     monkeypatch.setenv("METROPOLIS_LAB_ACK", "yes")
-    monkeypatch.setattr(sys, "argv", ["mirai_scenario.py"])
+    monkeypatch.setattr(
+        sys, "argv", ["mirai_scenario.py", "--inventory", str(scenario_inventory)]
+    )
     assert scenario.main() == 1
     summary = next(
         row for row in events(capsys.readouterr().out) if row["event"] == "summary"

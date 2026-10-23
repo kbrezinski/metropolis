@@ -99,26 +99,11 @@ def test_each_bundled_document_is_reproduced_exactly(bundled, name):
     assert bundled.to_dicts()[name] == original
 
 
-def test_the_bundled_topology_has_no_contradictions(bundled):
-    assert bundled.problems() == []
-
-
-def test_the_bundled_topology_has_the_expected_scale(bundled):
-    assert bundled.counts() == {
-        "networks": 24,
-        "routers": 6,
-        "switches": 8,
-        "segments": 13,
-        "devices": 34,
-        "links": 55,
-    }
-
-
-def test_saving_and_reloading_is_stable(bundled, tmp_path):
-    bundled.save(tmp_path / "copy")
+def test_saving_and_reloading_is_stable(tmp_path):
+    topology = two_cell()
+    topology.save(tmp_path / "copy")
     reloaded = Topology.from_directory(tmp_path / "copy")
-    assert reloaded.to_dicts() == bundled.to_dicts()
-    assert reloaded.problems() == []
+    assert reloaded.to_dicts() == topology.to_dicts()
 
 
 def test_save_creates_the_expected_layout(tmp_path):
@@ -380,17 +365,16 @@ def test_short_lists_are_written_inline_and_long_ones_are_broken_out():
     A VLAN list and an environment mapping are short, so they go inline; a
     document's own list of networks is long and goes one per line.
     """
-    bundled = load_bundled_topology()
+    example = two_cell()
 
-    address_plan = bundled.to_yaml()["address-plan"]
-    assert "\nnetworks:\n- id: plant-intake" in address_plan
+    address_plan = example.to_yaml()["address-plan"]
+    assert "\nnetworks:\n- id: cell-a" in address_plan
 
-    devices = bundled.to_yaml()["initial-devices"]
-    assert "protocols: [modbus-tcp]" in devices
+    devices = example.to_yaml()["initial-devices"]
     assert "environment: {" in devices
 
-    infrastructure = bundled.to_yaml()["infrastructure"]
-    assert "vlans: [10, 11, 12, 13, 50, 51, 52, 53]" in infrastructure
+    infrastructure = example.to_yaml()["infrastructure"]
+    assert "vlans: [10]" in infrastructure
 
 
 def test_a_document_without_a_description_omits_the_key():
@@ -407,11 +391,6 @@ def test_each_document_keeps_its_own_description():
     assert "description" not in lab.to_dicts()["infrastructure"]
 
 
-def test_yaml_output_is_reloadable(bundled):
-    for text in bundled.to_yaml().values():
-        assert isinstance(yaml.safe_load(text), dict)
-
-
 # -- drawing ------------------------------------------------------------------
 
 
@@ -425,19 +404,18 @@ def test_dot_output_is_a_graph_with_every_node(bundled):
         assert f'"{switch.name}"' in dot
 
 
-def test_dot_groups_devices_under_their_subnet(bundled):
-    dot = bundled.to_dot()
-    assert "subgraph cluster_plant_intake" in dot
+def test_dot_groups_devices_under_their_subnet():
+    dot = two_cell().to_dot()
+    assert "subgraph cluster_cell_a" in dot
     assert "vlan 10" in dot
-    # The intake PLC belongs in the intake cluster.
-    intake = dot.index("subgraph cluster_plant_intake")
-    plc = dot.index('"MET-PLC-INTAKE-01"')
-    assert plc > intake
+    cluster = dot.index("subgraph cluster_cell_a")
+    plc = dot.index('"PLC-A"')
+    assert plc > cluster
 
 
-def test_dot_edges_carry_vlan_information(bundled):
-    dot = bundled.to_dot()
-    assert "vlan 10,11,12,13,50,51,52,53" in dot
+def test_dot_edges_carry_vlan_information():
+    dot = two_cell().to_dot()
+    assert "vlan 10" in dot
 
 
 def test_dot_labels_are_escaped():

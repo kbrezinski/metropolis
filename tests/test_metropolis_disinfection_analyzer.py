@@ -29,13 +29,6 @@ def test_chlorine_registers_and_heartbeat_are_independent():
     assert context[0].getValues(3, 0, 2) == [12, 45]
 
 
-def test_existing_dosing_role_remains_default():
-    context = analyzer.make_context()
-    assert context[0].getValues(3, 0, 3) == [720, 58, 0]
-    analyzer.update_registers(context, 22.5)
-    assert context[0].getValues(3, 0, 3)[2] == 22
-
-
 def test_unknown_analyzer_role_is_rejected():
     with pytest.raises(ValueError, match="Unsupported analyzer role"):
         analyzer.make_context("unknown")

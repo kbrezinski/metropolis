@@ -42,7 +42,7 @@ For a new or changed node, check these in order:
 
 1. Define its role and expected normal traffic. Give it a unique name and address that do not collide with hosts, router interfaces, gateways, or reserved addresses. Keep its inventory environment and service ports consistent with the device model.
 2. Provide the Docker build and template registry entry for a new image, and account for its adapters and startup dependencies. Images must be built on the GNS3 compute that will host them; the offline registry check only compares image names.
-3. Declare the intended link and switch port role, or document why a support node is deliberately uncabled. Regenerate the switch reference. A new node on an existing subnet needs no new route; a new subnet also needs VLAN/trunk, router interface/gateway, and OSPF changes.
+3. Declare the intended link and switch port role, or set `link_policy: intentionally_uncabled` for a support node deliberately left without a link. Regenerate the switch reference. A new node on an existing subnet needs no new route; a new subnet also needs VLAN/trunk, router interface/gateway, and OSPF changes.
 4. Check service targets, protocol behavior, and startup/readiness. Compile the network-level firewall policy with render_firewall --check for routed flows; same-VLAN traffic bypasses it. Add or change permissions only when needed.
 5. Check whether capture points and log-source attribution can observe the new traffic. Add focused tests when simulator or tooling behavior changes; validate dataset wiring with the standalone topology command instead of exact node/IP/count assertions in pytest. Then update setup docs and PLANS.md when scope or status changes.
 

@@ -15,6 +15,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 ATTACKS = ROOT / "scripts/attacks"
@@ -23,25 +24,68 @@ DISPATCHER = ATTACKS / "run.py"
 # Helper modules carry protocol and inventory logic, never a CLI.
 HELPERS = {"_common", "_mqtt", "_telnet", "_c2", "run"}
 
-EXPECTED_TOOLS = {
-    "coap_response_measurement",
-    "coap_experiment_report",
-    "coap_reflection_receiver",
-    "gotham_mirai_setup",
-    "gotham_merlin_setup",
-    "mirai_infection_sim",
-    "mirai_scenario",
-    "merlin_scenario",
-    "modbus_manipulation_attack",
-    "mqtt_bruteforce_attack",
-    "mqtt_flood_attack",
-    "network_recon_scan",
-    "hping3_attack",
-    "iot_discovery",
-    "run_merlin",
-    "run_mirai_choreography",
-    "ssh_bruteforce_attack",
-}
+
+def runnable_names():
+    """Discover CLI modules independently of the dispatcher's registry."""
+    return {
+        path.stem
+        for path in ATTACKS.glob("*/*.py")
+        if not path.name.startswith("_")
+        and 'if __name__ == "__main__":' in path.read_text(encoding="utf-8")
+    }
+
+
+@pytest.fixture
+def role_inventory(tmp_path):
+    """Small role inventory, independent of the bundled topology."""
+    devices = [
+        {
+            "name": "TELNET-A",
+            "address": "10.77.1.30/24",
+            "protocols": ["telnet"],
+            "environment": {"LEGACY_ROOT_PASSWORD": "test-secret"},
+        },
+        {"name": "PLC-A", "address": "10.77.1.10/24", "protocols": ["modbus-tcp"]},
+        {
+            "name": "BROKER-A",
+            "address": "10.77.2.10/24",
+            "protocols": ["mqtt"],
+            "environment": {
+                "MQTT_OPERATOR_USERNAME": "operator",
+                "MQTT_OPERATOR_PASSWORD": "test-secret",
+            },
+        },
+        {"name": "MIRAI-CNC-A", "address": "10.77.4.10/24", "protocols": ["mirai-cnc"]},
+        {
+            "name": "MIRAI-LISTENER-A",
+            "address": "10.77.4.11/24",
+            "protocols": ["mirai-report"],
+        },
+        {
+            "name": "MIRAI-LOADER-A",
+            "address": "10.77.4.12/24",
+            "protocols": ["payload-delivery"],
+            "environment": {"LOADER_KIND": "wget"},
+        },
+        {"name": "MIRAI-BOT-A", "address": "10.77.4.13/24", "protocols": ["mirai-bot"]},
+        {
+            "name": "MERLIN-CNC-A",
+            "address": "10.77.4.20/24",
+            "protocols": ["merlin-control"],
+            "environment": {"MERLIN_CONTROL_PORT": "2323", "MERLIN_HTTP_PORT": "8444"},
+        },
+        {
+            "name": "MERLIN-AGENT-A",
+            "address": "10.77.4.21/24",
+            "protocols": ["merlin-agent"],
+            "environment": {"MERLIN_CNC_URL": "http://10.77.4.20:8444"},
+        },
+    ]
+    inventory = tmp_path / "initial_devices.yaml"
+    inventory.write_text(
+        yaml.safe_dump({"testbed_id": "fixture", "devices": devices}), encoding="utf-8"
+    )
+    return inventory
 
 
 def invoke(*args, ack=False):
@@ -67,7 +111,7 @@ def records(result):
     ]
 
 
-def test_dispatcher_lists_every_tool_and_no_helpers():
+def test_dispatcher_lists_runnable_modules_and_no_helpers():
     """Discovery finds the CLI modules and skips the shared helpers."""
     result = invoke("--help")
     assert result.returncode == 0
@@ -76,16 +120,19 @@ def test_dispatcher_lists_every_tool_and_no_helpers():
         for line in result.stdout.splitlines()
         if line.startswith("  ") and line.strip() and " " not in line.strip()
     }
-    assert listed == EXPECTED_TOOLS
+    assert listed == runnable_names()
+    assert listed
     assert not (listed & HELPERS)
     # Every listed tool exists as a module.
     for name in listed:
         assert len(list(ATTACKS.glob(f"*/{name}.py"))) == 1
 
 
-def test_dispatcher_forwards_arguments_to_the_module():
+def test_dispatcher_forwards_arguments_to_the_module(role_inventory):
     """A dispatched dry run behaves exactly like invoking the module directly."""
-    result = invoke("mqtt_bruteforce_attack", "--dry-run")
+    result = invoke(
+        "mqtt_bruteforce_attack", "--inventory", role_inventory, "--dry-run"
+    )
     assert result.returncode == 0, result.stdout + result.stderr
     start = records(result)[0]
     assert start["tool"] == "mqtt_credentials"
@@ -94,51 +141,75 @@ def test_dispatcher_forwards_arguments_to_the_module():
 
 def test_dispatcher_forwards_flagged_arguments():
     """Positional and flagged arguments reach the target module intact."""
-    result = invoke("hping3_attack", "--mode", "udp", "--dry-run")
+    result = invoke(
+        "hping3_attack",
+        "--mode",
+        "udp",
+        "--host",
+        "10.77.1.20",
+        "--port",
+        "5683",
+        "--dry-run",
+    )
     assert result.returncode == 0, result.stdout + result.stderr
     start = records(result)[0]
     assert start["mode"] == "udp"
-    assert start["host"] == "10.20.10.20"
+    assert start["host"] == "10.77.1.20"
 
 
-def test_gotham_mirai_setup_maps_inventory_without_contacting_gns3():
-    result = invoke("gotham_mirai_setup", "--external-bot", "--dry-run")
+def test_gotham_mirai_setup_maps_inventory_without_contacting_gns3(role_inventory):
+    result = invoke(
+        "gotham_mirai_setup",
+        "--inventory",
+        role_inventory,
+        "--external-bot",
+        "--dry-run",
+    )
     assert result.returncode == 0, result.stdout + result.stderr
     start = records(result)[0]
     assert start["telnet_targets"] == [
         {
-            "name": "MET-LEGACY-GATEWAY-01",
-            "address": "10.20.10.30",
+            "name": "TELNET-A",
+            "address": "10.77.1.30",
             "port": 23,
             "username": "root",
             "credential_source": "LEGACY_ROOT_PASSWORD",
         }
     ]
-    assert start["bot"] == {"name": "MET-MIRAI-BOT-01", "address": "10.99.10.100"}
+    assert start["bot"] == {"name": "MIRAI-BOT-A", "address": "10.77.4.13"}
     assert start["bot_source"] == "user_supplied"
     assert start["starts_inert_bot"] is False
     assert start["launches_external_bot"] is False
-    default = invoke("gotham_mirai_setup", "--dry-run")
+    default = invoke("gotham_mirai_setup", "--inventory", role_inventory, "--dry-run")
     assert default.returncode == 0
     assert records(default)[0]["bot_source"] == "unspecified"
     assert (
         invoke(
-            "gotham_mirai_setup", "--external-bot", "--start-inert-bot", "--dry-run"
+            "gotham_mirai_setup",
+            "--inventory",
+            role_inventory,
+            "--external-bot",
+            "--start-inert-bot",
+            "--dry-run",
         ).returncode
         == 2
     )
     assert (
         invoke(
             "gotham_mirai_setup",
+            "--inventory",
+            role_inventory,
             "--target-node",
-            "MET-PLC-INTAKE-01",
+            "PLC-A",
             "--dry-run",
         ).returncode
         == 2
     )
 
 
-def test_gotham_mirai_setup_starts_only_the_inert_bot(monkeypatch, capsys):
+def test_gotham_mirai_setup_starts_only_the_inert_bot(
+    monkeypatch, capsys, role_inventory
+):
     if str(ATTACKS) not in sys.path:
         sys.path.insert(0, str(ATTACKS))
     spec = importlib.util.spec_from_file_location(
@@ -151,29 +222,29 @@ def test_gotham_mirai_setup_starts_only_the_inert_bot(monkeypatch, capsys):
         started = []
 
         def project_by_name(self, name):
-            assert name == "metropolis_water_treatment_v1"
+            assert name == "fixture_project"
             return SimpleNamespace(project_id="lab", status="opened")
 
         def project_nodes(self, project_id):
             assert project_id == "lab"
             return [
                 {
-                    "name": "MET-LEGACY-GATEWAY-01",
+                    "name": "TELNET-A",
                     "status": "started",
                     "node_id": "telnet",
                 },
-                {"name": "MET-MIRAI-CNC-01", "status": "started", "node_id": "cnc"},
+                {"name": "MIRAI-CNC-A", "status": "started", "node_id": "cnc"},
                 {
-                    "name": "MET-MIRAI-LISTENER-01",
+                    "name": "MIRAI-LISTENER-A",
                     "status": "started",
                     "node_id": "listener",
                 },
                 {
-                    "name": "MET-MIRAI-LOADER-WGET-01",
+                    "name": "MIRAI-LOADER-A",
                     "status": "started",
                     "node_id": "loader",
                 },
-                {"name": "MET-MIRAI-BOT-01", "status": "stopped", "node_id": "bot"},
+                {"name": "MIRAI-BOT-A", "status": "stopped", "node_id": "bot"},
             ]
 
         def start_node(self, project_id, node_id):
@@ -183,7 +254,16 @@ def test_gotham_mirai_setup_starts_only_the_inert_bot(monkeypatch, capsys):
     monkeypatch.setattr(adapter, "gns3_client", lambda: client)
     monkeypatch.setenv("METROPOLIS_LAB_ACK", "yes")
     monkeypatch.setattr(
-        sys, "argv", ["mirai/gotham_mirai_setup.py", "--start-inert-bot"]
+        sys,
+        "argv",
+        [
+            "mirai/gotham_mirai_setup.py",
+            "--inventory",
+            str(role_inventory),
+            "--project",
+            "fixture_project",
+            "--start-inert-bot",
+        ],
     )
     assert adapter.main() == 0
     assert client.started == [("lab", "bot")]
@@ -191,27 +271,35 @@ def test_gotham_mirai_setup_starts_only_the_inert_bot(monkeypatch, capsys):
     assert any(row["event"] == "inert_bot_start_requested" for row in events)
 
 
-def test_gotham_merlin_setup_maps_http_contract_without_contacting_gns3():
-    result = invoke("gotham_merlin_setup", "--external-agent", "--dry-run")
+def test_gotham_merlin_setup_maps_http_contract_without_contacting_gns3(role_inventory):
+    result = invoke(
+        "gotham_merlin_setup",
+        "--inventory",
+        role_inventory,
+        "--external-agent",
+        "--dry-run",
+    )
     assert result.returncode == 0, result.stdout + result.stderr
     start = records(result)[0]
-    assert start["cnc"] == {"name": "MET-MERLIN-CNC-01", "address": "10.99.10.20"}
+    assert start["cnc"] == {"name": "MERLIN-CNC-A", "address": "10.77.4.20"}
     assert start["operator_console"] == {
-        "host": "10.99.10.20",
-        "port": 23,
+        "host": "10.77.4.20",
+        "port": 2323,
         "transport": "tcp",
     }
-    assert start["agent_channel"]["url"] == "http://10.99.10.20:8443"
+    assert start["agent_channel"]["url"] == "http://10.77.4.20:8444"
     assert start["agent_channel"]["transport"] == "http_without_tls"
     assert start["agent_source"] == "user_supplied"
     assert start["starts_inert_agent"] is False
     assert start["launches_external_agent"] is False
-    default = invoke("gotham_merlin_setup", "--dry-run")
+    default = invoke("gotham_merlin_setup", "--inventory", role_inventory, "--dry-run")
     assert default.returncode == 0
     assert records(default)[0]["agent_source"] == "unspecified"
     assert (
         invoke(
             "gotham_merlin_setup",
+            "--inventory",
+            role_inventory,
             "--external-agent",
             "--start-inert-agent",
             "--dry-run",
@@ -220,7 +308,9 @@ def test_gotham_merlin_setup_maps_http_contract_without_contacting_gns3():
     )
 
 
-def test_gotham_merlin_setup_starts_only_the_example_agent(monkeypatch, capsys):
+def test_gotham_merlin_setup_starts_only_the_example_agent(
+    monkeypatch, capsys, role_inventory
+):
     if str(ATTACKS) not in sys.path:
         sys.path.insert(0, str(ATTACKS))
     spec = importlib.util.spec_from_file_location(
@@ -233,15 +323,15 @@ def test_gotham_merlin_setup_starts_only_the_example_agent(monkeypatch, capsys):
         started = []
 
         def project_by_name(self, name):
-            assert name == "metropolis_water_treatment_v1"
+            assert name == "fixture_project"
             return SimpleNamespace(project_id="lab", status="opened")
 
         def project_nodes(self, project_id):
             assert project_id == "lab"
             return [
-                {"name": "MET-MERLIN-CNC-01", "status": "started", "node_id": "cnc"},
+                {"name": "MERLIN-CNC-A", "status": "started", "node_id": "cnc"},
                 {
-                    "name": "MET-MERLIN-AGENT-01",
+                    "name": "MERLIN-AGENT-A",
                     "status": "stopped",
                     "node_id": "agent",
                 },
@@ -254,7 +344,16 @@ def test_gotham_merlin_setup_starts_only_the_example_agent(monkeypatch, capsys):
     monkeypatch.setattr(adapter, "gns3_client", lambda: client)
     monkeypatch.setenv("METROPOLIS_LAB_ACK", "yes")
     monkeypatch.setattr(
-        sys, "argv", ["merlin/gotham_merlin_setup.py", "--start-inert-agent"]
+        sys,
+        "argv",
+        [
+            "merlin/gotham_merlin_setup.py",
+            "--inventory",
+            str(role_inventory),
+            "--project",
+            "fixture_project",
+            "--start-inert-agent",
+        ],
     )
     assert adapter.main() == 0
     assert client.started == [("lab", "agent")]
@@ -277,25 +376,21 @@ def test_dispatcher_requires_a_tool_name():
     assert "usage:" in result.stderr
 
 
-def test_dispatcher_preserves_the_lab_acknowledgement_gate():
+def test_dispatcher_preserves_the_lab_acknowledgement_gate(role_inventory):
     """The gate lives in the tools, and dispatch must not bypass it."""
     assert invoke("mqtt_bruteforce_attack").returncode == 2
-    with_ack = invoke("mqtt_bruteforce_attack", "--dry-run", ack=True)
+    with_ack = invoke(
+        "mqtt_bruteforce_attack", "--inventory", role_inventory, "--dry-run", ack=True
+    )
     assert with_ack.returncode == 0
 
 
-def test_dispatcher_passes_through_help():
-    """'<tool> --help' reaches the module's own argument parser."""
-    result = invoke("modbus_manipulation_attack", "--help")
-    assert result.returncode == 0
-    assert "--action" in result.stdout
-
-
-@pytest.mark.parametrize("name", sorted(EXPECTED_TOOLS - {"coap_experiment_report"}))
-def test_attack_commands_offer_explicit_gotham_script(name):
+@pytest.mark.parametrize("name", sorted(runnable_names()))
+def test_discovered_tools_respond_to_help(name):
     result = invoke(name, "--help")
-    assert result.returncode == 0
-    assert "--gotham-script" in result.stdout
+    assert result.returncode == 0, f"{name}: {result.stdout}{result.stderr}"
+    if name != "coap_experiment_report":
+        assert "--gotham-script" in result.stdout
 
 
 def test_gotham_script_dry_run_does_not_execute(tmp_path):
@@ -356,10 +451,3 @@ def test_selected_gotham_script_runs_once_and_returns_its_status(tmp_path, monke
         options.parse_args(["--gotham-script", str(script), "--gotham-arg", "target"])
     assert stopped.value.code == 7
     assert calls == [(["/bin/bash", str(script), "target"], script.parent, False)]
-
-
-@pytest.mark.parametrize("name", sorted(EXPECTED_TOOLS))
-def test_every_tool_is_reachable_through_the_dispatcher(name):
-    """Every discovered tool responds to --help through the dispatcher."""
-    result = invoke(name, "--help")
-    assert result.returncode == 0, f"{name}: {result.stdout}{result.stderr}"

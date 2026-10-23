@@ -18,6 +18,7 @@ import threading
 from pathlib import Path
 
 import pytest
+import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 ATTACKS = ROOT / "scripts/attacks"
@@ -58,6 +59,39 @@ def load_driver(name, filename):
 
 
 @pytest.fixture
+def discovery_inventory(tmp_path):
+    inventory = tmp_path / "initial_devices.yaml"
+    inventory.write_text(
+        yaml.safe_dump(
+            {
+                "testbed_id": "fixture",
+                "devices": [
+                    {
+                        "name": "PLC-A",
+                        "address": "10.77.1.10/24",
+                        "protocols": ["modbus-tcp"],
+                        "environment": {"DEVICE_ROLE": "PLC"},
+                    },
+                    {
+                        "name": "SENSOR-A",
+                        "address": "10.77.1.20/24",
+                        "protocols": ["coap"],
+                        "environment": {"COAP_PORT": "5683"},
+                    },
+                    {
+                        "name": "CNC-A",
+                        "address": "10.77.4.10/24",
+                        "protocols": ["mirai-cnc"],
+                    },
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    return inventory
+
+
+@pytest.fixture
 def tcp_listener():
     """A real loopback listener the probe helpers can reach."""
     accepted = []
@@ -79,27 +113,51 @@ def tcp_listener():
     worker.join(timeout=2)
 
 
-def test_bounded_probe_resolves_ot_nodes():
+def test_bounded_probe_resolves_ot_nodes(discovery_inventory):
     """Raw profiles target the inventory; legacy UDP targets CoAP."""
-    syn = records(invoke("hping3/hping3_attack.py", "--dry-run", ack=False))[0]
-    assert syn["host"] == "10.20.10.10"
+    syn = records(
+        invoke(
+            "hping3/hping3_attack.py",
+            "--inventory",
+            discovery_inventory,
+            "--dry-run",
+            ack=False,
+        )
+    )[0]
+    assert syn["host"] == "10.77.1.10"
     assert syn["port"] == 0
     assert syn["mode"] == "syn"
     assert syn["destination_port_policy"] == "incrementing"
 
     vse = records(
-        invoke("hping3/hping3_attack.py", "--mode", "udp-vse", "--dry-run", ack=False)
+        invoke(
+            "hping3/hping3_attack.py",
+            "--inventory",
+            discovery_inventory,
+            "--mode",
+            "udp-vse",
+            "--dry-run",
+            ack=False,
+        )
     )[0]
     assert vse["port"] == 27015
 
     udp = records(
-        invoke("hping3/hping3_attack.py", "--mode", "udp", "--dry-run", ack=False)
+        invoke(
+            "hping3/hping3_attack.py",
+            "--inventory",
+            discovery_inventory,
+            "--mode",
+            "udp",
+            "--dry-run",
+            ack=False,
+        )
     )[0]
-    assert udp["host"] == "10.20.10.20"
+    assert udp["host"] == "10.77.1.20"
     assert udp["port"] == 5683
 
 
-def test_bounded_probe_refuses_unbounded_settings():
+def test_bounded_probe_refuses_unbounded_settings(discovery_inventory):
     """Every ceiling is enforced before any traffic is sent."""
     assert invoke("hping3/hping3_attack.py", "--rate", "99999").returncode == 2
     assert invoke("hping3/hping3_attack.py", "--duration", "99999").returncode == 2
@@ -128,7 +186,12 @@ def test_bounded_probe_refuses_unbounded_settings():
     )
     assert (
         invoke(
-            "hping3/hping3_attack.py", "--host", "10.20.10.11", "--dry-run"
+            "hping3/hping3_attack.py",
+            "--inventory",
+            discovery_inventory,
+            "--host",
+            "10.77.1.11",
+            "--dry-run",
         ).returncode
         == 2
     )
@@ -183,7 +246,7 @@ def test_raw_profiles_match_gotham_packet_shapes(monkeypatch):
     from scapy.all import IP, TCP, UDP, Raw
 
     probe = load_driver("raw_profile_driver", "hping3/hping3_attack.py")
-    host = "10.20.10.10"
+    host = "10.77.1.10"
     syn = probe.raw_packet("syn", host, 0, 2)
     assert syn[IP].dst == host
     assert syn[IP].ttl == 64
@@ -211,11 +274,20 @@ def test_raw_profiles_match_gotham_packet_shapes(monkeypatch):
     assert len(bytes(stomp[Raw])) == 768
 
 
-def test_flood_mode_has_no_pacing_and_still_has_hard_caps(monkeypatch):
+def test_flood_mode_has_no_pacing_and_still_has_hard_caps(
+    monkeypatch, discovery_inventory
+):
     """A dry run announces flood mode; count and deadline both stop it."""
-    run = records(invoke("hping3/hping3_attack.py", "--flood", "--dry-run", ack=False))[
-        0
-    ]
+    run = records(
+        invoke(
+            "hping3/hping3_attack.py",
+            "--inventory",
+            discovery_inventory,
+            "--flood",
+            "--dry-run",
+            ack=False,
+        )
+    )[0]
     assert run["flood"] is True
     assert run["rate"] is None
     driver = load_driver("flood_driver", "hping3/hping3_attack.py")
@@ -225,19 +297,19 @@ def test_flood_mode_has_no_pacing_and_still_has_hard_caps(monkeypatch):
     assert list(driver.flood_schedule(0.5, 4)) == [0]
 
 
-def test_discovery_defaults_to_inventory_and_documented_ports():
+def test_discovery_defaults_to_inventory_and_documented_ports(discovery_inventory):
     """The sweep covers inventoried hosts and the documented listener set."""
     start = records(
         invoke(
             "scanner/iot_discovery.py",
+            "--inventory",
+            discovery_inventory,
             "--dry-run",
             ack=False,
         )
     )[0]
     assert start["protocol"] == "both"
-    assert "10.20.10.10" in start["hosts"]
-    assert "10.99.10.10" in start["hosts"]
-    assert len(start["hosts"]) <= 256
+    assert start["hosts"] == ["10.77.1.10", "10.77.1.20", "10.77.4.10"]
     assert "tcp/502" in start["ports"]
     assert "tcp/8883" in start["ports"]
     assert "tcp/48101" in start["ports"]
@@ -293,7 +365,7 @@ def test_discovery_coap_probe_uses_real_sensor_response():
     class Handler(socketserver.BaseRequestHandler):
         def handle(self):
             request, sock = self.request
-            response = sensor.handle_get(request, "MET-SENSOR-01", "level", 65.0)
+            response = sensor.handle_get(request, "SENSOR-A", "level", 65.0)
             if response:
                 sock.sendto(response, self.client_address)
 
@@ -382,7 +454,7 @@ def test_discovery_refuses_public_and_oversized_ranges():
     )
     assert (
         invoke(
-            "scanner/iot_discovery.py", "--cidr", "10.20.0.0/16", "--dry-run"
+            "scanner/iot_discovery.py", "--cidr", "10.77.0.0/16", "--dry-run"
         ).returncode
         == 2
     )
@@ -399,21 +471,30 @@ def test_discovery_refuses_public_and_oversized_ranges():
     assert invoke("scanner/iot_discovery.py", ack=False).returncode == 2
 
 
-def test_discovery_node_selection_narrows_the_sweep():
+def test_discovery_node_selection_narrows_the_sweep(discovery_inventory):
     """--node narrows the sweep to one inventoried host."""
     start = records(
         invoke(
             "scanner/iot_discovery.py",
+            "--inventory",
+            discovery_inventory,
             "--node",
-            "MET-PLC-INTAKE-01",
+            "PLC-A",
             "--dry-run",
             ack=False,
         )
     )[0]
-    assert start["hosts"] == ["10.20.10.10"]
+    assert start["hosts"] == ["10.77.1.10"]
 
 
-def test_discovery_rejects_an_unknown_node():
-    result = invoke("scanner/iot_discovery.py", "--node", "MET-NOPE-01", "--dry-run")
+def test_discovery_rejects_an_unknown_node(discovery_inventory):
+    result = invoke(
+        "scanner/iot_discovery.py",
+        "--inventory",
+        discovery_inventory,
+        "--node",
+        "MISSING-A",
+        "--dry-run",
+    )
     assert result.returncode == 2
     assert "not in the inventory" in result.stdout

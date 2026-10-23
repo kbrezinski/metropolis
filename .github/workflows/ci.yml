@@ -39,6 +39,15 @@ jobs:
       - name: Check formatting with Ruff
         run: uv run ruff format --check .
 
+      - name: Validate bundled topology
+        run: uv run python scripts/validate_metropolis_topology.py
+
+      - name: Check generated switch reference
+        run: uv run python scripts/generate_switch_reference.py --check
+
+      - name: Check GNS3 template registry
+        run: uv run python scripts/gns3/run.py register_templates --check
+
       - name: Run tests
         run: |
           uv pip install -r scripts/attacks/requirements.txt

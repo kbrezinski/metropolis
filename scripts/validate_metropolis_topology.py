@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 from dataclasses import dataclass
+import importlib.util
 from ipaddress import IPv4Address, IPv4Interface, IPv4Network, ip_interface, ip_network
 import json
 from pathlib import Path
@@ -33,10 +34,14 @@ class Check:
         return not self.problems
 
 
-def validate_topology(repository_root: Path) -> list[Check]:
-    """Validate the checked-in Metropolis v1 topology definitions."""
+def validate_topology(
+    repository_root: Path, dataset_root: Path | None = None
+) -> list[Check]:
+    """Validate a Metropolis dataset against its inventory and router configs."""
     testbed_root = repository_root / "testbeds" / "metropolis"
-    dataset_root = testbed_root / "datasets" / "water_treatment_v1"
+    bundled_root = testbed_root / "datasets" / "water_treatment_v1"
+    if dataset_root is None:
+        dataset_root = bundled_root
     address_plan = yaml.safe_load(
         (dataset_root / "topology" / "address-plan.yaml").read_text(encoding="utf-8")
     )
@@ -48,8 +53,11 @@ def validate_topology(repository_root: Path) -> list[Check]:
     link_plan = yaml.safe_load(
         (dataset_root / "topology" / "links.yaml").read_text(encoding="utf-8")
     )
-    firewall_policy = yaml.safe_load(
-        (dataset_root / "topology" / "firewall-policy.yaml").read_text(encoding="utf-8")
+    firewall_path = dataset_root / "topology" / "firewall-policy.yaml"
+    firewall_policy = (
+        yaml.safe_load(firewall_path.read_text(encoding="utf-8"))
+        if firewall_path.is_file()
+        else None
     )
     infrastructure = yaml.safe_load(
         (dataset_root / "device_instances" / "infrastructure.yaml").read_text(
@@ -79,8 +87,12 @@ def validate_topology(repository_root: Path) -> list[Check]:
                         ("device-inventory.schema.json", inventory),
                         ("infrastructure.schema.json", infrastructure),
                         ("link-plan.schema.json", link_plan),
-                        ("firewall-policy.schema.json", firewall_policy),
-                    ],
+                    ]
+                    + (
+                        [("firewall-policy.schema.json", firewall_policy)]
+                        if firewall_policy is not None
+                        else []
+                    ),
                 )
             ),
         )
@@ -95,7 +107,11 @@ def validate_topology(repository_root: Path) -> list[Check]:
                     ("initial_devices.yaml", inventory.get("testbed_id")),
                     ("infrastructure.yaml", infrastructure.get("testbed_id")),
                     ("links.yaml", link_plan.get("testbed_id")),
-                    ("firewall-policy.yaml", firewall_policy.get("testbed_id")),
+                    *(
+                        [("firewall-policy.yaml", firewall_policy.get("testbed_id"))]
+                        if firewall_policy is not None
+                        else []
+                    ),
                 )
                 if value != testbed_id
             ),
@@ -175,11 +191,16 @@ def validate_topology(repository_root: Path) -> list[Check]:
         )
     )
 
-    router_files = sorted((testbed_root / "router").rglob("*.sh"))
+    router_sources = {
+        router["name"]: repository_root / router["config"]
+        for router in infrastructure.get("routers", [])
+    }
+    router_files = [path for path in router_sources.values() if path.is_file()]
     router_addresses: list[IPv4Interface] = []
     router_vlans: set[tuple[int, IPv4Network]] = set()
     router_problems: list[str] = []
     ospf_problems: list[str] = []
+    router_ids: dict[IPv4Address, str] = {}
     address_pattern = re.compile(
         r"set interfaces ethernet \S+(?: vif (\d+))? address '([^']+)'"
     )
@@ -189,6 +210,39 @@ def validate_topology(repository_root: Path) -> list[Check]:
     )
     for router_file in router_files:
         text = router_file.read_text(encoding="utf-8")
+        lines = set(text.splitlines())
+        router_id_values = re.findall(
+            r"^set protocols ospf parameters router-id '([^']+)'$", text, re.M
+        )
+        if len(router_id_values) != 1:
+            ospf_problems.append(
+                f"{router_file.name}: expected exactly one OSPF router ID"
+            )
+        else:
+            try:
+                router_id = IPv4Address(router_id_values[0])
+            except ValueError:
+                ospf_problems.append(
+                    f"{router_file.name}: invalid OSPF router ID {router_id_values[0]!r}"
+                )
+            else:
+                if previous := router_ids.get(router_id):
+                    ospf_problems.append(
+                        f"{router_file.name}: OSPF router ID {router_id} duplicates {previous}"
+                    )
+                router_ids[router_id] = router_file.name
+        if "set protocols ospf log-adjacency-changes" not in lines:
+            ospf_problems.append(
+                f"{router_file.name}: OSPF adjacency-change logging is disabled"
+            )
+        if re.search(
+            r"^set protocols ospf (?:redistribute\b|default-information originate\b)",
+            text,
+            re.M,
+        ):
+            ospf_problems.append(
+                f"{router_file.name}: OSPF redistribution or default origination is configured"
+            )
         local_addresses: list[IPv4Interface] = []
         for match in address_pattern.finditer(text):
             vlan_text, address_text = match.groups()
@@ -228,15 +282,27 @@ def validate_topology(repository_root: Path) -> list[Check]:
         if "set protocols static route " in text:
             ospf_problems.append(f"{router_file.name}: static routes remain configured")
         configured_interfaces = {
-            match.group(1)
-            for match in re.finditer(
-                r"^set interfaces ethernet (eth\d+)(?: vif \d+)? address ", text, re.M
+            f"{base}.{vlan}" if vlan else base: ip_interface(address)
+            for base, vlan, address in re.findall(
+                r"^set interfaces ethernet (eth\d+)(?: vif (\d+))? address '([^']+)'$",
+                text,
+                re.M,
             )
         }
         for interface in active_pattern.findall(text):
             if interface not in configured_interfaces:
                 ospf_problems.append(
                     f"{router_file.name}: active OSPF interface {interface} has no address"
+                )
+            elif (
+                configured_interfaces[interface].network.prefixlen == 30
+                and "set interfaces ethernet "
+                f"{interface.replace('.', ' vif ', 1)} ip ospf network 'point-to-point'"
+                not in lines
+            ):
+                ospf_problems.append(
+                    f"{router_file.name}: active /30 OSPF interface {interface} "
+                    "must use point-to-point network type"
                 )
 
     for record in networks:
@@ -269,6 +335,24 @@ def validate_topology(repository_root: Path) -> list[Check]:
             tuple(ospf_problems),
         )
     )
+    checks.append(
+        Check(
+            "Router syslog destination matches the inventoried receiver",
+            tuple(_validate_router_syslog(inventory["devices"], router_sources)),
+        )
+    )
+    if dataset_root.resolve() == bundled_root.resolve():
+        checks.append(
+            Check(
+                "Bundled MQTT broker matches default certificate names and addresses",
+                tuple(
+                    _validate_bundled_broker_certificate_defaults(
+                        inventory["devices"],
+                        repository_root / "scripts" / "gen_lab_certificates.py",
+                    )
+                ),
+            )
+        )
 
     vlan_by_id: dict[int, IPv4Network] = {}
     switch_problems: list[str] = []
@@ -280,7 +364,12 @@ def validate_topology(repository_root: Path) -> list[Check]:
                 switch_problems.append(f"VLAN {vlan} is assigned to multiple subnets")
             vlan_by_id[vlan] = subnet
 
-    switch_files = sorted((testbed_root / "switch").rglob("*.md"))
+    # The generated reference describes only the bundled dataset, not a custom one.
+    switch_files = (
+        sorted((testbed_root / "switch").rglob("*.md"))
+        if dataset_root.resolve() == bundled_root.resolve()
+        else []
+    )
     cidr_pattern = re.compile(r"(?<![\d.])(?:\d{1,3}\.){3}\d{1,3}/\d{1,2}")
     for switch_file in switch_files:
         text = switch_file.read_text(encoding="utf-8")
@@ -344,6 +433,23 @@ def validate_topology(repository_root: Path) -> list[Check]:
     )
     checks.append(
         Check(
+            "HMI cell and telemetry settings match SCADA targets",
+            tuple(_validate_hmi_targets(inventory["devices"])),
+        )
+    )
+    if firewall_policy is not None:
+        checks.append(
+            Check(
+                "Routed SCADA and HMI service paths are permitted by policy",
+                tuple(
+                    _validate_service_flows(
+                        inventory["devices"], networks, firewall_policy
+                    )
+                ),
+            )
+        )
+    checks.append(
+        Check(
             "Link plan matches the inventory, address plan, and router interfaces",
             tuple(
                 _validate_links(
@@ -351,10 +457,16 @@ def validate_topology(repository_root: Path) -> list[Check]:
                     inventory["devices"],
                     network_by_id,
                     network_by_cidr,
-                    router_files,
+                    router_sources,
                     infrastructure_names,
                 )
             ),
+        )
+    )
+    checks.append(
+        Check(
+            "Inventoried devices are cabled or explicitly marked uncabled",
+            tuple(_validate_device_links(inventory["devices"], link_plan)),
         )
     )
     checks.append(
@@ -398,6 +510,77 @@ def _router_addresses(router_file: Path) -> dict[str, str]:
         number, address = match.groups()
         addresses[number] = address
     return addresses
+
+
+def _validate_router_syslog(
+    devices: list[dict], router_sources: dict[str, Path]
+) -> list[str]:
+    """Check declared routers against the inventory's syslog service node."""
+    problems: list[str] = []
+    receivers = [device for device in devices if "syslog" in device["protocols"]]
+    if len(receivers) > 1:
+        return ["multiple inventoried syslog receivers; expected one"]
+    if router_sources and not receivers:
+        problems.append("no inventoried syslog receiver for declared routers")
+    expected = str(ip_interface(receivers[0]["address"]).ip) if receivers else None
+    for name, router_file in router_sources.items():
+        if not router_file.is_file():
+            continue  # The infrastructure check reports the missing script.
+        configured = set(
+            re.findall(
+                r"^set system syslog host '?([^'\s]+)'?\s+",
+                router_file.read_text(encoding="utf-8"),
+                re.M,
+            )
+        )
+        if expected is None:
+            if configured:
+                problems.append(
+                    f"{name}: syslog hosts {sorted(configured)} have no inventoried receiver"
+                )
+        elif configured != {expected}:
+            problems.append(
+                f"{name}: syslog hosts {sorted(configured)} differ from "
+                f"inventoried receiver {expected}"
+            )
+    return problems
+
+
+def _validate_bundled_broker_certificate_defaults(
+    devices: list[dict], generator_file: Path
+) -> list[str]:
+    """Check the bundled dataset's no-argument lab certificate workflow."""
+    brokers = [
+        device
+        for device in devices
+        if device.get("model", "").replace("\\", "/").endswith("/mqtt_broker")
+    ]
+    if not brokers:
+        return []
+    if not generator_file.is_file():
+        return [f"default certificate generator is missing: {generator_file}"]
+    spec = importlib.util.spec_from_file_location(
+        "gen_lab_certificates", generator_file
+    )
+    if spec is None or spec.loader is None:
+        return [f"cannot load default certificate generator: {generator_file}"]
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    names = set(module.DEFAULT_NAMES)
+    addresses = set(module.DEFAULT_ADDRESSES)
+    problems: list[str] = []
+    for broker in brokers:
+        if broker["name"] not in names:
+            problems.append(
+                f"{broker['name']}: broker name is absent from default certificate DNS names"
+            )
+        address = str(ip_interface(broker["address"]).ip)
+        if address not in addresses:
+            problems.append(
+                f"{broker['name']}: broker address {address} is absent from "
+                "default certificate IP addresses"
+            )
+    return problems
 
 
 def _validate_vlan_ports(
@@ -657,7 +840,7 @@ def _validate_links(
     devices: list[dict],
     network_by_id: dict,
     network_by_cidr: dict,
-    router_files: list[Path],
+    router_sources: dict[str, Path],
     infrastructure_names: set[str],
 ) -> list[str]:
     """Check the link plan against the inventory, address plan, and routers."""
@@ -726,10 +909,9 @@ def _validate_links(
     # Every router script must be represented, and the interfaces the link plan
     # claims must be the ones the script configures.
     documented_by_node: dict[str, set[str]] = {}
-    for router_file in router_files:
-        # A router script is named after its node: router_ot_wan.sh -> MET-OT-WAN.
-        stem = router_file.stem.replace("_", "-")
-        node = f"MET-{stem.removeprefix('router-').upper()}"
+    for node, router_file in router_sources.items():
+        if not router_file.is_file():
+            continue  # The infrastructure check reports the missing script.
         configured, _ = _router_interfaces(router_file)
         documented = _documented_router_interfaces(router_file)
         documented_by_node[node] = documented
@@ -764,24 +946,60 @@ def _validate_links(
     return problems
 
 
-def render_report(repository_root: Path, checks: list[Check]) -> str:
+def _validate_device_links(devices: list[dict], link_plan: dict) -> list[str]:
+    """Find unexpected orphan devices and stale intentional-uncabling markers."""
+    linked = {
+        endpoint["node"]
+        for link in link_plan["links"]
+        for endpoint in link["endpoints"]
+    }
+    problems: list[str] = []
+    for device in devices:
+        name = device["name"]
+        policy = device.get("link_policy", "required")
+        if policy == "required" and name not in linked:
+            problems.append(f"{name}: inventoried device has no declared physical link")
+        elif policy == "intentionally_uncabled" and name in linked:
+            problems.append(
+                f"{name}: marked intentionally uncabled but appears in the link plan"
+            )
+    return problems
+
+
+def render_report(
+    repository_root: Path, checks: list[Check], dataset_root: Path | None = None
+) -> str:
     """Render the validation results and the source address table as Markdown."""
-    dataset_root = (
+    bundled_root = (
         repository_root / "testbeds" / "metropolis" / "datasets" / "water_treatment_v1"
     )
+    if dataset_root is None:
+        dataset_root = bundled_root
+    bundled = dataset_root.resolve() == bundled_root.resolve()
+    try:
+        displayed_dataset = dataset_root.resolve().relative_to(
+            repository_root.resolve()
+        )
+    except ValueError:
+        displayed_dataset = dataset_root.resolve()
+    displayed_dataset_text = displayed_dataset.as_posix()
     address_plan = yaml.safe_load(
         (dataset_root / "topology" / "address-plan.yaml").read_text(encoding="utf-8")
     )
     passed = sum(check.passed for check in checks)
     lines = [
-        "# Metropolis v1 topology validation",
+        f"# {dataset_root.name} topology validation",
         "",
         f"**Result: {'PASS' if passed == len(checks) else 'FAIL'} ({passed}/{len(checks)} checks passed)**",
         "",
         "Regenerate this report from the repository root with:",
         "",
         "```bash",
-        "uv run python scripts/validate_metropolis_topology.py --report testbeds/metropolis/datasets/water_treatment_v1/topology/validation-report.md",
+        (
+            "uv run python scripts/validate_metropolis_topology.py "
+            f"{'--dataset ' + displayed_dataset_text + ' ' if not bundled else ''}"
+            f"--report {displayed_dataset_text}/topology/validation-report.md"
+        ),
         "```",
         "",
         "## What the checks mean",
@@ -820,15 +1038,19 @@ def render_report(repository_root: Path, checks: list[Check]) -> str:
     lines.extend(
         [
             "",
-            "## Corrections made during this review",
-            "",
-            "- Matched the reservoir and raw-water device inventory site IDs to the address plan.",
-            "- Added VLAN 30 to the OT services network and recorded the reserved reservoir IPsec overlay `10.20.254.16/30`.",
-            "- Changed the DMZ switch overview to say untagged, matching the physical router interface and switch port spec; this segment does not use VLAN 40.",
-            "",
             "## Scope and limitations",
             "",
-            "This validates consistency across the checked-in YAML, VyOS command text, and switch Markdown, including declared VLAN access/trunk membership and router link interfaces. A blank VLAN means a standalone untagged subnet. For cabling it checks the link plan against the inventory, the address plan, and each router script's configured interfaces, and it checks that every router script is represented. It does not execute VyOS or Open vSwitch configuration, assign or confirm literal GNS3 port numbers, verify that a link is physically cabled, test packet reachability or Layer 2 isolation, or validate firewall/IPsec behavior. The two overlay `/30`s are reservations and intentionally have no configured router interfaces yet.",
+            "This checks consistency among the selected dataset's YAML documents, its declared router scripts, and the declared links and VLAN paths. "
+            + (
+                "It also checks the generated switch reference and no-argument "
+                "MQTT certificate defaults for the bundled dataset. "
+                if bundled
+                else "The generated switch reference belongs to the bundled dataset and is not checked for this dataset. "
+            )
+            + "A blank VLAN means an untagged subnet. Custom certificate names, "
+            "addresses, and mounts are outside this check. It does not execute "
+            "router or switch configuration, verify physical GNS3 cabling, test "
+            "packet reachability or Layer 2 isolation, or validate firewall/IPsec behavior.",
             "",
         ]
     )
@@ -841,7 +1063,16 @@ def _validate_device_targets(devices: list[dict]) -> list[str]:
     for device in devices:
         environment = device.get("environment", {})
         for key, target in environment.items():
-            if key.endswith("_HOST") and IPv4Address(target) not in known_addresses:
+            if not key.endswith("_HOST"):
+                continue
+            try:
+                address = IPv4Address(target)
+            except ValueError:
+                problems.append(
+                    f"{device['name']}: {key} target {target!r} is not an IPv4 address"
+                )
+                continue
+            if address not in known_addresses:
                 problems.append(
                     f"{device['name']}: {key} target {target} is not inventoried"
                 )
@@ -867,6 +1098,150 @@ def _validate_device_targets(devices: list[dict]) -> list[str]:
     return problems
 
 
+def _validate_hmi_targets(devices: list[dict]) -> list[str]:
+    """Keep HMI subscriptions aligned with their selected SCADA target."""
+    problems: list[str] = []
+    targets_by_id: dict[str, set[str]] = {}
+    for device in devices:
+        configured = device.get("environment", {}).get("SCADA_TARGETS")
+        if not configured:
+            continue
+        try:
+            targets = json.loads(configured)
+        except (TypeError, ValueError):
+            continue  # The service-target check reports malformed JSON.
+        if not isinstance(targets, list):
+            continue
+        for target in targets:
+            if (
+                isinstance(target, dict)
+                and isinstance(target.get("id"), str)
+                and isinstance(target.get("topic"), str)
+            ):
+                targets_by_id.setdefault(target["id"], set()).add(
+                    target.get("topic", "")
+                )
+    for device in devices:
+        environment = device.get("environment", {})
+        if (
+            "HMI_CELL_ID" not in environment
+            and "MQTT_TELEMETRY_TOPIC" not in environment
+        ):
+            continue
+        cell = environment.get("HMI_CELL_ID")
+        topic = environment.get("MQTT_TELEMETRY_TOPIC")
+        if not cell or not topic:
+            problems.append(
+                f"{device['name']}: HMI_CELL_ID and MQTT_TELEMETRY_TOPIC are both required"
+            )
+        elif targets_by_id.get(cell) != {topic}:
+            problems.append(
+                f"{device['name']}: telemetry topic {topic!r} does not match "
+                f"SCADA target {cell!r}"
+            )
+    return problems
+
+
+def _selector_contains(
+    selector: str, address: IPv4Address, networks: list[dict]
+) -> bool:
+    """Resolve a firewall network selector against one device address."""
+    declared = next((item for item in networks if item["id"] == selector), None)
+    if declared is None and selector.startswith("vlan-") and selector[5:].isdecimal():
+        vlan = int(selector[5:])
+        declared = next(
+            (item for item in networks if item.get("vlan_id") == vlan), None
+        )
+    if declared is not None:
+        selector = declared["cidr"]
+    try:
+        return address in ip_network(selector, strict=False)
+    except ValueError:
+        return False
+
+
+def _flow_allows(
+    firewall_policy: dict,
+    networks: list[dict],
+    source: IPv4Address,
+    destination: IPv4Address,
+    port: int,
+) -> bool:
+    def selectors(value: str | list[str]) -> list[str]:
+        return [value] if isinstance(value, str) else value
+
+    return any(
+        flow["protocol"] == "tcp"
+        and flow["port"] == port
+        and any(
+            _selector_contains(selector, source, networks)
+            for selector in selectors(flow["source"])
+        )
+        and any(
+            _selector_contains(selector, destination, networks)
+            for selector in selectors(flow["destination"])
+        )
+        for flow in firewall_policy["flows"]
+    )
+
+
+def _validate_service_flows(
+    devices: list[dict], networks: list[dict], firewall_policy: dict
+) -> list[str]:
+    """Check declared routed SCADA polls and HMI broker sessions."""
+    problems: list[str] = []
+    devices_by_address = {
+        ip_interface(device["address"]).ip: device for device in devices
+    }
+    for device in devices:
+        environment = device.get("environment", {})
+        targets_text = environment.get("SCADA_TARGETS")
+        if targets_text:
+            try:
+                targets = json.loads(targets_text)
+            except (TypeError, ValueError):
+                continue  # The service-target check reports malformed JSON.
+            if not isinstance(targets, list):
+                continue
+            for target in targets:
+                if not isinstance(target, dict):
+                    continue
+                try:
+                    destination = IPv4Address(target["host"])
+                except (KeyError, ValueError):
+                    continue
+                source = ip_interface(device["address"]).ip
+                target_device = devices_by_address.get(destination)
+                if target_device and ip_network(device["subnet"]) == ip_network(
+                    target_device["subnet"]
+                ):
+                    continue
+                if not _flow_allows(
+                    firewall_policy, networks, source, destination, 502
+                ):
+                    problems.append(
+                        f"{device['name']}: no TCP/502 firewall flow to SCADA "
+                        f"target {target.get('id', destination)} ({destination})"
+                    )
+        if "HMI_CELL_ID" in environment and "MQTT_HOST" in environment:
+            try:
+                source = ip_interface(device["address"]).ip
+                destination = IPv4Address(environment["MQTT_HOST"])
+            except ValueError:
+                continue  # The service-target check reports an invalid host.
+            target_device = devices_by_address.get(destination)
+            if target_device and ip_network(device["subnet"]) == ip_network(
+                target_device["subnet"]
+            ):
+                continue
+            if not _flow_allows(firewall_policy, networks, source, destination, 1883):
+                problems.append(
+                    f"{device['name']}: no TCP/1883 firewall flow to MQTT "
+                    f"broker {destination}"
+                )
+    return problems
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -876,12 +1251,21 @@ def main() -> int:
         help="repository root (defaults to the checkout containing this script)",
     )
     parser.add_argument(
+        "--dataset",
+        type=Path,
+        help="dataset directory; relative paths are resolved from --repo-root",
+    )
+    parser.add_argument(
         "--report",
         type=Path,
         help="optional path to write a Markdown validation report",
     )
     args = parser.parse_args()
-    checks = validate_topology(args.repo_root)
+    repository_root = args.repo_root.resolve()
+    dataset_root = args.dataset
+    if dataset_root is not None and not dataset_root.is_absolute():
+        dataset_root = repository_root / dataset_root
+    checks = validate_topology(repository_root, dataset_root)
     for check in checks:
         print(f"{'PASS' if check.passed else 'FAIL'}  {check.name}")
         for problem in check.problems:
@@ -889,7 +1273,7 @@ def main() -> int:
     passed = sum(check.passed for check in checks)
     print(f"\n{passed}/{len(checks)} checks passed")
     if args.report:
-        report = render_report(args.repo_root, checks)
+        report = render_report(repository_root, checks, dataset_root)
         args.report.parent.mkdir(parents=True, exist_ok=True)
         args.report.write_text(report, encoding="utf-8")
         print(f"Report written to {args.report}")

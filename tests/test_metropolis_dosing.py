@@ -47,6 +47,7 @@ class Drive:
 def test_analyzer_registers_change_and_stay_in_range():
     context = analyzer.make_context()
     first = context[0].getValues(3, 0, 3)
+    assert first == [720, 58, 0]
     analyzer.update_registers(context, 22.5)
     later = context[0].getValues(3, 0, 3)
     assert first != later

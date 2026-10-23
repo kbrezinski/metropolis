@@ -1,8 +1,7 @@
 """Checks for topology planning, the builder, lifecycle, and capture.
 
-These run against the real declared topology, so a change to the inventories
-that the builder could not express shows up here rather than at build time. No
-GNS3 server is involved: a fake client records what the builder would do.
+Synthetic topology documents and a fake GNS3 client keep these behavior tests
+independent of the bundled testbed's changing inventory.
 """
 
 from __future__ import annotations
@@ -16,15 +15,16 @@ import threading
 from pathlib import Path
 
 import pytest
+import yaml
 from jsonschema import Draft202012Validator, FormatChecker
 
 GNS3 = Path(__file__).resolve().parents[1] / "scripts" / "gns3"
 if str(GNS3) not in sys.path:
     sys.path.insert(0, str(GNS3))
 
-from _cli import load_documents, load_plan, template_name_by_image  # noqa: E402
+from _cli import template_name_by_image  # noqa: E402
 from builder import build, existing_link_keys, port_map_yaml  # noqa: E402
-from capture import capture_for, coverage_report, resolve_links  # noqa: E402
+from capture import LinkResolution, capture_for, coverage_report, resolve_links  # noqa: E402
 from client import Node, Project  # noqa: E402
 from experiment import run_experiment  # noqa: E402
 from device_logs import DeviceLogCollector  # noqa: E402
@@ -40,18 +40,122 @@ from lifecycle import (  # noqa: E402
     wait_until_running,
 )
 from templates import APPLIANCES  # noqa: E402
-from topology import environment_string, port_map, switch_port_settings  # noqa: E402
+from topology import (  # noqa: E402
+    build_plan,
+    environment_string,
+    port_map,
+    switch_port_settings,
+)
 from switch_config import expected_state  # noqa: E402
 
 
 @pytest.fixture(scope="module")
 def documents():
-    return load_documents()
+    address_plan = {"testbed_id": "unit_lab"}
+    inventory = {
+        "devices": [
+            {
+                "name": "scada",
+                "image": "metropolis/scada:dev",
+                "address": "192.0.2.11/24",
+                "environment": {"NODE_IP": "192.0.2.11/24"},
+            },
+            {
+                "name": "syslog-receiver",
+                "image": "metropolis/ntp:dev",
+                "address": "192.0.2.12/24",
+                "environment": {"NODE_IP": "192.0.2.12/24"},
+            },
+            {
+                "name": "meter",
+                "image": "metropolis/controller:dev",
+                "address": "192.0.2.13/24",
+                "environment": {"NODE_IP": "192.0.2.13/24"},
+            },
+        ]
+    }
+    infrastructure = {
+        "routers": [
+            {"name": "router-a", "config": "router-a.sh", "interfaces": []},
+            {"name": "router-b", "config": "router-b.sh", "interfaces": []},
+        ],
+        "switches": [
+            {
+                "name": "sw-a",
+                "attachment_points": ["router", "scada", "syslog", "segment", "spare"],
+            }
+        ],
+        "segments": [{"name": "seg-a", "network_id": "cell"}],
+    }
+    link_plan = {
+        "links": [
+            {
+                "id": "router-transit",
+                "kind": "transit",
+                "endpoints": [
+                    {"node": "router-a", "interface": "eth1"},
+                    {"node": "router-b", "interface": "eth1"},
+                ],
+            },
+            {
+                "id": "router-uplink",
+                "kind": "trunk",
+                "vlans": [10],
+                "endpoints": [
+                    {"node": "router-a", "interface": "eth0"},
+                    {"node": "sw-a", "port_role": "router"},
+                ],
+            },
+            {
+                "id": "scada-link",
+                "kind": "access",
+                "network_id": "cell",
+                "vlans": [10],
+                "endpoints": [
+                    {"node": "sw-a", "port_role": "scada"},
+                    {"node": "scada", "interface": "eth0"},
+                ],
+            },
+            {
+                "id": "syslog-link",
+                "kind": "access",
+                "network_id": "cell",
+                "vlans": [10],
+                "endpoints": [
+                    {"node": "sw-a", "port_role": "syslog"},
+                    {"node": "syslog-receiver", "interface": "eth0"},
+                ],
+            },
+            {
+                "id": "segment-uplink",
+                "kind": "trunk",
+                "vlans": [10],
+                "endpoints": [
+                    {"node": "sw-a", "port_role": "segment"},
+                    {"node": "seg-a", "interface": "eth0"},
+                ],
+            },
+            {
+                "id": "meter-link",
+                "kind": "access",
+                "network_id": "cell",
+                "endpoints": [
+                    {"node": "seg-a", "interface": "eth1"},
+                    {"node": "meter", "interface": "eth0"},
+                ],
+            },
+        ]
+    }
+    return address_plan, inventory, infrastructure, link_plan
 
 
 @pytest.fixture(scope="module")
-def plan():
-    return load_plan()
+def plan(documents):
+    _, inventory, infrastructure, link_plan = documents
+    topology = build_plan(
+        inventory, infrastructure, link_plan, template_name_by_image()
+    )
+    return topology, None
 
 
 # -- topology ----------------------------------------------------------------
@@ -68,128 +172,70 @@ def test_plan_covers_every_declared_node_and_link(documents, plan):
         + len(infrastructure["segments"])
     )
     assert len(topology.nodes) == expected_nodes
+    assert len({node.name for node in topology.nodes}) == len(topology.nodes)
     assert len(topology.links) == len(link_plan["links"])
     assert topology.skipped == []
     assert topology.missing_templates == []
 
 
-def test_every_registered_template_is_used_or_accounted_for(plan):
-    topology, _ = plan
-    used = {node.name for node in topology.nodes}
-    assert len(used) == len(topology.nodes), "node names must be unique"
-
-
-def test_intake_actuators_have_distinct_built_ports(plan):
-    topology, _ = plan
-    links = {item.link_id: item for item in topology.links}
-    names = (
-        "attach-intake-duty-drive",
-        "attach-intake-standby-drive",
-        "attach-intake-valve-controller",
-    )
-    switch_ports = []
-    for link_id in names:
-        link = links[link_id]
-        assert link.first.adapter == 0
-        assert link.second.node == "sw-plant-cell-intake"
-        switch_ports.append(link.second.adapter)
-    assert len(set(switch_ports)) == 3
-    actuator_nodes = [
-        node
-        for node in topology.nodes
-        if node.name.startswith("MET-PUMP-DRIVE-INTAKE-")
-        or node.name == "MET-VALVE-CTRL-INTAKE-01"
-    ]
-    assert len(actuator_nodes) == 3
-    assert {node.template_name for node in actuator_nodes} == {
-        "Metropolis networked actuator"
-    }
-
-
-def test_dosing_devices_have_distinct_built_ports_and_templates(plan):
-    topology, _ = plan
-    links = {item.link_id: item for item in topology.links}
-    cell_links = (
-        "attach-dosing-plc",
-        "attach-dosing-analyzer",
-        "attach-dosing-duty-drive",
-        "attach-dosing-standby-drive",
-    )
-    assert {links[name].second.node for name in cell_links} == {"sw-plant-cell-dosing"}
-    assert len({links[name].second.adapter for name in cell_links}) == 4
-    assert all(links[name].first.adapter == 0 for name in cell_links)
-    assert links["attach-hmi-dosing"].second.node == "sw-plant-dosing-hmi"
-    templates = {node.name: node.template_name for node in topology.nodes}
-    assert templates["MET-ANALYZER-DOSING-01"] == "Metropolis networked analyzer"
-    assert templates["MET-PLC-DOSING-01"] == "Metropolis PLC/RTU"
-    assert templates["MET-HMI-DOSING-01"] == "Metropolis HMI"
-
-
-def test_switch_port_numbers_follow_the_specification_order():
-    _, _, infrastructure, _ = load_documents()
+def test_switch_port_numbers_follow_the_specification_order(documents):
+    _, _, infrastructure, _ = documents
     mapping = port_map(infrastructure)
-
-    plant = mapping["sw-plant-aggregation"]
-    # The first role listed in the spec is the router uplink, so it is adapter 0.
-    assert plant["router-uplink"] == 0
-    assert plant["cell-intake-uplink"] == 1
-    assert len(set(plant.values())) == len(plant)
+    for switch in infrastructure["switches"]:
+        roles = switch["attachment_points"]
+        assert mapping[switch["name"]] == dict(zip(roles, range(len(roles))))
 
 
 def test_switch_settings_follow_declared_roles_and_leave_spares_unassigned(documents):
     _, _, infrastructure, link_plan = documents
     settings = switch_port_settings(infrastructure, link_plan)
-    plant = settings["sw-plant-aggregation"]
-    assert plant[0] == {
-        "role": "router-uplink",
-        "mode": "trunk",
-        "vlans": [10, 11, 12, 13, 50, 51, 52, 53],
-        "link_id": "link-plant-switch",
-    }
-    assert plant[1]["vlans"] == [10]
-    assert all(number in range(9) for number in plant)
-    assert settings["sw-dmz"].keys() == {0}
+    roles = port_map(infrastructure)
+    for switch in infrastructure["switches"]:
+        name = switch["name"]
+        assert set(settings[name]) <= set(roles[name].values())
+        for number, setting in settings[name].items():
+            assert roles[name][setting["role"]] == number
+            declared = next(
+                item for item in link_plan["links"] if item["id"] == setting["link_id"]
+            )
+            assert setting["vlans"] == sorted(declared.get("vlans", []))
+            assert setting["mode"] == (
+                "trunk"
+                if declared["kind"] == "trunk"
+                else "access"
+                if declared["kind"] == "access" and setting["vlans"]
+                else "untagged"
+            )
 
 
 def test_switch_settings_reject_duplicate_roles(documents):
     _, _, infrastructure, link_plan = documents
     duplicate = dict(link_plan)
-    duplicate["links"] = [*link_plan["links"], link_plan["links"][10]]
+    switch_link = next(
+        item
+        for item in link_plan["links"]
+        if any("port_role" in end for end in item["endpoints"])
+    )
+    duplicate["links"] = [*link_plan["links"], switch_link]
     with pytest.raises(ValueError, match="multiple declared links"):
         switch_port_settings(infrastructure, duplicate)
 
 
-def test_router_interfaces_become_adapter_numbers(plan):
+def test_router_interfaces_become_adapter_numbers(documents, plan):
+    _, _, infrastructure, link_plan = documents
     topology, _ = plan
-    core_plant = next(
-        item for item in topology.links if item.link_id == "link-core-plant"
+    routers = {item["name"] for item in infrastructure["routers"]}
+    declared = next(
+        item
+        for item in link_plan["links"]
+        if all(end["node"] in routers for end in item["endpoints"])
     )
-
-    ends = {
-        core_plant.first.node: core_plant.first.adapter,
-        core_plant.second.node: core_plant.second.adapter,
-    }
-    # eth0 on both routers in that transit link.
-    assert ends == {"MET-OT-CORE": 0, "MET-PLANT": 0}
-
-
-def test_merlin_nodes_have_distinct_built_switch_ports(plan):
-    topology, _ = plan
-    links = {item.link_id: item for item in topology.links}
-    assert {
-        links["attach-merlin-cnc"].first.node: links["attach-merlin-cnc"].first.adapter,
-        links["attach-merlin-cnc"].second.node: links[
-            "attach-merlin-cnc"
-        ].second.adapter,
-    } == {"MET-MERLIN-CNC-01": 0, "sw-attack-test": 2}
-    assert {
-        links["attach-merlin-agent"].first.node: links[
-            "attach-merlin-agent"
-        ].first.adapter,
-        links["attach-merlin-agent"].second.node: links[
-            "attach-merlin-agent"
-        ].second.adapter,
-    } == {"MET-MERLIN-AGENT-01": 0, "sw-attack-test": 3}
+    built = next(item for item in topology.links if item.link_id == declared["id"])
+    for endpoint in declared["endpoints"]:
+        actual = next(
+            end for end in (built.first, built.second) if end.node == endpoint["node"]
+        )
+        assert actual.adapter == int(endpoint["interface"].removeprefix("eth"))
 
 
 def test_environment_string_quotes_values():
@@ -205,19 +251,20 @@ def test_placement_gives_every_node_a_position(plan):
     assert len(positions) == len(topology.nodes)
 
 
-def test_segments_are_created_as_switch_nodes(plan):
+def test_segments_are_created_as_switch_nodes(documents, plan):
+    _, _, infrastructure, _ = documents
     topology, _ = plan
     kinds = {node.name: node.kind for node in topology.nodes}
-    assert kinds["sw-plant-cell-intake"] == "switch"
-    assert kinds["sw-operations-scada"] == "switch"
+    assert all(
+        kinds[segment["name"]] == "switch" for segment in infrastructure["segments"]
+    )
 
 
 def test_port_map_yaml_lists_every_switch(plan):
     topology, _ = plan
-    rendered = port_map_yaml(topology, "lab")
-    assert "sw-plant-aggregation" in rendered
-    assert "router-uplink" in rendered
-    assert "lab" in rendered
+    rendered = yaml.safe_load(port_map_yaml(topology, "lab"))
+    assert rendered["project"] == "lab"
+    assert rendered["switches"] == topology.port_map
 
 
 # -- builder -----------------------------------------------------------------
@@ -432,15 +479,18 @@ def test_existing_link_keys_is_order_independent():
     assert existing_link_keys(links) == {(("a", 2, 3), ("b", 1, 0))}
 
 
-def test_segment_attachments_get_distinct_physical_ports(plan):
+def test_segment_attachments_get_distinct_physical_ports(documents, plan):
+    _, _, infrastructure, _ = documents
     topology, _ = plan
-    intake = [
-        (link.first if link.first.node == "sw-plant-cell-intake" else link.second)
-        for link in topology.links
-        if "sw-plant-cell-intake" in {link.first.node, link.second.node}
-    ]
-    assert len(intake) >= 3
-    assert len({(port.adapter, port.port) for port in intake}) == len(intake)
+    for segment in infrastructure["segments"]:
+        name = segment["name"]
+        ends = [
+            end
+            for link in topology.links
+            for end in (link.first, link.second)
+            if end.node == name
+        ]
+        assert len({(end.adapter, end.port) for end in ends}) == len(ends)
 
 
 def test_builder_rejects_wrong_existing_ports(plan):
@@ -681,10 +731,10 @@ def test_builder_to_capture_mapping_uses_ports(built_capture):
     client, topology, resolution = built_capture
     assert len(resolution.resolved) == len(topology.links)
     assert all(item["status"] == "built" for item in resolution.status.values())
-    assert resolution.resolved["link-core-plant"] in {
+    chosen = topology.links[0]
+    assert resolution.resolved[chosen.link_id] in {
         link["link_id"] for link in client.project_links("p1")
     }
-    chosen = topology.links[0]
     actual = next(
         link
         for link in client._links
@@ -736,15 +786,51 @@ def test_all_built_includes_undeclared_physical_links(documents, built_capture):
     assert report["all_network_traffic_verified"] is False
 
 
-def test_coverage_distinguishes_local_routed_and_uncabled(documents, built_capture):
-    _, inventory, infrastructure, link_plan = documents
-    _, _, resolution = built_capture
-    report = coverage_report(
-        resolution, ["link-core-plant"], link_plan, inventory, infrastructure
+def test_coverage_distinguishes_local_routed_and_uncabled():
+    resolution = LinkResolution(
+        resolved={
+            "host-link": "gns3-a",
+            "router-link": "gns3-b",
+            "other-router-link": "gns3-c",
+        },
+        status={
+            "host-link": {"status": "built"},
+            "router-link": {"status": "built"},
+            "other-router-link": {"status": "built"},
+        },
+        declared_ids={"host-link", "router-link", "other-router-link"},
     )
-    assert "attach-intake-plc" in report["missing_local_points"]
-    assert "link-core-dmz" in report["missing_routed_points"]
-    assert report["uncabled_devices"]
+    link_plan = {
+        "links": [
+            {
+                "id": "host-link",
+                "kind": "access",
+                "endpoints": [{"node": "PLC"}, {"node": "SW"}],
+            },
+            {
+                "id": "router-link",
+                "kind": "transit",
+                "endpoints": [{"node": "R"}, {"node": "SW"}],
+            },
+            {
+                "id": "other-router-link",
+                "kind": "transit",
+                "endpoints": [{"node": "R"}, {"node": "R2"}],
+            },
+        ]
+    }
+    inventory = {"devices": [{"name": "PLC"}, {"name": "UNCABLED"}]}
+    infrastructure = {
+        "routers": [{"name": "R"}, {"name": "R2"}],
+        "segments": [{"name": "UNCABLED-SEGMENT"}],
+    }
+    report = coverage_report(
+        resolution, ["router-link"], link_plan, inventory, infrastructure
+    )
+    assert report["missing_local_points"] == ["host-link"]
+    assert report["missing_routed_points"] == ["other-router-link"]
+    assert report["uncabled_devices"] == ["UNCABLED"]
+    assert report["uncabled_segments"] == ["UNCABLED-SEGMENT"]
     assert report["all_network_traffic_verified"] is False
     all_report = coverage_report(
         resolution, resolution.capturable, link_plan, inventory, infrastructure
@@ -755,8 +841,7 @@ def test_coverage_distinguishes_local_routed_and_uncabled(documents, built_captu
 
 def test_capture_stops_and_downloads_each_started_link(built_capture, tmp_path):
     client, _, resolution = built_capture
-    # One router transit point and one local host attachment, from the same build.
-    selected = ["link-core-plant", "attach-intake-plc"]
+    selected = ["router-transit", "scada-link"]
     result = capture_for(
         client,
         "p1",
@@ -780,8 +865,8 @@ def test_capture_stops_and_downloads_each_started_link(built_capture, tmp_path):
 
 
 def test_capture_interrupt_stops_only_acknowledged_starts(built_capture, tmp_path):
-    client, _, resolution = built_capture
-    selected = ["link-core-plant", "link-core-dmz"]
+    client, topology, resolution = built_capture
+    selected = [link.link_id for link in topology.links[:2]]
 
     def interrupt(_):
         raise KeyboardInterrupt
@@ -795,8 +880,8 @@ def test_capture_interrupt_stops_only_acknowledged_starts(built_capture, tmp_pat
 
 
 def test_capture_timer_failure_still_stops_every_started_link(built_capture, tmp_path):
-    client, _, resolution = built_capture
-    selected = ["link-core-plant", "link-core-dmz"]
+    client, topology, resolution = built_capture
+    selected = [link.link_id for link in topology.links[:2]]
 
     def fail_timer(_):
         raise RuntimeError("timer failed")
@@ -809,8 +894,8 @@ def test_capture_timer_failure_still_stops_every_started_link(built_capture, tmp
 
 
 def test_capture_partial_start_failure_stops_only_started(built_capture, tmp_path):
-    client, _, resolution = built_capture
-    selected = ["link-core-plant", "link-core-dmz"]
+    client, topology, resolution = built_capture
+    selected = [link.link_id for link in topology.links[:2]]
     client.fail_start = resolution.resolved[selected[1]]
     result = capture_for(client, "p1", resolution, selected, 1, tmp_path, {})
     assert client.started == client.stopped == [resolution.resolved[selected[0]]]
@@ -822,8 +907,8 @@ def test_capture_partial_start_failure_stops_only_started(built_capture, tmp_pat
 def test_capture_reconciles_start_that_succeeded_without_a_reply(
     built_capture, tmp_path, failure
 ):
-    client, _, resolution = built_capture
-    selected = ["link-core-plant", "link-core-dmz"]
+    client, topology, resolution = built_capture
+    selected = [link.link_id for link in topology.links[:2]]
     setattr(client, failure, resolution.resolved[selected[1]])
     result = capture_for(client, "p1", resolution, selected, 1, tmp_path, {})
     assert set(client.stopped) == set(client.started)
@@ -832,8 +917,8 @@ def test_capture_reconciles_start_that_succeeded_without_a_reply(
 
 
 def test_capture_stop_and_download_failures_are_recorded(built_capture, tmp_path):
-    client, _, resolution = built_capture
-    selected = ["link-core-plant", "link-core-dmz", "link-core-wan"]
+    client, topology, resolution = built_capture
+    selected = [link.link_id for link in topology.links[:3]]
     client.fail_stop = resolution.resolved[selected[0]]
     client.fail_download = resolution.resolved[selected[1]]
     result = capture_for(
@@ -851,8 +936,8 @@ def test_capture_stop_and_download_failures_are_recorded(built_capture, tmp_path
 
 
 def test_capture_missing_path_and_empty_file_are_failures(built_capture, tmp_path):
-    client, _, resolution = built_capture
-    name = "link-core-plant"
+    client, topology, resolution = built_capture
+    name = topology.links[0].link_id
     link_id = resolution.resolved[name]
     client.missing_path = link_id
     client.start_capture = lambda *_args, **_kwargs: {}
@@ -874,7 +959,7 @@ def test_experiment_shares_run_id_and_reports_missing_log_sources(
 ):
     address_plan, inventory, infrastructure, link_plan = documents
     client, topology, resolution = built_capture
-    chosen = "link-core-plant"
+    chosen = topology.links[0].link_id
     run_id = "test_shared_run"
 
     def fast_capture(*args, **kwargs):
@@ -927,8 +1012,13 @@ def test_experiment_collects_router_syslog_and_pcap_under_one_run(
 ):
     _, inventory, infrastructure, link_plan = documents
     client, topology, _ = built_capture
+    syslog_receiver = next(
+        item["name"]
+        for item in inventory["devices"]
+        if item["image"] == "metropolis/ntp:dev"
+    )
     for node in client._nodes:
-        if node["name"] == "MET-NTP-01":
+        if node["name"] == syslog_receiver:
             node.update(
                 node_type="docker",
                 status="started",
@@ -981,6 +1071,7 @@ def test_experiment_collects_router_syslog_and_pcap_under_one_run(
         assert attached.wait(2)
         return capture_for(*args, **kwargs, sleep=lambda _: None)
 
+    chosen = topology.links[0].link_id
     manifest = run_experiment(
         client,
         Project("p1", "lab", "opened"),
@@ -992,11 +1083,11 @@ def test_experiment_collects_router_syslog_and_pcap_under_one_run(
         "complete_run",
         0.1,
         {"local": "ssh://host"},
-        selected_links=["link-core-plant"],
+        selected_links=[chosen],
         collector_factory=collector_factory,
         capture_fn=fast_capture,
     )
     assert manifest["status"] == "complete"
     assert len(manifest["syslog"]["sources"]) == len(infrastructure["routers"])
     assert manifest["syslog"]["missing_sources"] == []
-    assert manifest["capture"]["links"]["link-core-plant"]["sha256"]
+    assert manifest["capture"]["links"][chosen]["sha256"]

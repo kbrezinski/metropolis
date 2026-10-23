@@ -8,11 +8,34 @@ import sys
 from pathlib import Path
 
 import pytest
+import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 ATTACKS = ROOT / "scripts/attacks"
 sys.path.insert(0, str(ATTACKS))
 from ssh import ssh_bruteforce_attack as attack  # noqa: E402
+
+
+@pytest.fixture
+def ssh_inventory(tmp_path):
+    inventory = tmp_path / "initial_devices.yaml"
+    inventory.write_text(
+        yaml.safe_dump(
+            {
+                "testbed_id": "fixture",
+                "devices": [
+                    {
+                        "name": "SSH-A",
+                        "address": "10.77.3.10/24",
+                        "protocols": ["ssh"],
+                        "environment": {"ENGINEER_PASSWORD": "test-secret"},
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    return inventory
 
 
 def test_default_candidates_are_distinct_and_success_is_last(tmp_path):
@@ -30,11 +53,18 @@ def test_default_candidates_are_distinct_and_success_is_last(tmp_path):
         attack.password_candidates(None, good, 1001)
 
 
-def test_dry_run_reports_limits_without_credential_or_lab_ack():
+def test_dry_run_reports_limits_without_credential_or_lab_ack(ssh_inventory):
     env = os.environ.copy()
     env.pop("METROPOLIS_LAB_ACK", None)
     result = subprocess.run(
-        [sys.executable, str(ATTACKS / "run.py"), "ssh_bruteforce_attack", "--dry-run"],
+        [
+            sys.executable,
+            str(ATTACKS / "run.py"),
+            "ssh_bruteforce_attack",
+            "--inventory",
+            str(ssh_inventory),
+            "--dry-run",
+        ],
         env=env,
         capture_output=True,
         text=True,
@@ -52,12 +82,14 @@ def test_dry_run_reports_limits_without_credential_or_lab_ack():
     "option,value",
     [("--rate", "101"), ("--duration", "601"), ("--max-attempts", "1001")],
 )
-def test_hard_ceiling_rejects_oversized_dry_run(option, value):
+def test_hard_ceiling_rejects_oversized_dry_run(option, value, ssh_inventory):
     result = subprocess.run(
         [
             sys.executable,
             str(ATTACKS / "run.py"),
             "ssh_bruteforce_attack",
+            "--inventory",
+            str(ssh_inventory),
             "--dry-run",
             option,
             value,

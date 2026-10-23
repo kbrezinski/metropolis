@@ -9,11 +9,37 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 ATTACKS = ROOT / "scripts/attacks"
 sys.path.insert(0, str(ATTACKS))
 from mqtt import mqtt_bruteforce_attack as attack  # noqa: E402
+
+
+@pytest.fixture
+def broker_inventory(tmp_path):
+    inventory = tmp_path / "initial_devices.yaml"
+    inventory.write_text(
+        yaml.safe_dump(
+            {
+                "testbed_id": "fixture",
+                "devices": [
+                    {
+                        "name": "BROKER-A",
+                        "address": "10.77.2.10/24",
+                        "protocols": ["mqtt"],
+                        "environment": {
+                            "MQTT_OPERATOR_USERNAME": "admin",
+                            "MQTT_OPERATOR_PASSWORD": "test-secret",
+                        },
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    return inventory
 
 
 @pytest.mark.parametrize(
@@ -48,7 +74,7 @@ def test_metasploit_resource_is_bounded_and_console_secrets_are_hidden(
         assert command[1:] == ["-q", "-n", "-r", "-"]
         resource = kwargs["input"]
         assert "use auxiliary/scanner/mqtt/connect" in resource
-        assert "set RHOSTS 10.20.23.10" in resource
+        assert "set RHOSTS 10.77.2.10" in resource
         assert "set RPORT 1883" in resource
         assert "set USERNAME admin" in resource
         assert "set USER_AS_PASS false" in resource
@@ -79,7 +105,7 @@ def test_metasploit_resource_is_bounded_and_console_secrets_are_hidden(
     run = SimpleNamespace(emit=lambda event, **fields: events.append((event, fields)))
     assert (
         attack.metasploit_scan(
-            args, run, "10.20.23.10", 1883, "admin", ["wrong", "secret"]
+            args, run, "10.77.2.10", 1883, "admin", ["wrong", "secret"]
         )
         == code
     )
@@ -90,7 +116,7 @@ def test_metasploit_resource_is_bounded_and_console_secrets_are_hidden(
     assert not seen_paths[0].exists()
 
 
-def test_metasploit_dry_run_needs_no_binary_or_lab_ack():
+def test_metasploit_dry_run_needs_no_binary_or_lab_ack(broker_inventory):
     env = os.environ.copy()
     env.pop("METROPOLIS_LAB_ACK", None)
     result = subprocess.run(
@@ -98,6 +124,8 @@ def test_metasploit_dry_run_needs_no_binary_or_lab_ack():
             sys.executable,
             str(ATTACKS / "run.py"),
             "mqtt_bruteforce_attack",
+            "--inventory",
+            str(broker_inventory),
             "--engine",
             "metasploit",
             "--dry-run",
@@ -156,7 +184,7 @@ def test_metasploit_timeout_is_recorded_without_console_text(monkeypatch):
     )
     run = SimpleNamespace(emit=lambda event, **fields: events.append((event, fields)))
     assert (
-        attack.metasploit_scan(args, run, "10.20.23.10", 1883, "admin", ["secret"]) == 2
+        attack.metasploit_scan(args, run, "10.77.2.10", 1883, "admin", ["secret"]) == 2
     )
     assert events[0][1]["status"] == "timeout"
     assert "secret" not in str(events)

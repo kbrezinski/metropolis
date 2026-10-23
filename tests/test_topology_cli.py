@@ -17,6 +17,7 @@ if str(ROOT / "src") not in sys.path:
     sys.path.insert(0, str(ROOT / "src"))
 
 from metropolis.topology.__main__ import main  # noqa: E402
+from metropolis.topology import Topology, load_bundled_topology  # noqa: E402
 
 DATASET = ROOT / "testbeds/metropolis/datasets/water_treatment_v1"
 
@@ -24,28 +25,30 @@ DATASET = ROOT / "testbeds/metropolis/datasets/water_treatment_v1"
 def test_show_prints_a_summary(capsys):
     assert main(["show"]) == 0
     out = capsys.readouterr().out
-    assert "topology metropolis" in out
-    assert "plant-intake" in out
+    assert f"topology {load_bundled_topology().testbed_id}" in out
+    assert "networks " in out
 
 
 def test_show_can_read_a_dataset_directory(capsys):
+    assert main(["show"]) == 0
+    bundled_summary = capsys.readouterr().out
     assert main(["--dataset", str(DATASET), "show"]) == 0
-    out = capsys.readouterr().out
-    # The same topology as the bundled copy, read from disk instead.
-    assert "networks 24" in out
-    assert "devices 34" in out
-    assert "plant-intake" in out
+    assert capsys.readouterr().out == bundled_summary
 
 
 def test_show_can_write_to_a_file(capsys, tmp_path):
     target = tmp_path / "summary.txt"
     assert main(["show", "--out", str(target)]) == 0
-    assert "topology metropolis" in target.read_text(encoding="utf-8")
+    assert f"topology {load_bundled_topology().testbed_id}" in target.read_text(
+        encoding="utf-8"
+    )
     assert capsys.readouterr().out.startswith("wrote ")
 
 
-def test_check_reports_no_problems(capsys):
-    assert main(["check"]) == 0
+def test_check_reports_no_problems(capsys, tmp_path):
+    dataset = tmp_path / "valid"
+    Topology(testbed_id="unit_lab").save(dataset)
+    assert main(["--dataset", str(dataset), "check"]) == 0
     assert "No contradictions found." in capsys.readouterr().out
 
 

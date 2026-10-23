@@ -1,4 +1,4 @@
-"""Offline flow, route, and VyOS command checks for the Metropolis firewall."""
+"""Unit checks for firewall flow compilation and VyOS commands."""
 
 from __future__ import annotations
 
@@ -25,55 +25,201 @@ from firewall_policy import (  # noqa: E402
 import experiment  # noqa: E402
 from router_config import RouterResult  # noqa: E402
 
-DATASET = ROOT / "testbeds/metropolis/datasets/water_treatment_v1"
-
 
 @pytest.fixture
-def documents():
-    inventory = yaml.safe_load(
-        (DATASET / "device_instances/initial_devices.yaml").read_text()
+def lab(tmp_path):
+    """Small routed network independent of the shipped Metropolis inventory."""
+    topology = tmp_path / "topology"
+    topology.mkdir()
+    address_plan = {
+        "networks": [
+            {"id": "source", "kind": "lan", "cidr": "10.1.0.0/24", "vlan_id": 10},
+            {"id": "destination", "kind": "lan", "cidr": "10.2.0.0/24", "vlan_id": 20},
+            {"id": "attack-lab", "kind": "lan", "cidr": "10.3.0.0/24"},
+            {"id": "transit", "kind": "transit", "cidr": "10.0.0.0/30"},
+        ]
+    }
+    policy = {
+        "schema_version": "2.0",
+        "testbed_id": "test",
+        "flows": [
+            {
+                "id": "routed",
+                "source": ["source", "vlan-10"],
+                "destination": "destination",
+                "protocol": "tcp",
+                "port": 502,
+            },
+            {
+                "id": "router-log",
+                "source": "router/router-a",
+                "destination": "destination",
+                "protocol": "udp",
+                "port": 514,
+            },
+            {
+                "id": "local",
+                "source": "source",
+                "destination": "vlan-10",
+                "protocol": "tcp",
+                "port": 1234,
+            },
+        ],
+    }
+    links = {
+        "links": [
+            {
+                "id": "transit",
+                "endpoints": [
+                    {"node": "router-a", "interface": "eth0"},
+                    {"node": "router-b", "interface": "eth0"},
+                ],
+            },
+            {
+                "id": "source-link",
+                "network_id": "source",
+                "endpoints": [
+                    {"node": "router-a", "interface": "eth1"},
+                    {"node": "source-node", "interface": "eth0"},
+                ],
+            },
+            {
+                "id": "destination-link",
+                "network_id": "destination",
+                "endpoints": [
+                    {"node": "router-b", "interface": "eth1"},
+                    {"node": "destination-node", "interface": "eth0"},
+                ],
+            },
+            {
+                "id": "attack-link",
+                "network_id": "attack-lab",
+                "endpoints": [
+                    {"node": "router-a", "interface": "eth2"},
+                    {"node": "attack-node", "interface": "eth0"},
+                ],
+            },
+        ]
+    }
+    for name, document in (
+        ("address-plan.yaml", address_plan),
+        ("firewall-policy.yaml", policy),
+        ("links.yaml", links),
+    ):
+        (topology / name).write_text(yaml.safe_dump(document))
+    routers = []
+    for name, addresses in (
+        ("router-a", ("10.0.0.1/30", "10.1.0.1/24", "10.3.0.1/24")),
+        ("router-b", ("10.0.0.2/30", "10.2.0.1/24")),
+    ):
+        script = tmp_path / f"{name}.sh"
+        lines = [
+            f"set interfaces ethernet eth{index} address '{address}'"
+            for index, address in enumerate(addresses)
+        ]
+        networks = ["10.0.0.0/30"]
+        networks.extend(
+            ["10.1.0.0/24", "10.3.0.0/24"] if name == "router-a" else ["10.2.0.0/24"]
+        )
+        lines.extend(
+            f"set protocols ospf area 0 network '{network}'" for network in networks
+        )
+        lines.append("set protocols ospf passive-interface-exclude 'eth0'")
+        script.write_text("\n".join(lines) + "\n")
+        routers.append({"name": name, "config": str(script)})
+    return (
+        tmp_path,
+        {"routers": routers},
+        {
+            "testbed_id": "test",
+            "devices": [{"name": "source-node", "address": "10.1.0.10/24"}],
+        },
     )
-    infrastructure = yaml.safe_load(
-        (DATASET / "device_instances/infrastructure.yaml").read_text()
-    )
-    return inventory, infrastructure
 
 
-def test_policy_schema_and_all_baseline_paths(documents):
-    inventory, infrastructure = documents
-    policy = yaml.safe_load((DATASET / "topology/firewall-policy.yaml").read_text())
+def test_policy_schema_and_baseline_paths(lab):
+    dataset, infrastructure, inventory = lab
+    policy = yaml.safe_load((dataset / "topology/firewall-policy.yaml").read_text())
     schema = json.loads((ROOT / "schemas/firewall-policy.schema.json").read_text())
     Draft202012Validator(schema).validate(policy)
-    commands, report = compile_policy(DATASET, infrastructure, inventory)
-    assert len(commands) == 6
-    assert len(report["baseline_flows"]) == 27
-    assert report["local_subnet_flows"] == []
+    commands, report = compile_policy(dataset, infrastructure, inventory)
+    assert set(commands) == {"router-a", "router-b"}
+    assert len(report["baseline_flows"]) == 4
+    assert report["local_subnet_flows"] == ["local:source:vlan-10"]
     routed = {
         (flow["id"], flow["source"], flow["destination"]): flow["routers"]
         for flow in report["baseline_flows"]
     }
-    assert routed[("scada-modbus", "scada", "plant-intake")] == [
-        "MET-OT-CORE",
-        "MET-PLANT",
+    assert routed[("routed", "source", "destination")] == ["router-a", "router-b"]
+    assert routed[("routed", "vlan-10", "destination")] == [
+        "router-a",
+        "router-b",
     ]
-    assert routed[("scada-modbus", "scada", "reservoir")] == [
-        "MET-OT-CORE",
-        "MET-OT-WAN",
-        "MET-RESERVOIR",
+    assert routed[("router-log", "router/router-a", "destination")] == [
+        "router-a",
+        "router-b",
     ]
-    assert routed[("router-syslog", "router/MET-PLANT", "ot-services")] == [
-        "MET-PLANT",
-        "MET-OT-CORE",
-    ]
-    assert routed[("router-syslog", "router/MET-OT-CORE", "ot-services")] == [
-        "MET-OT-CORE"
-    ]
-    assert routed[("router-syslog", "router/MET-RESERVOIR", "ot-services")] == [
-        "MET-RESERVOIR",
-        "MET-OT-WAN",
-        "MET-OT-CORE",
-    ]
+    assert routed[("local", "source", "vlan-10")] == []
     assert len(policy["flows"]) < len(report["baseline_flows"])
+
+
+def test_scada_to_remote_flow_crosses_three_routers_in_order(lab):
+    dataset, infrastructure, inventory = lab
+    topology = dataset / "topology"
+    address_plan_path = topology / "address-plan.yaml"
+    address_plan = yaml.safe_load(address_plan_path.read_text())
+    address_plan["networks"].append(
+        {"id": "transit-bc", "kind": "transit", "cidr": "10.0.0.4/30"}
+    )
+    address_plan_path.write_text(yaml.safe_dump(address_plan))
+
+    links_path = topology / "links.yaml"
+    links = yaml.safe_load(links_path.read_text())
+    links["links"].append(
+        {
+            "id": "transit-bc",
+            "endpoints": [
+                {"node": "router-b", "interface": "eth1"},
+                {"node": "router-c", "interface": "eth0"},
+            ],
+        }
+    )
+    destination_link = next(
+        link for link in links["links"] if link["id"] == "destination-link"
+    )
+    destination_link["endpoints"][0]["node"] = "router-c"
+    links_path.write_text(yaml.safe_dump(links))
+
+    Path(infrastructure["routers"][1]["config"]).write_text(
+        "set interfaces ethernet eth0 address '10.0.0.2/30'\n"
+        "set interfaces ethernet eth1 address '10.0.0.5/30'\n"
+        "set protocols ospf area 0 network '10.0.0.0/30'\n"
+        "set protocols ospf area 0 network '10.0.0.4/30'\n"
+        "set protocols ospf passive-interface-exclude 'eth0'\n"
+        "set protocols ospf passive-interface-exclude 'eth1'\n"
+    )
+    router_c = dataset / "router-c.sh"
+    router_c.write_text(
+        "set interfaces ethernet eth0 address '10.0.0.6/30'\n"
+        "set interfaces ethernet eth1 address '10.2.0.1/24'\n"
+        "set protocols ospf area 0 network '10.0.0.4/30'\n"
+        "set protocols ospf area 0 network '10.2.0.0/24'\n"
+        "set protocols ospf passive-interface-exclude 'eth0'\n"
+    )
+    infrastructure["routers"].append({"name": "router-c", "config": str(router_c)})
+
+    commands, report = compile_policy(dataset, infrastructure, inventory)
+    scada_to_remote = next(
+        flow
+        for flow in report["baseline_flows"]
+        if (flow["id"], flow["source"], flow["destination"])
+        == ("routed", "source", "destination")
+    )
+    assert scada_to_remote["routers"] == ["router-a", "router-b", "router-c"]
+    assert all(
+        _has_rule(commands[name], "10.1.0.0/24", "10.2.0.0/24", "tcp", 502)
+        for name in scada_to_remote["routers"]
+    )
 
 
 def _has_rule(lines, source, destination, protocol, port):
@@ -93,149 +239,129 @@ def _has_rule(lines, source, destination, protocol, port):
     return False
 
 
-def test_subnet_baseline_allow_and_default_drop(documents):
-    inventory, infrastructure = documents
-    commands, _ = compile_policy(DATASET, infrastructure, inventory)
-    core = "\n".join(commands["MET-OT-CORE"])
-    plant = "\n".join(commands["MET-PLANT"])
-    dmz = "\n".join(commands["MET-OT-DMZ"])
-    assert "set zone-policy zone MET_e3v20 default-action 'drop'" in core
-    assert "set zone-policy zone MET_e3v20 interface 'eth3.20'" in core
-    assert _has_rule(core.splitlines(), "10.20.20.0/24", "10.20.10.0/24", "tcp", 502)
-    assert _has_rule(core.splitlines(), "10.20.20.0/24", "10.20.11.0/24", "tcp", 502)
-    assert _has_rule(plant.splitlines(), "10.20.20.0/24", "10.20.11.0/24", "tcp", 502)
-    assert "set firewall name MET_e0_e3v20 rule 20 state established 'enable'" in core
-    assert "set zone-policy zone MET_LOCAL local-zone" in dmz
+def test_subnet_baseline_allow_and_default_drop(lab):
+    dataset, infrastructure, inventory = lab
+    commands, _ = compile_policy(dataset, infrastructure, inventory)
+    for router in ("router-a", "router-b"):
+        lines = commands[router]
+        assert _has_rule(lines, "10.1.0.0/24", "10.2.0.0/24", "tcp", 502)
+        assert "set zone-policy zone MET_LOCAL local-zone" in lines
+        assert any(line.endswith("default-action 'drop'") for line in lines)
+        assert any(
+            line.endswith("rule 20 state established 'enable'") for line in lines
+        )
     assert not any(
-        "source address '10.99.10.0/24'" in line
+        "source address '10.3.0.0/24'" in line
         for lines in commands.values()
         for line in lines
     )
 
 
-def test_attack_exception_is_run_scoped_subnet_rule_and_follows_route(documents):
-    inventory, infrastructure = documents
-    exception = parse_attack_exception("attack-lab:plant-intake:tcp:502")
-    commands, report = compile_policy(DATASET, infrastructure, inventory, [exception])
-    assert report["attack_exceptions"][0]["routers"] == [
-        "MET-OT-DMZ",
-        "MET-OT-CORE",
-        "MET-PLANT",
-    ]
+def test_attack_exception_is_run_scoped_subnet_rule_and_follows_route(lab):
+    dataset, infrastructure, inventory = lab
+    exception = parse_attack_exception("attack-lab:destination:tcp:502")
+    commands, report = compile_policy(dataset, infrastructure, inventory, [exception])
+    assert report["attack_exceptions"][0]["routers"] == ["router-a", "router-b"]
     for router in report["attack_exceptions"][0]["routers"]:
         lines = commands[router]
-        assert _has_rule(lines, "10.99.10.0/24", "10.20.10.0/24", "tcp", 502)
+        assert _has_rule(lines, "10.3.0.0/24", "10.2.0.0/24", "tcp", 502)
+    baseline, _ = compile_policy(dataset, infrastructure, inventory)
     assert not any(
-        "source address '10.99.10.0/24'" in line for line in commands["MET-OT-WAN"]
+        "source address '10.3.0.0/24'" in line
+        for lines in baseline.values()
+        for line in lines
     )
 
 
-def test_invalid_attack_source_and_unknown_network_fail_closed(documents):
-    inventory, infrastructure = documents
-    outside = parse_attack_exception("scada:plant-intake:tcp:502")
+def test_invalid_attack_source_and_unknown_network_fail_closed(lab):
+    dataset, infrastructure, inventory = lab
+    outside = parse_attack_exception("source:destination:tcp:502")
     with pytest.raises(ValueError, match="not on attack-lab"):
-        compile_policy(DATASET, infrastructure, inventory, [outside])
-    unknown = parse_attack_exception("attack-lab:MET-PLC-INTAKE-01:tcp:502")
+        compile_policy(dataset, infrastructure, inventory, [outside])
+    unknown = parse_attack_exception("attack-lab:device-name:tcp:502")
     with pytest.raises(ValueError, match="unknown firewall network selector"):
-        compile_policy(DATASET, infrastructure, inventory, [unknown])
+        compile_policy(dataset, infrastructure, inventory, [unknown])
     outside_target = parse_attack_exception("attack-lab:attack-lab:tcp:502")
     with pytest.raises(ValueError, match="attack target is on attack-lab"):
-        compile_policy(DATASET, infrastructure, inventory, [outside_target])
-    # Use a still-empty cell to check that removing its only segment makes it
-    # unavailable to a policy rule.
-    uncabled = parse_attack_exception("attack-lab:plant-disinfection:tcp:502")
-    changed = copy.deepcopy(infrastructure)
-    changed["segments"] = [
-        segment
-        for segment in changed["segments"]
-        if segment["network_id"] != "plant-disinfection"
+        compile_policy(dataset, infrastructure, inventory, [outside_target])
+    uncabled = parse_attack_exception("attack-lab:destination:tcp:502")
+    link_path = dataset / "topology/links.yaml"
+    links = yaml.safe_load(link_path.read_text())
+    links["links"] = [
+        link for link in links["links"] if link["id"] != "destination-link"
     ]
+    link_path.write_text(yaml.safe_dump(links))
     with pytest.raises(ValueError, match="no declared link"):
-        compile_policy(DATASET, changed, inventory, [uncabled])
+        compile_policy(dataset, infrastructure, inventory, [uncabled])
 
 
-def test_baseline_cannot_permit_attack_lab(documents, tmp_path):
-    inventory, infrastructure = documents
-    topology = tmp_path / "topology"
-    topology.mkdir()
-    for name in ("address-plan.yaml", "firewall-policy.yaml", "links.yaml"):
-        (topology / name).write_bytes((DATASET / "topology" / name).read_bytes())
+def test_baseline_cannot_permit_attack_lab(lab):
+    dataset, infrastructure, inventory = lab
+    topology = dataset / "topology"
     policy_path = topology / "firewall-policy.yaml"
     policy = yaml.safe_load(policy_path.read_text())
     policy["flows"].append(
         {
             "id": "unsafe",
             "source": "attack-lab",
-            "destination": "plant-intake",
+            "destination": "destination",
             "protocol": "tcp",
             "port": 502,
         }
     )
     policy_path.write_text(yaml.safe_dump(policy))
     with pytest.raises(ValueError, match="baseline policy cannot permit attack-lab"):
-        compile_policy(tmp_path, infrastructure, inventory)
+        compile_policy(dataset, infrastructure, inventory)
 
 
-def test_new_hosts_in_existing_vlan_inherit_rule_without_policy_change(documents):
-    inventory, infrastructure = documents
+def test_new_hosts_in_existing_vlan_inherit_rule_without_policy_change(lab):
+    dataset, infrastructure, inventory = lab
     changed = copy.deepcopy(inventory)
-    scada = next(item for item in changed["devices"] if item["name"] == "MET-SCADA-01")
-    scada["address"] = "10.20.20.99/24"
-    original_commands, _ = compile_policy(DATASET, infrastructure, inventory)
-    changed_commands, _ = compile_policy(DATASET, infrastructure, changed)
+    changed["devices"].append({"name": "another-source", "address": "10.1.0.99/24"})
+    original_commands, _ = compile_policy(dataset, infrastructure, inventory)
+    changed_commands, _ = compile_policy(dataset, infrastructure, changed)
     assert changed_commands == original_commands
 
 
-def test_vlan_alias_and_cidr_subrange(documents):
-    inventory, infrastructure = documents
-    exception = parse_attack_exception("10.99.10.0/25:vlan-11:tcp:502")
-    commands, report = compile_policy(DATASET, infrastructure, inventory, [exception])
+def test_vlan_alias_and_cidr_subrange(lab):
+    dataset, infrastructure, inventory = lab
+    exception = parse_attack_exception("10.3.0.0/25:vlan-20:tcp:502")
+    commands, report = compile_policy(dataset, infrastructure, inventory, [exception])
     record = report["attack_exceptions"][0]
-    assert record["source_cidr"] == "10.99.10.0/25"
-    assert record["destination_cidr"] == "10.20.11.0/24"
-    assert _has_rule(
-        commands["MET-PLANT"], "10.99.10.0/25", "10.20.11.0/24", "tcp", 502
-    )
+    assert record["source_cidr"] == "10.3.0.0/25"
+    assert record["destination_cidr"] == "10.2.0.0/24"
+    assert _has_rule(commands["router-b"], "10.3.0.0/25", "10.2.0.0/24", "tcp", 502)
 
 
-def test_missing_ospf_advertisement_rejects_policy(documents, tmp_path):
-    inventory, infrastructure = documents
-    changed = copy.deepcopy(infrastructure)
-    core = next(item for item in changed["routers"] if item["name"] == "MET-OT-CORE")
-    original = ROOT / core["config"]
-    without_network = tmp_path / "router_ot_core.sh"
-    without_network.write_text(
-        original.read_text().replace(
-            "set protocols ospf area 0 network '10.20.20.0/24'\n", ""
+def test_missing_ospf_advertisement_rejects_policy(lab):
+    dataset, infrastructure, inventory = lab
+    script = Path(infrastructure["routers"][0]["config"])
+    script.write_text(
+        script.read_text().replace(
+            "set protocols ospf area 0 network '10.1.0.0/24'\n", ""
         )
     )
-    core["config"] = str(without_network)
     with pytest.raises(ValueError, match="OSPF advertised networks do not match"):
-        compile_policy(DATASET, changed, inventory)
+        compile_policy(dataset, infrastructure, inventory)
 
 
-def test_missing_declared_router_cable_rejects_flow(documents, tmp_path):
-    inventory, infrastructure = documents
-    topology = tmp_path / "topology"
-    topology.mkdir()
-    for name in ("address-plan.yaml", "firewall-policy.yaml", "links.yaml"):
-        (topology / name).write_bytes((DATASET / "topology" / name).read_bytes())
+def test_missing_declared_router_cable_rejects_flow(lab):
+    dataset, infrastructure, inventory = lab
+    topology = dataset / "topology"
     links = yaml.safe_load((topology / "links.yaml").read_text())
-    links["links"] = [
-        link for link in links["links"] if link["id"] != "link-core-plant"
-    ]
+    links["links"] = [link for link in links["links"] if link["id"] != "transit"]
     (topology / "links.yaml").write_text(yaml.safe_dump(links))
     with pytest.raises(ValueError, match="no declared cable"):
-        compile_policy(tmp_path, infrastructure, inventory)
+        compile_policy(dataset, infrastructure, inventory)
 
 
 @pytest.mark.parametrize(
     "value",
     [
-        "attack-lab:plant-intake:tcp:0",
-        "attack-lab:plant-intake:all:502",
-        "attack-lab:plant-intake:icmp:502",
-        "attack-lab:plant-intake:tcp:nope",
+        "attack-lab:destination:tcp:0",
+        "attack-lab:destination:all:502",
+        "attack-lab:destination:icmp:502",
+        "attack-lab:destination:tcp:nope",
     ],
 )
 def test_attack_exception_rejects_invalid_protocols_and_ports(value):
@@ -245,10 +371,10 @@ def test_attack_exception_rejects_invalid_protocols_and_ports(value):
 
 @pytest.mark.parametrize(
     "selector",
-    ["10.20.10.0/23", "vlan-999", "2001:db8::/64", "10.20.254.0/30"],
+    ["10.2.0.0/23", "vlan-999", "2001:db8::/64", "10.0.0.0/30"],
 )
-def test_invalid_or_non_lan_selector_fails_closed(documents, selector):
-    inventory, infrastructure = documents
+def test_invalid_or_non_lan_selector_fails_closed(lab, selector):
+    dataset, infrastructure, inventory = lab
     exception = (
         parse_attack_exception(f"attack-lab:{selector}:tcp:502")
         if ":" not in selector
@@ -260,7 +386,7 @@ def test_invalid_or_non_lan_selector_fails_closed(documents, selector):
             parse_attack_exception(f"attack-lab:{selector}:tcp:502")
     else:
         with pytest.raises(ValueError):
-            compile_policy(DATASET, infrastructure, inventory, [exception])
+            compile_policy(dataset, infrastructure, inventory, [exception])
 
 
 def test_reapply_deletes_only_metropolis_owned_config():
@@ -300,8 +426,8 @@ def test_experiment_restores_baseline_after_failure_or_interrupt(
     def configure(_client, _project_id, _scripts, **kwargs):
         calls.append(kwargs["firewall_commands"])
         if len(calls) == 1:
-            return [RouterResult(node="MET-PLANT", error="partial apply")]
-        return [RouterResult(node="MET-PLANT", applied=True)]
+            return [RouterResult(node="router-a", error="partial apply")]
+        return [RouterResult(node="router-a", applied=True)]
 
     def fail_capture_setup(*_args):
         if interrupted:
@@ -315,24 +441,24 @@ def test_experiment_restores_baseline_after_failure_or_interrupt(
         SimpleNamespace(project_id="p1", status="opened"),
         SimpleNamespace(nodes=[]),
         {"devices": []},
-        {"routers": [{"name": "MET-PLANT", "config": "unused.sh"}]},
+        {"routers": [{"name": "router-a", "config": "unused.sh"}]},
         {"links": []},
         tmp_path,
         "firewall_run",
         0.01,
         {},
         configure_routers=True,
-        firewall_commands={"MET-PLANT": ["exception"]},
-        baseline_firewall_commands={"MET-PLANT": ["baseline"]},
+        firewall_commands={"router-a": ["exception"]},
+        baseline_firewall_commands={"router-a": ["baseline"]},
         firewall_exceptions=[{"source": "attack", "destination": "target"}],
         collector_factory=Collector,
     )
     assert calls == [
-        {"MET-PLANT": ["exception"]},
-        {"MET-PLANT": ["baseline"]},
+        {"router-a": ["exception"]},
+        {"router-a": ["baseline"]},
     ]
     assert manifest["firewall"]["restored_baseline"] is True
-    assert manifest["firewall"]["failures"] == ["MET-PLANT: partial apply"]
+    assert manifest["firewall"]["failures"] == ["router-a: partial apply"]
     assert manifest["status"] == ("interrupted" if interrupted else "failed")
     timeline = (tmp_path / "runs/firewall_run/timeline.jsonl").read_text()
     assert "firewall_baseline_restored" in timeline
@@ -359,7 +485,7 @@ def test_experiment_reports_failed_baseline_restoration(tmp_path, monkeypatch):
         calls += 1
         if calls == 2:
             raise RuntimeError("console unavailable")
-        return [RouterResult(node="MET-PLANT", applied=True)]
+        return [RouterResult(node="router-a", applied=True)]
 
     def stop_before_capture(*_args):
         raise RuntimeError("capture setup failed")
@@ -371,15 +497,15 @@ def test_experiment_reports_failed_baseline_restoration(tmp_path, monkeypatch):
         SimpleNamespace(project_id="p1", status="opened"),
         SimpleNamespace(nodes=[]),
         {"devices": []},
-        {"routers": [{"name": "MET-PLANT", "config": "unused.sh"}]},
+        {"routers": [{"name": "router-a", "config": "unused.sh"}]},
         {"links": []},
         tmp_path,
         "restore_failed",
         0.01,
         {},
         configure_routers=True,
-        firewall_commands={"MET-PLANT": ["exception"]},
-        baseline_firewall_commands={"MET-PLANT": ["baseline"]},
+        firewall_commands={"router-a": ["exception"]},
+        baseline_firewall_commands={"router-a": ["baseline"]},
         firewall_exceptions=[{"source": "attack", "destination": "target"}],
         collector_factory=Collector,
     )

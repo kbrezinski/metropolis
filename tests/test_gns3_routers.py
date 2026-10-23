@@ -26,16 +26,6 @@ from router_config import (  # noqa: E402
     expected_interfaces,
 )
 
-ROUTERS = Path(__file__).resolve().parents[1] / "testbeds/metropolis/router"
-SCRIPTS = sorted(ROUTERS.rglob("*.sh"))
-
-
-def test_every_vyos_router_forwards_operational_syslog():
-    assert len(SCRIPTS) == 6
-    for script in SCRIPTS:
-        commands = config_commands(script)
-        assert "set system syslog host 10.20.30.11 facility all level info" in commands
-
 
 class ScriptedSocket:
     """A socket that replies to each command the way a router would.
@@ -126,40 +116,55 @@ def scripted(monkeypatch):
     return install
 
 
+@pytest.fixture
+def router_script(tmp_path):
+    """A router script with a legacy Metropolis stem and synthetic addresses."""
+    script = tmp_path / "router_ot_wan.sh"
+    script.write_text(
+        "configure\n"
+        "set interfaces ethernet eth0 address '192.0.2.1/24'\n"
+        "set protocols ospf area 0 network '192.0.2.0/24'\n"
+        "commit\nsave\nexit\n",
+        encoding="utf-8",
+    )
+    return script
+
+
+def scripted_interfaces(script: Path) -> bytes:
+    expected = expected_interfaces(script)
+    return " ".join(sorted({a for group in expected.values() for a in group})).encode()
+
+
 # -- script reading -----------------------------------------------------------
 
 
-def test_config_commands_drops_comments_and_blanks():
-    commands = config_commands(SCRIPTS[0])
-    assert commands, "router scripts should produce commands"
+def test_config_commands_drops_comments_and_blanks(tmp_path):
+    script = tmp_path / "router.sh"
+    script.write_text(
+        "# Comment\nconfigure\n\nset interfaces ethernet eth0 address '192.0.2.1/24'\n"
+        "commit\nsave\nexit\n",
+        encoding="utf-8",
+    )
+    commands = config_commands(script)
     assert all(not item.startswith("#") for item in commands)
     assert all(item.strip() for item in commands)
-    # The scripts end by committing and saving, which must be kept.
-    assert "commit" in commands
-    assert "save" in commands
+    assert commands == [
+        "set interfaces ethernet eth0 address '192.0.2.1/24'",
+        "commit",
+        "save",
+    ]
 
 
-@pytest.mark.parametrize("script", SCRIPTS, ids=lambda path: path.name)
-def test_expected_interfaces_matches_each_script(script):
-    """Every script's declared addresses are found from its own commands."""
-    expected = expected_interfaces(script)
-    assert expected, f"{script.name} declares no interface addresses"
-    for addresses in expected.values():
-        for address in addresses:
-            assert "/" in address
-
-
-def test_expected_interfaces_reads_vif_addresses():
+def test_expected_interfaces_reads_vif_addresses(tmp_path):
     """A trunk interface's subinterface addresses count as its interfaces."""
-    plant = ROUTERS / "locations/router_plant.sh"
-    expected = expected_interfaces(plant)
-    # eth1 carries the VLAN subinterfaces on this router.
+    script = tmp_path / "router.sh"
+    script.write_text(
+        "set interfaces ethernet eth1 vif 10 address '192.0.2.1/24'\n",
+        encoding="utf-8",
+    )
+    expected = expected_interfaces(script)
     assert "1" in expected
-    assert "10.20.10.1/24" in expected["1"]
-
-
-def test_all_six_router_scripts_are_present():
-    assert len(SCRIPTS) == 6
+    assert "192.0.2.1/24" in expected["1"]
 
 
 # -- console ----------------------------------------------------------------
@@ -208,15 +213,12 @@ def test_console_reports_an_unreachable_port(monkeypatch):
 # -- applying a configuration -------------------------------------------------
 
 
-def test_apply_sends_every_command_and_verifies_addresses(scripted):
-    script = ROUTERS / "backbone/router_ot_wan.sh"
+def test_apply_sends_every_command_and_verifies_addresses(scripted, router_script):
+    script = router_script
     commands = config_commands(script)
-    expected = expected_interfaces(script)
-    assert expected, "the script should declare interface addresses"
 
     # The router reports every address the script configures.
-    reported = " ".join(sorted({a for group in expected.values() for a in group}))
-    fake = scripted(interfaces=reported.encode())
+    fake = scripted(interfaces=scripted_interfaces(script))
 
     result = apply_router_config("127.0.0.1", 1, script, boot_timeout=1.0)
 
@@ -230,9 +232,9 @@ def test_apply_sends_every_command_and_verifies_addresses(scripted):
         assert command in sent
 
 
-def test_apply_reports_addresses_the_router_does_not_have(scripted):
+def test_apply_reports_addresses_the_router_does_not_have(scripted, router_script):
     """A config that did not take must be visible, not assumed."""
-    script = ROUTERS / "backbone/router_ot_wan.sh"
+    script = router_script
 
     # The router comes back with no interfaces at all.
     scripted(interfaces=b"")
@@ -242,10 +244,8 @@ def test_apply_reports_addresses_the_router_does_not_have(scripted):
     assert result.missing, "unreported addresses should be listed"
 
 
-def test_apply_replaces_owned_firewall_and_checks_readback(scripted):
-    script = ROUTERS / "backbone/router_ot_wan.sh"
-    expected = expected_interfaces(script)
-    reported = " ".join(sorted({a for group in expected.values() for a in group}))
+def test_apply_replaces_owned_firewall_and_checks_readback(scripted, router_script):
+    script = router_script
     firewall = [
         "set zone-policy zone MET_e0 interface 'eth0'",
         "set firewall name MET_e0_e1 default-action 'drop'",
@@ -257,7 +257,7 @@ def test_apply_replaces_owned_firewall_and_checks_readback(scripted):
             b"set firewall name USER_POLICY default-action accept",
         ]
     )
-    fake = scripted(interfaces=reported.encode(), configuration=existing)
+    fake = scripted(interfaces=scripted_interfaces(script), configuration=existing)
     result = apply_router_config(
         "127.0.0.1",
         1,
@@ -275,10 +275,10 @@ def test_apply_replaces_owned_firewall_and_checks_readback(scripted):
         assert command in sent
 
 
-def test_reconfiguration_removes_only_legacy_metropolis_static_routes(scripted):
-    script = ROUTERS / "backbone/router_ot_wan.sh"
-    expected = expected_interfaces(script)
-    reported = " ".join(sorted({a for group in expected.values() for a in group}))
+def test_reconfiguration_removes_only_legacy_metropolis_static_routes(
+    scripted, router_script
+):
+    script = router_script
     existing = b"\n".join(
         [
             b"set protocols static route 10.20.20.0/24 next-hop '10.20.254.9'",
@@ -286,7 +286,7 @@ def test_reconfiguration_removes_only_legacy_metropolis_static_routes(scripted):
             b"set protocols static route 192.0.2.0/24 next-hop '10.20.254.9'",
         ]
     )
-    fake = scripted(interfaces=reported.encode(), configuration=existing)
+    fake = scripted(interfaces=scripted_interfaces(script), configuration=existing)
     result = apply_router_config("127.0.0.1", 1, script, boot_timeout=1.0)
     sent = b"".join(fake.sent).decode()
     assert result.error is None
@@ -296,7 +296,7 @@ def test_reconfiguration_removes_only_legacy_metropolis_static_routes(scripted):
     assert "delete protocols static route 192.0.2.0/24" not in sent
 
 
-def test_reconfiguration_reports_legacy_route_that_remains(monkeypatch):
+def test_reconfiguration_reports_legacy_route_that_remains(monkeypatch, router_script):
     class IgnoredDeletion(ScriptedSocket):
         def _react(self, command: str) -> None:
             if command.startswith("delete protocols static route "):
@@ -304,11 +304,9 @@ def test_reconfiguration_reports_legacy_route_that_remains(monkeypatch):
             else:
                 super()._react(command)
 
-    script = ROUTERS / "backbone/router_ot_wan.sh"
-    expected = expected_interfaces(script)
-    reported = " ".join(sorted({a for group in expected.values() for a in group}))
+    script = router_script
     fake = IgnoredDeletion(
-        interfaces=reported.encode(),
+        interfaces=scripted_interfaces(script),
         configuration=b"set protocols static route 10.20.20.0/24 next-hop '10.20.254.9'",
     )
     monkeypatch.setattr(socket, "create_connection", lambda *a, **k: fake)
@@ -317,11 +315,9 @@ def test_reconfiguration_reports_legacy_route_that_remains(monkeypatch):
     assert any("legacy static route remains" in item for item in result.missing)
 
 
-def test_apply_reports_firewall_missing_from_router_readback(scripted):
-    script = ROUTERS / "backbone/router_ot_wan.sh"
-    expected = expected_interfaces(script)
-    reported = " ".join(sorted({a for group in expected.values() for a in group}))
-    scripted(interfaces=reported.encode(), configuration=b"")
+def test_apply_reports_firewall_missing_from_router_readback(scripted, router_script):
+    script = router_script
+    scripted(interfaces=scripted_interfaces(script), configuration=b"")
     result = apply_router_config(
         "127.0.0.1",
         1,
@@ -333,8 +329,8 @@ def test_apply_reports_firewall_missing_from_router_readback(scripted):
     assert result.missing == ["firewall MET_e0"]
 
 
-def test_apply_returns_an_error_when_login_never_completes(scripted):
-    script = ROUTERS / "backbone/router_ot_wan.sh"
+def test_apply_returns_an_error_when_login_never_completes(scripted, router_script):
+    script = router_script
     # The appliance prints a boot message but never reaches a login prompt.
     scripted(banner=b"booting...\n")
     result = apply_router_config("127.0.0.1", 1, script, boot_timeout=0.2)

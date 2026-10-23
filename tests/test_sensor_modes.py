@@ -40,8 +40,8 @@ def build(module, mode: str):
     return module.build_publisher(
         broker="127.0.0.1",
         port=1883,
-        topic="metropolis/plant/intake/telemetry",
-        client_id="MET-SENSOR-INTAKE-01",
+        topic="lab/telemetry",
+        client_id="SENSOR-A",
         username="lab_device",
         password="LabOnly_Device_2026",
         mode=mode,
@@ -56,22 +56,6 @@ def test_per_message_mode_publishes_with_one_shot_connections(monkeypatch):
     module = load_sensor()
     sent: list[dict] = []
     monkeypatch.setattr(module.publish, "single", lambda **kwargs: sent.append(kwargs))
-
-    publisher = build(module, "per-message")
-    status = publisher.send('{"value": 65.0}')
-
-    assert status == module.mqtt.MQTT_ERR_SUCCESS
-    assert len(sent) == 1
-    assert sent[0]["hostname"] == "127.0.0.1"
-    assert sent[0]["topic"] == "metropolis/plant/intake/telemetry"
-    assert sent[0]["auth"]["username"] == "lab_device"
-    # No session is held, so there is nothing to close.
-    assert publisher.client is None
-
-
-def test_per_message_mode_does_not_build_a_client(monkeypatch):
-    module = load_sensor()
-    monkeypatch.setattr(module.publish, "single", lambda **kwargs: None)
     monkeypatch.setattr(
         module.mqtt,
         "Client",
@@ -79,7 +63,16 @@ def test_per_message_mode_does_not_build_a_client(monkeypatch):
             AssertionError("no session in this mode")
         ),
     )
+
     publisher = build(module, "per-message")
+    status = publisher.send('{"value": 65.0}')
+
+    assert status == module.mqtt.MQTT_ERR_SUCCESS
+    assert len(sent) == 1
+    assert sent[0]["hostname"] == "127.0.0.1"
+    assert sent[0]["topic"] == "lab/telemetry"
+    assert sent[0]["auth"]["username"] == "lab_device"
+    # No session is held, so there is nothing to close.
     assert publisher.client is None
 
 
@@ -196,27 +189,8 @@ def test_the_probe_runs_no_service():
     assert "network-entrypoint.sh" in dockerfile
 
 
-def test_the_probe_is_registered_and_inventoried():
-    import yaml
-
+def test_the_probe_template_is_registered():
     from templates import TEMPLATES
 
     registered = {item.image for item in TEMPLATES}
     assert "metropolis/reachability-probe:dev" in registered
-
-    inventory = yaml.safe_load(
-        (
-            ROOT
-            / "testbeds/metropolis/datasets/water_treatment_v1"
-            / "device_instances/initial_devices.yaml"
-        ).read_text(encoding="utf-8")
-    )
-    probe = next(
-        device
-        for device in inventory["devices"]
-        if device["name"] == "MET-DEBUG-DMZ-01"
-    )
-    assert probe["image"] == "metropolis/reachability-probe:dev"
-    # The node's address is applied from its environment, so they must agree.
-    assert probe["environment"]["NODE_IP"] == probe["address"]
-    assert probe["environment"]["NODE_GATEWAY"] == probe["gateway"]

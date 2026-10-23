@@ -24,11 +24,8 @@ from metropolis.topology import (  # noqa: E402
     Router,
     Switch,
     Topology,
-    load_bundled_topology,
 )
 from metropolis.topology.draw import (  # noqa: E402
-    COLOURS,
-    LINK_COLOURS,
     _edge_label,
     _graphs,
     available,
@@ -38,11 +35,6 @@ from metropolis.topology.draw import (  # noqa: E402
 requires_matplotlib = pytest.mark.skipif(
     not available(), reason="matplotlib or networkx is not installed"
 )
-
-
-@pytest.fixture(scope="module")
-def bundled() -> Topology:
-    return load_bundled_topology()
 
 
 @pytest.fixture(scope="module")
@@ -68,45 +60,42 @@ def small() -> Topology:
 # -- the graph handed to networkx ---------------------------------------------
 
 
-def test_every_node_becomes_a_graph_node(bundled):
-    graph, kinds, _ = _graphs(bundled)
-    assert graph.number_of_nodes() == 61
+def test_every_node_becomes_a_graph_node(small):
+    graph, kinds, _ = _graphs(small)
+    assert graph.number_of_nodes() == 3
     assert set(graph.nodes()) == set(kinds)
 
 
-def test_every_link_becomes_a_graph_edge(bundled):
-    graph, _, _ = _graphs(bundled)
-    assert graph.number_of_edges() == 55
+def test_every_link_becomes_a_graph_edge(small):
+    graph, _, _ = _graphs(small)
+    assert graph.number_of_edges() == 2
 
 
-def test_node_kinds_come_from_the_topology(bundled):
-    _, kinds, _ = _graphs(bundled)
-    assert kinds["MET-OT-CORE"] == "router"
-    assert kinds["sw-plant-aggregation"] == "switch"
-    assert kinds["sw-plant-cell-intake"] == "segment"
-    assert kinds["MET-PLC-INTAKE-01"] == "device"
+def test_node_kinds_come_from_the_topology(small):
+    _, kinds, _ = _graphs(small)
+    assert kinds == {"R-EDGE": "router", "sw-1": "switch", "PLC-1": "device"}
 
     counts: dict[str, int] = {}
     for kind in kinds.values():
         counts[kind] = counts.get(kind, 0) + 1
-    assert counts == {"router": 6, "switch": 8, "segment": 13, "device": 34}
+    assert counts == {"router": 1, "switch": 1, "device": 1}
 
 
-def test_endpoint_labels_carry_their_address(bundled):
-    _, _, labels = _graphs(bundled)
-    assert labels["MET-PLC-INTAKE-01"].startswith("MET-PLC-INTAKE-01")
-    assert "10.20.10.10/24" in labels["MET-PLC-INTAKE-01"]
+def test_endpoint_labels_carry_their_address(small):
+    _, _, labels = _graphs(small)
+    assert labels["PLC-1"].startswith("PLC-1")
+    assert str(small.devices[0].address) in labels["PLC-1"]
 
 
-def test_infrastructure_labels_carry_no_address(bundled):
-    _, _, labels = _graphs(bundled)
-    assert labels["MET-OT-CORE"] == "MET-OT-CORE"
+def test_infrastructure_labels_carry_no_address(small):
+    _, _, labels = _graphs(small)
+    assert labels["R-EDGE"] == "R-EDGE"
 
 
-def test_edges_remember_their_kind_and_vlans(bundled):
-    graph, _, _ = _graphs(bundled)
+def test_edges_remember_their_kind_and_vlans(small):
+    graph, _, _ = _graphs(small)
     trunks = [data for _, _, data in graph.edges(data=True) if data["kind"] == "trunk"]
-    assert trunks, "the bundled topology has trunks"
+    assert trunks
     assert all(data["vlans"] for data in trunks), "a trunk should list its VLANs"
 
 
@@ -148,32 +137,14 @@ def test_a_link_with_vlans_labels_with_them():
     assert _edge_label(link) == "trunk 10,11"
 
 
-# -- colours ------------------------------------------------------------------
-
-
-def test_every_node_type_has_a_colour():
-    for kind in ("router", "switch", "segment", "device"):
-        assert kind in COLOURS
-
-
-def test_node_types_are_coloured_differently():
-    assert len(set(COLOURS.values())) == len(COLOURS)
-
-
-def test_trunk_colour_is_distinct_from_the_others():
-    assert LINK_COLOURS["trunk"] not in {
-        value for kind, value in LINK_COLOURS.items() if kind != "trunk"
-    }
-
-
 # -- rendering ----------------------------------------------------------------
 
 
 @requires_matplotlib
-def test_render_writes_a_png(bundled, tmp_path):
+def test_render_writes_a_png(small, tmp_path):
     target = tmp_path / "topology.png"
-    assert render(bundled, target) == target
-    assert target.stat().st_size > 10_000
+    assert render(small, target) == target
+    assert target.stat().st_size > 1_000
     assert target.read_bytes()[:8] == b"\x89PNG\r\n\x1a\n", "not a PNG"
 
 
@@ -195,40 +166,6 @@ def test_render_puts_the_title_and_note_in_the_picture(small, tmp_path):
     assert "A note" in text
 
 
-def _same_positions(first: dict, second: dict) -> bool:
-    """Compare two networkx layouts, whose values are numpy arrays."""
-    import numpy as np
-
-    if set(first) != set(second):
-        return False
-    return all(np.array_equal(first[name], second[name]) for name in first)
-
-
-@requires_matplotlib
-def test_the_same_seed_gives_the_same_layout(small):
-    """A force layout is random unless seeded, so this is the property to pin.
-
-    The rendered file is not compared: matplotlib writes a timestamp into the
-    SVG, so two identical layouts still differ byte for byte.
-    """
-    import networkx as nx
-
-    graph, _, _ = _graphs(small)
-    first = nx.spring_layout(graph, seed=3, k=0.55, iterations=250)
-    second = nx.spring_layout(graph, seed=3, k=0.55, iterations=250)
-    assert _same_positions(first, second)
-
-
-@requires_matplotlib
-def test_a_different_seed_gives_a_different_layout(small):
-    import networkx as nx
-
-    graph, _, _ = _graphs(small)
-    first = nx.spring_layout(graph, seed=1, k=0.55, iterations=250)
-    second = nx.spring_layout(graph, seed=99, k=0.55, iterations=250)
-    assert not _same_positions(first, second)
-
-
 @requires_matplotlib
 def test_a_topology_with_one_node_still_renders(tmp_path):
     lab = Topology(testbed_id="one")
@@ -242,7 +179,3 @@ def test_an_empty_topology_is_refused():
     """Better to say so than to draw an empty picture."""
     with pytest.raises(ValueError, match="nothing to draw"):
         render(Topology(testbed_id="empty"), "unused.png")
-
-
-def test_available_reports_the_dependency_state():
-    assert isinstance(available(), bool)

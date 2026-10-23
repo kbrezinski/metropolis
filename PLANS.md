@@ -21,7 +21,6 @@ The intake, dosing, filtration, and disinfection cells have declared and impleme
 - [ ] Make the GNS3 builder detect stale image, environment, and adapter settings when it reuses a node by name; plan how to report or reconcile drift before expanding the inventory.
 - [ ] Fill the empty `protocol_profiles/` directory with the current register maps, MQTT topics, EtherNet/IP assemblies, service settings, and timing defaults; check profiles against inventory and simulator configuration. Preserve stable per-cell SCADA polling rates as targets are added.
 - [ ] Add the existing firewall policy as an optional document in `metropolis.topology`, including load/save and validation; have the GNS3 compiler consume that model instead of reading the YAML separately.
-- [ ] Make user-defined dataset checks as thorough as the bundled testbed checks: remove the fixed `water_treatment_v1` path from the detailed validator, catch duplicate assigned device IPs in generic checks, and keep reference-topology assertions separate from reusable device and builder tests.
 
 ### Attack scripts — later
 

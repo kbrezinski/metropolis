@@ -126,17 +126,3 @@ def test_real_agent_reports_command_and_upload(tmp_path):
             agent.wait(timeout=5)
         cnc.terminate()
         cnc.wait(timeout=5)
-
-
-def test_dry_run_resolves_default_agent_without_contacting_lab():
-    env = os.environ.copy()
-    env.pop("METROPOLIS_LAB_ACK", None)
-    result = subprocess.run(
-        [sys.executable, str(ATTACKS / "run.py"), "merlin_scenario", "--dry-run"],
-        env=env,
-        capture_output=True,
-        text=True,
-        timeout=15,
-    )
-    assert result.returncode == 0, result.stdout + result.stderr
-    assert records(result)[0]["agent"] == "10.99.10.21"

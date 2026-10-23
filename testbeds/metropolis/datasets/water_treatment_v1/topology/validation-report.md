@@ -1,6 +1,6 @@
-# Metropolis v1 topology validation
+# water_treatment_v1 topology validation
 
-**Result: PASS (11/11 checks passed)**
+**Result: PASS (16/16 checks passed)**
 
 Regenerate this report from the repository root with:
 
@@ -18,10 +18,15 @@ uv run python scripts/validate_metropolis_topology.py --report testbeds/metropol
 | Device inventory: site, subnet, IP, gateway, and environment | No mismatches found | PASS |
 | Router interfaces and VLAN subinterfaces match address plan | No mismatches found | PASS |
 | OSPF advertises connected networks without static routes | No mismatches found | PASS |
+| Router syslog destination matches the inventoried receiver | No mismatches found | PASS |
+| Bundled MQTT broker matches default certificate names and addresses | No mismatches found | PASS |
 | Switch subnet references and trunk VLANs match plan | No mismatches found | PASS |
 | VLAN port membership and router link interfaces match the plan | No mismatches found | PASS |
 | All device service targets resolve to inventoried nodes | No mismatches found | PASS |
+| HMI cell and telemetry settings match SCADA targets | No mismatches found | PASS |
+| Routed SCADA and HMI service paths are permitted by policy | No mismatches found | PASS |
 | Link plan matches the inventory, address plan, and router interfaces | No mismatches found | PASS |
+| Inventoried devices are cabled or explicitly marked uncabled | No mismatches found | PASS |
 | Routers and switches match their scripts, specs, and the link plan | No mismatches found | PASS |
 
 ## Address plan cross-reference
@@ -55,12 +60,6 @@ This is the central lookup table. Match each network to the router interface and
 | ipsec-reserved | inter_site | transport | overlay | `10.20.254.12/30` | — | — |
 | ipsec-reservoir-reserved | inter_site | transport | overlay | `10.20.254.16/30` | — | — |
 
-## Corrections made during this review
-
-- Matched the reservoir and raw-water device inventory site IDs to the address plan.
-- Added VLAN 30 to the OT services network and recorded the reserved reservoir IPsec overlay `10.20.254.16/30`.
-- Changed the DMZ switch overview to say untagged, matching the physical router interface and switch port spec; this segment does not use VLAN 40.
-
 ## Scope and limitations
 
-This validates consistency across the checked-in YAML, VyOS command text, and switch Markdown, including declared VLAN access/trunk membership and router link interfaces. A blank VLAN means a standalone untagged subnet. For cabling it checks the link plan against the inventory, the address plan, and each router script's configured interfaces, and it checks that every router script is represented. It does not execute VyOS or Open vSwitch configuration, assign or confirm literal GNS3 port numbers, verify that a link is physically cabled, test packet reachability or Layer 2 isolation, or validate firewall/IPsec behavior. The two overlay `/30`s are reservations and intentionally have no configured router interfaces yet.
+This checks consistency among the selected dataset's YAML documents, its declared router scripts, and the declared links and VLAN paths. It also checks the generated switch reference and no-argument MQTT certificate defaults for the bundled dataset. A blank VLAN means an untagged subnet. Custom certificate names, addresses, and mounts are outside this check. It does not execute router or switch configuration, verify physical GNS3 cabling, test packet reachability or Layer 2 isolation, or validate firewall/IPsec behavior.

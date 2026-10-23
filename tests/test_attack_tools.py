@@ -15,9 +15,55 @@ import time
 from pathlib import Path
 
 import pytest
+import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 TOOLS = ROOT / "scripts/attacks"
+
+
+@pytest.fixture
+def attack_inventory(tmp_path):
+    """Independent service inventory for CLI and loopback attack checks."""
+    inventory = tmp_path / "initial_devices.yaml"
+    devices = [
+        {
+            "name": "PLC-A",
+            "address": "10.77.1.10/24",
+            "protocols": ["modbus-tcp"],
+            "environment": {"DEVICE_ROLE": "PLC"},
+        },
+        {
+            "name": "SENSOR-A",
+            "address": "10.77.1.20/24",
+            "protocols": ["coap"],
+            "environment": {"NODE_IP": "10.77.1.20/24", "COAP_PORT": "5683"},
+        },
+        {
+            "name": "BROKER-A",
+            "address": "10.77.2.10/24",
+            "protocols": ["mqtt"],
+            "environment": {
+                "MQTT_OPERATOR_USERNAME": "admin",
+                "MQTT_OPERATOR_PASSWORD": "LabOnly_MQTT_2026",
+            },
+        },
+        {
+            "name": "SSH-A",
+            "address": "10.77.3.10/24",
+            "protocols": ["ssh"],
+            "environment": {"ENGINEER_PASSWORD": "LabOnly_Engineering_2026"},
+        },
+        {
+            "name": "TELNET-A",
+            "address": "10.77.1.30/24",
+            "protocols": ["telnet"],
+            "environment": {"LEGACY_ROOT_PASSWORD": "LabOnly_Legacy_2026"},
+        },
+    ]
+    inventory.write_text(
+        yaml.safe_dump({"testbed_id": "fixture", "devices": devices}), encoding="utf-8"
+    )
+    return inventory
 
 
 def invoke(name, *args, ack=True):
@@ -55,15 +101,17 @@ def records(result):
         ("mirai/mirai_infection_sim.py", []),
     ],
 )
-def test_dry_runs_resolve_inventory_without_ack(name, args):
-    result = invoke(name, *args, "--dry-run", ack=False)
+def test_dry_runs_resolve_inventory_without_ack(name, args, attack_inventory):
+    result = invoke(
+        name, "--inventory", attack_inventory, *args, "--dry-run", ack=False
+    )
     assert result.returncode == 0, result.stdout + result.stderr
     start = records(result)[0]
     assert start["dry_run"] is True
     if name == "ssh/ssh_bruteforce_attack.py":
-        assert start["host"] == "10.20.21.10"
+        assert start["host"] == "10.77.3.10"
     if name == "mirai/mirai_infection_sim.py":
-        assert start["hosts"] == ["10.20.10.30"]
+        assert start["hosts"] == ["10.77.1.30"]
     if name == "scanner/network_recon_scan.py":
         assert start["protocol"] == "both"
         ports = start["command"][start["command"].index("-p") + 1]
@@ -95,25 +143,17 @@ def test_missing_ack_and_invalid_settings_fail_before_network():
     )
     assert (
         invoke(
-            "scanner/network_recon_scan.py", "--cidr", "10.20.0.0/16", "--dry-run"
+            "scanner/network_recon_scan.py", "--cidr", "10.77.0.0/16", "--dry-run"
         ).returncode
         == 2
     )
 
 
-def test_future_inventory_supplies_addresses_and_ports(tmp_path):
-    import yaml
-
-    path = (
-        ROOT
-        / "testbeds/metropolis/datasets/water_treatment_v1/device_instances/initial_devices.yaml"
-    )
-    data = yaml.safe_load(path.read_text(encoding="utf-8"))
-    sensor = next(
-        item for item in data["devices"] if item["name"] == "MET-SENSOR-INTAKE-01"
-    )
-    sensor["address"] = "10.20.10.25/24"
-    sensor["environment"]["NODE_IP"] = "10.20.10.25/24"
+def test_future_inventory_supplies_addresses_and_ports(tmp_path, attack_inventory):
+    data = yaml.safe_load(attack_inventory.read_text(encoding="utf-8"))
+    sensor = next(item for item in data["devices"] if item["name"] == "SENSOR-A")
+    sensor["address"] = "10.77.1.25/24"
+    sensor["environment"]["NODE_IP"] = "10.77.1.25/24"
     sensor["environment"]["COAP_PORT"] = "5684"
     alternate = tmp_path / "inventory.yaml"
     alternate.write_text(yaml.safe_dump(data), encoding="utf-8")
@@ -121,7 +161,7 @@ def test_future_inventory_supplies_addresses_and_ports(tmp_path):
         "coap/coap_response_measurement.py", "--inventory", alternate, "--dry-run"
     )
     assert result.returncode == 0, result.stdout + result.stderr
-    assert records(result)[0]["host"] == "10.20.10.25"
+    assert records(result)[0]["host"] == "10.77.1.25"
     assert records(result)[0]["port"] == 5684
 
 
@@ -148,7 +188,7 @@ def test_coap_uses_the_real_sensor_on_loopback():
                 packet, peer = sock.recvfrom(2048)
             except socket.timeout:
                 continue
-            reply = sensor.handle_get(packet, "MET-SENSOR-INTAKE-01", "level", 65)
+            reply = sensor.handle_get(packet, "SENSOR-A", "level", 65)
             if reply:
                 sock.sendto(reply, peer)
 
@@ -223,7 +263,7 @@ def mqtt_packet(sock):
     return header, read_exact(sock, remaining)
 
 
-def test_mqtt_rejections_and_pubacks(tcp_peer):
+def test_mqtt_rejections_and_pubacks(tcp_peer, attack_inventory):
     pytest.importorskip("paho.mqtt.client")
     publications = []
 
@@ -252,8 +292,10 @@ def test_mqtt_rejections_and_pubacks(tcp_peer):
     port = tcp_peer(Handler)
     result = invoke(
         "mqtt/mqtt_bruteforce_attack.py",
+        "--inventory",
+        attack_inventory,
         "--node",
-        "MET-MQTT-BROKER-01",
+        "BROKER-A",
         "--host",
         "127.0.0.1",
         "--port",
@@ -267,8 +309,10 @@ def test_mqtt_rejections_and_pubacks(tcp_peer):
     assert "LabOnly_MQTT_2026" not in result.stdout
     result = invoke(
         "mqtt/mqtt_flood_attack.py",
+        "--inventory",
+        attack_inventory,
         "--node",
-        "MET-MQTT-BROKER-01",
+        "BROKER-A",
         "--host",
         "127.0.0.1",
         "--port",
@@ -357,7 +401,7 @@ def test_modbus_actual_controller_map_and_restoration():
         process.wait(timeout=5)
 
 
-def test_telnet_negotiation_and_challenge(tcp_peer):
+def test_telnet_negotiation_and_challenge(tcp_peer, attack_inventory):
     class Handler(socketserver.BaseRequestHandler):
         def handle(self):
             self.request.settimeout(3)
@@ -384,8 +428,10 @@ def test_telnet_negotiation_and_challenge(tcp_peer):
     port = tcp_peer(Handler)
     result = invoke(
         "mirai/mirai_infection_sim.py",
+        "--inventory",
+        attack_inventory,
         "--node",
-        "MET-LEGACY-GATEWAY-01",
+        "TELNET-A",
         "--host",
         "127.0.0.1",
         "--port",
@@ -431,7 +477,7 @@ def test_telnet_echo_alone_does_not_prove_execution(tcp_peer, tmp_path):
     assert summary["command_verified_hosts"] == 0
 
 
-def test_ssh_rejection_and_fixed_command(tcp_peer):
+def test_ssh_rejection_and_fixed_command(tcp_peer, attack_inventory):
     paramiko = pytest.importorskip("paramiko")
     host_key = paramiko.RSAKey.generate(2048)
 
@@ -501,8 +547,10 @@ def test_ssh_rejection_and_fixed_command(tcp_peer):
     port = tcp_peer(Handler)
     result = invoke(
         "ssh/ssh_bruteforce_attack.py",
+        "--inventory",
+        attack_inventory,
         "--node",
-        "MET-ENGINEERING-01",
+        "SSH-A",
         "--host",
         "127.0.0.1",
         "--port",

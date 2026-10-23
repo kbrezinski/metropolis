@@ -13,8 +13,8 @@ GNS3 = Path(__file__).resolve().parents[1] / "scripts" / "gns3"
 if str(GNS3) not in sys.path:
     sys.path.insert(0, str(GNS3))
 
-from _cli import load_plan  # noqa: E402
 from switch_config import configure_switches, expected_state, switch_payload  # noqa: E402
+from topology import PlannedNode, Topology  # noqa: E402
 
 RUNTIME = (
     Path(__file__).resolve().parents[1]
@@ -26,19 +26,31 @@ spec.loader.exec_module(runtime)
 
 
 def test_payload_maps_trunk_and_spare_ports():
-    topology, _ = load_plan()
-    plant = switch_payload(topology, "sw-plant-aggregation")
-    assert plant["ports"]["0"]["vlans"] == [10, 11, 12, 13, 50, 51, 52, 53]
-    assert expected_state(plant)["eth0"] == {
+    topology = Topology(
+        nodes=[],
+        links=[],
+        port_map={},
+        skipped=[],
+        missing_templates=[],
+        switch_ports={
+            "sw-demo": {
+                0: {"role": "uplink", "mode": "trunk", "vlans": [10, 20]},
+                2: {"role": "device", "mode": "access", "vlans": [10]},
+            }
+        },
+    )
+    payload = switch_payload(topology, "sw-demo")
+    assert set(payload["ports"]) == {"0", "2"}
+    assert expected_state(payload)["eth0"] == {
         "tag": None,
-        "trunks": [10, 11, 12, 13, 50, 51, 52, 53],
+        "trunks": [10, 20],
         "vlan_mode": "trunk",
     }
-    assert set(switch_payload(topology, "sw-dmz")["ports"]) == {"0"}
-    segment = switch_payload(topology, "sw-plant-cell-intake")
-    assert segment["ports"]
-    assert [item["mode"] for item in segment["ports"].values()].count("trunk") == 1
-    assert all(item["vlans"] == [10] for item in segment["ports"].values())
+    assert expected_state(payload)["eth2"] == {
+        "tag": 10,
+        "trunks": [],
+        "vlan_mode": "access",
+    }
 
 
 def test_runtime_rejects_malformed_and_ambiguous_vlan_settings():
@@ -143,11 +155,28 @@ def test_runtime_applies_then_skips_matching_ovs_state(monkeypatch):
     assert not any("set" in args for args in commands)
 
 
+def example_topology() -> Topology:
+    return Topology(
+        nodes=[
+            PlannedNode("sw-a", "Metropolis Open vSwitch", kind="switch"),
+            PlannedNode("sw-b", "Metropolis Open vSwitch", kind="switch"),
+        ],
+        links=[],
+        port_map={},
+        skipped=[],
+        missing_templates=[],
+        switch_ports={
+            "sw-a": {0: {"role": "uplink", "mode": "trunk", "vlans": [10]}},
+            "sw-b": {0: {"role": "uplink", "mode": "trunk", "vlans": [20]}},
+        },
+    )
+
+
 class Client:
     def __init__(self):
         self.records = {
-            "sw-plant-aggregation": {
-                "name": "sw-plant-aggregation",
+            "sw-a": {
+                "name": "sw-a",
                 "node_id": "n1",
                 "node_type": "docker",
                 "compute_id": "remote",
@@ -157,8 +186,8 @@ class Client:
                     "container_id": "c1",
                 },
             },
-            "sw-operations-aggregation": {
-                "name": "sw-operations-aggregation",
+            "sw-b": {
+                "name": "sw-b",
                 "node_id": "n2",
                 "node_type": "docker",
                 "compute_id": "remote",
@@ -180,12 +209,7 @@ class Client:
 
 
 def test_partial_docker_failure_keeps_other_switch_result():
-    topology, _ = load_plan()
-    topology.nodes = [
-        node
-        for node in topology.nodes
-        if node.name in {"sw-plant-aggregation", "sw-operations-aggregation"}
-    ]
+    topology = example_topology()
     client = Client()
 
     def execute(command, *, input, **_kwargs):
@@ -204,32 +228,25 @@ def test_partial_docker_failure_keeps_other_switch_result():
     results = configure_switches(
         client, "p1", topology, {"remote": "ssh://gns3@example"}, execute=execute
     )
-    assert results["sw-plant-aggregation"] == {
+    assert results["sw-a"] == {
         "status": "failed",
         "reason": "OVS unavailable",
     }
-    assert results["sw-operations-aggregation"]["status"] == "unchanged"
+    assert results["sw-b"]["status"] == "unchanged"
 
 
 def test_wrong_image_and_missing_compute_are_reported():
-    topology, _ = load_plan()
-    topology.nodes = [
-        node
-        for node in topology.nodes
-        if node.name in {"sw-plant-aggregation", "sw-operations-aggregation"}
-    ]
+    topology = example_topology()
     client = Client()
-    client.records["sw-plant-aggregation"]["properties"]["image"] = "other/switch"
+    client.records["sw-a"]["properties"]["image"] = "other/switch"
     results = configure_switches(client, "p1", topology, {})
-    assert "not the Metropolis" in results["sw-plant-aggregation"]["reason"]
-    assert "no Docker host" in results["sw-operations-aggregation"]["reason"]
+    assert "not the Metropolis" in results["sw-a"]["reason"]
+    assert "no Docker host" in results["sw-b"]["reason"]
 
 
 def test_gns3_node_lookup_failure_is_recorded_per_switch():
-    topology, _ = load_plan()
-    topology.nodes = [
-        node for node in topology.nodes if node.name == "sw-plant-aggregation"
-    ]
+    topology = example_topology()
+    topology.nodes = topology.nodes[:1]
     client = Client()
 
     def fail(_project_id):
@@ -239,7 +256,7 @@ def test_gns3_node_lookup_failure_is_recorded_per_switch():
     result = configure_switches(
         client, "p1", topology, {"remote": "ssh://gns3@example"}
     )
-    assert result["sw-plant-aggregation"] == {
+    assert result["sw-a"] == {
         "status": "failed",
         "reason": "GNS3 API unavailable",
     }

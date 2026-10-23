@@ -47,7 +47,7 @@ def certificates(tmp_path_factory):
     module = load("gen_lab_certificates", SCRIPTS / "gen_lab_certificates.py")
     out = tmp_path_factory.mktemp("certs")
     written = module.generate(
-        out, ["localhost", "MET-MQTT-BROKER-01"], ["127.0.0.1", "10.20.23.10"]
+        out, ["localhost", "broker.example.test"], ["127.0.0.1", "192.0.2.10"]
     )
     return module, written
 
@@ -63,12 +63,6 @@ def test_generate_writes_every_file_needed(certificates):
     for label, path in written.items():
         assert path.is_file(), f"{label} was not written"
         assert path.stat().st_size > 0
-
-
-def test_the_server_certificate_loads_into_a_tls_context(certificates):
-    _, written = certificates
-    context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-    context.load_cert_chain(written["server"], written["key"])
 
 
 def test_a_real_handshake_succeeds_and_validates_the_hostname(certificates):
@@ -100,18 +94,11 @@ def test_a_real_handshake_succeeds_and_validates_the_hostname(certificates):
     listener.close()
 
 
-def test_the_certificate_covers_the_addresses_clients_use(certificates):
-    """A device reaching the broker by address must not fail verification."""
-    module, written = certificates
-    assert "10.20.23.10" in module.DEFAULT_ADDRESSES
-    assert "MET-MQTT-BROKER-01" in module.DEFAULT_NAMES
-
-
 def test_the_certificate_names_exactly_what_was_requested(certificates):
     """The SAN list is the contract, so it is read rather than assumed."""
     from cryptography import x509
 
-    module, written = certificates
+    _, written = certificates
     certificate = x509.load_pem_x509_certificate(written["server"].read_bytes())
     san = certificate.extensions.get_extension_for_class(
         x509.SubjectAlternativeName
@@ -119,11 +106,11 @@ def test_the_certificate_names_exactly_what_was_requested(certificates):
 
     assert set(san.get_values_for_type(x509.DNSName)) == {
         "localhost",
-        "MET-MQTT-BROKER-01",
+        "broker.example.test",
     }
     assert {str(item) for item in san.get_values_for_type(x509.IPAddress)} == {
         "127.0.0.1",
-        "10.20.23.10",
+        "192.0.2.10",
     }
 
 
@@ -138,73 +125,16 @@ def test_the_ca_is_a_ca(certificates):
     assert constraints.ca is True
 
 
-# -- sensor TLS settings ------------------------------------------------------
+# -- sensor TLS integration ---------------------------------------------------
 
 
 def sensor_module():
     return load("mqtt_sensor_tls", SENSORS / "mqtt_sensor.py")
 
 
-def test_tls_is_off_unless_asked_for(monkeypatch):
+def test_sensor_uses_shared_tls_configuration():
+    import tls_config
+
     module = sensor_module()
-    monkeypatch.setattr(module.os, "environ", {})
-    assert module.tls_from_environment() is None
-
-
-def test_tls_settings_come_from_the_environment(certificates, monkeypatch):
-    module = sensor_module()
-    _, written = certificates
-    monkeypatch.setattr(
-        module.os,
-        "environ",
-        {
-            "TLS": "true",
-            "TLS_CA_FILE": str(written["ca"]),
-            "TLS_INSECURE": "true",
-        },
-    )
-    config = module.tls_from_environment()
-
-    assert config is not None
-    assert config.ca_file == str(written["ca"])
-    assert config.insecure is True
-    assert config.paho_tls_args() == {
-        "ca_certs": str(written["ca"]),
-        "insecure": True,
-    }
-
-
-def test_a_missing_ca_file_is_refused(monkeypatch):
-    """Starting with TLS on and no CA would fail at connect time instead."""
-    module = sensor_module()
-    monkeypatch.setattr(
-        module.os, "environ", {"TLS": "true", "TLS_CA_FILE": "/nope/missing.crt"}
-    )
-    with pytest.raises(SystemExit) as caught:
-        module.tls_from_environment()
-    assert "does not exist" in str(caught.value)
-
-
-def test_applying_tls_configures_verification(certificates):
-    module = sensor_module()
-    _, written = certificates
-    calls: list[dict] = []
-
-    class FakeClient:
-        def tls_set(self, **kwargs):
-            calls.append(kwargs)
-
-        def tls_insecure_set(self, value):
-            calls.append({"insecure": value})
-
-    config = module.TlsConfig(ca_file=str(written["ca"]), insecure=True)
-    config.apply(FakeClient())
-
-    assert calls[0]["ca_certs"] == str(written["ca"])
-    assert calls[1] == {"insecure": True}
-
-
-def test_insecure_is_not_the_default(certificates):
-    module = sensor_module()
-    _, written = certificates
-    assert module.TlsConfig(ca_file=str(written["ca"])).insecure is False
+    assert module.tls_from_environment is tls_config.from_environment
+    assert module.TlsConfig is tls_config.TlsConfig

@@ -390,7 +390,9 @@ uv run python scripts/gns3/run.py render_firewall --check
 This topology check is separate from `pytest`: it validates the selected
 dataset's declared nodes, addresses, links, router scripts, and switch roles.
 The unit tests exercise reusable device and tooling behavior. Adding another
-instance of an existing device model should not require a new unit test.
+instance of an existing device model should not require a new unit test. Pass
+`--dataset testbeds/metropolis/datasets/<version>` to validate another
+Metropolis dataset using its declared infrastructure and links.
 
 Add `--report testbeds/metropolis/datasets/water_treatment_v1/topology/validation-report.md`
 to save a readable cross-reference.

@@ -31,9 +31,11 @@ Run the topology validator separately from pytest whenever the dataset changes.
 It checks the declared inventory, links, addresses, router scripts, and switch
 roles; pytest checks reusable simulator and tooling behavior. Adding a node
 that uses an existing simulator does not require a unit test with its exact
-name or IP address. The validator does not connect to GNS3 or confirm that a
-running project matches the plan. Start and validate nodes and routes in GNS3
-before capturing traffic.
+name or IP address. Use `--dataset testbeds/metropolis/datasets/<version>` for
+another Metropolis dataset. Inventory nodes without a declared link must use
+`link_policy: intentionally_uncabled` when that is deliberate. The validator
+does not connect to GNS3 or confirm that a running project matches the plan.
+Start and validate nodes and routes in GNS3 before capturing traffic.
 
 ## Dataset-processing pipeline
 

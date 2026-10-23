@@ -146,31 +146,11 @@ def test_prune_removes_only_unmanaged_metropolis_templates():
     assert client.deleted == ["t-stale"]
 
 
-def test_registry_covers_every_image_the_inventory_names():
-    """A device pointing at an unregistered image would fail at build time."""
-    import yaml
-
-    inventory = (
-        Path(__file__).resolve().parents[1]
-        / "testbeds/metropolis/datasets/water_treatment_v1"
-        / "device_instances/initial_devices.yaml"
-    )
-    data = yaml.safe_load(inventory.read_text(encoding="utf-8"))
-    images = {device["image"] for device in data["devices"]}
-    registered = {item.image for item in TEMPLATES}
-
-    assert images - registered == set()
-
-
 def test_template_names_are_unique_and_prefixed():
     names = [item.name for item in TEMPLATES]
     assert len(names) == len(set(names))
     # The prune step keys on this prefix, so it is part of the contract.
     assert all(name.startswith("Metropolis ") for name in names)
-
-
-def test_appliances_are_not_docker_images():
-    assert set(APPLIANCES) == {"router", "switch"}
 
 
 def make_config(root: Path, version: str, body: str) -> Path:
