@@ -31,6 +31,26 @@ The selected dataset still supplies targets and link IDs. A scenario is a
 versioned description of a tool's traffic; its CLI options choose the action
 for a particular run. New-cell attack cases are separate from this catalog.
 
+### Adding an attack artifact
+
+Place a new, authorized executable or its source under its attack-family folder
+and record its provenance and intended lab use there. A binary alone does not
+become a `run.py` command: the runner discovers Python entry points with a
+`__main__` guard under the family folders. Add such an entry point only if the
+attack should be launched by the Metropolis toolkit.
+
+To make the attack family visible to the on-demand Codex Security review, add
+an address-free entry to the selected [scenario catalog](scenarios/v1.json)
+using the existing [catalog schema](../../schemas/attack-scenarios.schema.json).
+Give it a unique `id` and `tool`, its `family`, the appropriate `origin_kind`,
+and a `capture_focus`. Use the Python entry point name for `tool` when there is
+one; otherwise use a stable name for the artifact. The review produces one
+theoretical scenario per distinct `family`, grouping entries in the same
+family. Choose the catalog in the
+[security review preflight](../security/README.md#set-up-and-run), especially
+when multiple catalog versions exist. The review reads this catalog to build
+theoretical scenarios; it does not inspect, launch, or validate the executable.
+
 Start `experiment_run` in one terminal with a chosen `--run-id` and sufficient
 duration. Before launching the attack from another terminal, wait for the run
 manifest to list the selected links and confirm in GNS3 that each link is

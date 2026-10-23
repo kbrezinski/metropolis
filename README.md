@@ -306,6 +306,13 @@ See [scripts/attacks/README.md](scripts/attacks/README.md) for the full list,
 and [the service guide](scripts/attacks/SERVICE_TARGETS.md) for what each
 service normally looks like.
 
+## Optional REA-assisted investigations
+
+To investigate software you are authorized to analyze, see the
+[REA setup and use guide](docs/rea.md). It explains how to clone the upstream
+project locally, connect its tools to Codex, and supply your own target and
+investigation question.
+
 ## Known limitations
 
 Worth repeating, because these bound what you can conclude:
