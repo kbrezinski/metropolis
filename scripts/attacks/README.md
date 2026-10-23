@@ -172,6 +172,7 @@ Phenomite's AMP-Research archive:
 | [SNMP](snmp/Dockerfile), [BFD](bfd/Dockerfile) | Network-device management and adjacency traffic for possible future infrastructure |
 | [SSDP](ssdp/Dockerfile) | Networked-device discovery traffic |
 | [IPsec](ipsec/Dockerfile) | Relevant to the planned site-to-site VPN |
+| [RDP-UDP](rdp/Dockerfile) | Reference for a possible future RDP service; no RDP endpoint exists in the current topology |
 
 Each recipe clones and compiles the upstream source, retains its MIT license
 and the cloned commit ID inside the image, and opens Bash. Its source and
@@ -186,7 +187,7 @@ examples target. AMP's CoAP C program is already the source used by the Gotham
 recipe; its UDP Modbus payload does not match the lab's Modbus TCP controllers.
 
 ```bash
-for kind in dns ntp snmp bfd ssdp ipsec; do
+for kind in dns ntp snmp bfd ssdp ipsec rdp; do
   docker build -f scripts/attacks/$kind/Dockerfile \
     -t metropolis/amp-$kind:reference scripts/attacks/$kind
 done
@@ -197,6 +198,8 @@ The last command prints the upstream CLI usage without sending traffic; the
 upstream program exits nonzero when required arguments are absent. Actual use
 needs a researcher-supplied reflector list and raw-socket privileges; the
 images do not select targets from the Metropolis dataset.
+The RDP recipe packages AMP-Research's UDP 3389 amplification example. It is
+distinct from ordinary TCP RDP access and has no current Metropolis target.
 
 ## Install
 

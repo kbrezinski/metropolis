@@ -1,0 +1,4 @@
+# The SDK version is pinned in package.json and pnpm-lock.yaml. It was newer
+# than pnpm's release-age window when this integration was created.
+minimumReleaseAgeExclude:
+  - '@openai/codex-security@0.6.0'

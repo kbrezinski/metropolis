@@ -36,6 +36,10 @@ appropriate.
 - **Validate the design** — the address plan, inventory, link plan, router
   interfaces, OSPF networks, and switch VLANs are checked against each other by
   one command.
+- **Review declared network security on demand** — a separate Codex Security
+  tool records evidence-backed findings and theoretical attack paths. Runs
+  require Daybreak Blue access. See the
+  [security review guide](scripts/security/README.md).
 - **Capture traffic** on chosen links, and record it under the versioned dataset
   folder. A combined experiment command records PCAPs, logs, and a run manifest.
 - **Extract and conservatively clean packet features** from completed PCAP runs

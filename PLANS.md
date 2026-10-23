@@ -8,12 +8,15 @@ Expand the GNS3 water-treatment network one cell at a time. Prioritize credible 
 
 The intake, dosing, filtration, and disinfection cells have declared and implemented nodes. Their HMIs send setpoints through SCADA and receive PLC register readback acknowledgements. The reservoir and raw-water sites now have networked level instruments and pump drives around their RTUs, with read-only central SCADA polling. Local devices use Modbus TCP and cyclic EtherNet/IP; the WAN carries routed RTU polls without IPsec. These paths have offline checks, but startup, packet timing, and alarms have not been verified in live GNS3. Measurements are simple and independent of physical process behavior.
 
+An on-demand Daybreak Blue security review tool discovers a selected dataset's settings, router files, and attack catalog to record SDK findings separately from theoretical attack paths. It does not verify the running GNS3 network.
+
 ### Testbed features
 
 - [ ] Add route-based site-to-site IPsec tunnels between the WAN hub and both remote-site routers. Route operational traffic through the tunnels, keep the simulated WAN as the untrusted underlay, and add offline checks for tunnel configuration and routed paths.
 - [ ] Give the declared DMZ and enterprise networks a purposeful, controlled data or administration path, such as a DMZ relay and enterprise consumer; define the service and firewall flows before adding hosts.
 - [ ] Explore paired plant and operations aggregation switches with dual-uplink access switches, then consider DMZ, WAN, and remote-site redundancy. Revisit router uplinks and Open vSwitch RSTP before adding loops; these are proposals, not declared nodes.
 - [ ] Consider one additional interoperable protocol where it has a realistic peer and observable traffic, such as OPC UA for supervisory exchange or DNP3 for remote telemetry. Separately decide whether CoAP security/features or MQTT ACLs serve a research scenario; document simulator fidelity limits.
+- [ ] Consider a controlled RDP endpoint for future remote administration traffic. Define its host role, normal TCP/UDP behavior, permitted path, and capture point before adding it; the imported RDP-UDP attack recipe is only a reference image and has no current target.
 
 ### GNS3 tooling and cleanup
 

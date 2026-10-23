@@ -6,6 +6,8 @@ toolkit and [`attacks/SERVICE_TARGETS.md`](attacks/SERVICE_TARGETS.md) for servi
 targets and Gotham adaptation notes. [`gns3/README.md`](gns3/README.md)
 documents the automated topology builder, capture commands, and combined
 experiment runs.
+[`security/README.md`](security/README.md) explains the optional, on-demand
+review of declared topology settings and theoretical attack families.
 
 ## GNS3 implementation references
 

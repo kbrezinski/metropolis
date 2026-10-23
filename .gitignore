@@ -241,3 +241,7 @@ __marimo__/
 
 # Third-party code cloned by scripts/run_gotham_pipeline.py
 third_party/
+
+# Local Node dependencies for the on-demand security review
+node_modules/
+.pnpm-store/

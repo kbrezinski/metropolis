@@ -1,0 +1,15 @@
+{
+  "name": "metropolis-topology-security-review",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24 <27"
+  },
+  "scripts": {
+    "scan": "node run.mjs",
+    "test": "node --test --test-isolation=none review.test.mjs"
+  },
+  "dependencies": {
+    "@openai/codex-security": "0.6.0"
+  }
+}
