@@ -1,26 +1,16 @@
 # Metropolis testbed
 
-Metropolis is the repository's first GNS3 water-treatment OT/ICS testbed. Its
-routers, switches, device models, and versioned dataset are scoped to this
-directory so additional testbeds can be added alongside it.
+A GNS3 water-treatment network with four plant cells and two remote RTU sites.
 
-- [`router/`](router/) contains VyOS configuration drafts organized by backbone
-  and location.
-- [`switch/`](switch/) contains GNS3 VLAN and port specifications.
-- [`devices/`](devices/) contains Docker-based emulated device models.
-- [`datasets/water_treatment_v1/`](datasets/water_treatment_v1/) contains this
-  testbed's initial topology and device inventory.
+| Task | Location |
+|---|---|
+| Build and run the lab | [GNS3 guide](../../scripts/gns3/README.md) |
+| Read or change network settings | [Dataset guide](datasets/water_treatment_v1/README.md) |
+| Configure simulated services | [Device reference](devices/README.md) |
+| Inspect router configuration | [router/](router/) |
+| Inspect generated switch ports | [Switch reference](switch/README.md) |
+| Generate attack traffic | [Attack toolkit](../../scripts/attacks/README.md) |
 
-The concrete address allocations belong to Metropolis and are recorded in its
-dataset topology. Their document format follows the shared
-[`address-plan.schema.json`](../../schemas/address-plan.schema.json); other
-testbeds can use that format with independently selected ranges.
-
-The Python package includes this plan in its distributions. Developers can load
-it with `from metropolis.testbeds import load_address_plan`; the function returns
-a mapping with a `networks` list that can be converted to a pandas DataFrame.
-
-Run `uv run python scripts/validate_metropolis_topology.py` from the repository
-root to cross-check the address plan, device inventory, router scripts, and
-switch specs. Pass `--report testbeds/metropolis/datasets/water_treatment_v1/topology/validation-report.md`
-to write the address cross-reference and check results to a Markdown file.
+The dataset defines concrete nodes and addresses. Device images are reusable
+models; multiple nodes can use the same image with different environment
+settings.

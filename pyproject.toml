@@ -19,8 +19,9 @@ dependencies = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = ["--import-mode=importlib", "-q", "--basetemp=.pytest_tmp"]
+addopts = ["--import-mode=importlib", "-q", "--basetemp=.venv/.pytest_tmp"]
 tmp_path_retention_policy = "none"
+cache_dir = ".venv/.pytest_cache"
 markers = [
     "slow: integration checks that build and install the wheel",
 ]

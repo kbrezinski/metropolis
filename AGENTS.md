@@ -28,6 +28,8 @@ Python 3.12 is managed with uv. The package uses a src/ layout; GNS3 and attack 
 
 The topology validator, firewall renderer, and dry run above do not need a live GNS3 server. CI also checks the build, spelling, and links. Use pytest for reusable simulator and tooling behavior; use the standalone topology validator for the selected dataset's inventory, addresses, links, router configuration, and switch roles. Adding another instance of an existing device model does not require a copy of its unit tests. Run focused tests for changed behavior, then the relevant validation commands above.
 
+Pytest temporary files and caches belong under the ignored `.venv/` directory. If you override `--basetemp` for a separate test run, keep that path under `.venv/` as well; do not create `.pytest_*` directories at the repository root.
+
 ## Topology and devices
 
 - The authoritative dataset is testbeds/metropolis/datasets/water_treatment_v1/. Its topology/address-plan.yaml, topology/links.yaml, device_instances/initial_devices.yaml, and device_instances/infrastructure.yaml define networks, links, hosts, routers, and switches. Schemas live in schemas/. Do not hardcode node addresses in reusable tools; resolve them from the selected dataset.
@@ -47,6 +49,8 @@ For a new or changed node, check these in order:
 5. Check whether capture points and log-source attribution can observe the new traffic. Add focused tests when simulator or tooling behavior changes; validate dataset wiring with the standalone topology command instead of exact node/IP/count assertions in pytest. Then update setup docs and PLANS.md when scope or status changes.
 
 Run the topology validator, generated switch-reference check, template-registry check, build_topology --plan, and firewall renderer as applicable. Inspect the build plan's skipped links rather than relying on its exit code. The validator checks declared YAML, router scripts, and switch plans; it does not prove every intended device is cabled, an image is built, a service starts, or packets and logs appear. The builder reuses existing GNS3 nodes by name without reconciling changed image or environment settings. The user verifies actual GNS3 cabling, VLAN isolation, OSPF, firewall enforcement, and traffic in their GNS3 environment.
+
+Keep the root README as the entry point. GNS3 setup and image builds belong in `scripts/gns3/README.md`, attack usage in `scripts/attacks/README.md`, and device settings in the device README. Update the owning guide and link to it instead of repeating setup sequences.
 
 ## Runs and attacks
 

@@ -1,8 +1,14 @@
 import os
+from pathlib import Path
 
 # These must be set before torch initializes CUDA-related backends.
 os.environ.setdefault("PYTHONHASHSEED", "0")
 os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
+# Keep test-generated compiler files in the ignored project environment.
+os.environ.setdefault(
+    "TORCHINDUCTOR_CACHE_DIR",
+    str(Path(__file__).resolve().parents[1] / ".venv" / "torchinductor"),
+)
 
 import random
 

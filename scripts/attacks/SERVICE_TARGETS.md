@@ -9,7 +9,7 @@ the targets. Every address here comes from the
 and the [address plan](../../testbeds/metropolis/datasets/water_treatment_v1/topology/address-plan.yaml).
 These are examples for the bundled `water_treatment_v1` dataset. For a
 user-defined dataset, use its inventory and the selection options in the
-[attack toolkit guide](README.md#use-a-custom-testbed).
+[attack toolkit guide](README.md#select-targets-and-credentials).
 
 Start the nodes and confirm normal responses before you build an experiment on
 top of them.
