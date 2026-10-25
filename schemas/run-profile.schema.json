@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://metropolis.local/schemas/run-profile.schema.json",
+  "title": "Metropolis optional experiment resource and link profile",
+  "description": "Applied only when explicitly selected. Node names and declared link IDs resolve from the selected dataset.",
+  "type": "object",
+  "required": ["schema_version", "name"],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "name": {"type": "string", "minLength": 1, "pattern": "\\S"},
+    "devices": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["node"],
+        "properties": {
+          "node": {"type": "string", "minLength": 1, "pattern": "\\S"},
+          "cpus": {"type": "number", "minimum": 0.01},
+          "memory_bytes": {"type": "integer", "minimum": 6291456}
+        },
+        "anyOf": [{"required": ["cpus"]}, {"required": ["memory_bytes"]}],
+        "additionalProperties": false
+      }
+    },
+    "links": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["link"],
+        "properties": {
+          "link": {"type": "string", "minLength": 1, "pattern": "\\S"},
+          "bandwidth_kbps": {"type": "integer", "minimum": 1, "maximum": 1000000000},
+          "delay_ms": {"type": "integer", "minimum": 0, "maximum": 32767},
+          "jitter_ms": {"type": "integer", "minimum": 0, "maximum": 32767},
+          "loss_percent": {"type": "integer", "minimum": 0, "maximum": 100}
+        },
+        "anyOf": [
+          {"required": ["bandwidth_kbps"]},
+          {"required": ["delay_ms"]},
+          {"required": ["jitter_ms"]},
+          {"required": ["loss_percent"]}
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "anyOf": [
+    {"required": ["devices"], "properties": {"devices": {"minItems": 1}}},
+    {"required": ["links"], "properties": {"links": {"minItems": 1}}}
+  ],
+  "additionalProperties": false
+}

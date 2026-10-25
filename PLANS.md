@@ -28,7 +28,17 @@ An on-demand Daybreak Blue security review tool discovers a selected dataset's s
 
 ### Attack scripts — later
 
+Users select attacks and launch timing through scripts/attacks/run.py. Keep attack actions attributable to the capture run ID; user-controlled execution is the preferred workflow.
+
 - [ ] Add dedicated attack cases for newly populated cells after their normal packet patterns are confirmed. Keep this separate from adding the normal device traffic.
+
+### Further feature proposals from the paper comparison
+
+Discuss and scope these before implementation; existing tasks above retain priority. Deployment drift detection and consistent dataset selection are already listed under GNS3 tooling and cleanup.
+
+- [ ] Add configurable device resource and link profiles: container CPU/RAM limits plus bandwidth, delay, jitter, and packet loss to approximate constrained field devices and communication links. Keep enforcement separate from measurement-only reporting, preserve current behavior unless a profile is selected, and verify achieved limits while accounting for compute overload.
+- [ ] Consider automated Docker image preparation and prerequisite checks on each selected compute; document reproducible VyOS appliance preparation.
+- [ ] Consider explicit node placement across multiple computes if single-compute capacity becomes limiting; verify configuration, capture, and log attribution across them.
 
 ## 2. Data processing and model development — future
 
@@ -37,7 +47,3 @@ Existing PCAP extraction and cleaning are an initial foundation. Record future f
 ## 3. Experimentation, ablation, and model comparison — future
 
 Record proposed experiment designs and comparison questions here when discussed. Do not begin this work until prompted.
-
-## 4. Paper authoring — future planning scope
-
-Focus the paper on two contributions: (1) the reproducible Metropolis OT water-treatment testbed and (2) its versioned traffic dataset. Describe how scenarios generate traffic, how each capture's scenario and source are recorded, and how labels are assigned and checked. Distinguish planned capabilities from implemented and runtime-verified results; do not claim that captures or labels have been validated until that work is complete. Attack detection and detector evaluation are future work, outside this paper's current scope.

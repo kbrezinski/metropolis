@@ -140,7 +140,8 @@ uv run python scripts/gns3/run.py experiment_run \
 ```
 
 Defaults: capture every built, capturable physical link for 60 seconds, collect
-container diagnostics and syslog, and generate a run ID if omitted.
+container diagnostics and syslog, sample CPU/RAM every five seconds, and
+generate a run ID if omitted. Traffic reports reuse the completed PCAPs.
 
 | Option | Effect |
 |---|---|
@@ -149,6 +150,9 @@ container diagnostics and syslog, and generate a run ID if omitted.
 | `--configure-routers` | Apply router settings after startup |
 | `--dataset PATH` | Read a different dataset for the run |
 | `--project NAME` | Use a different GNS3 project |
+| `--metrics-interval SECONDS` | Set the CPU/RAM sampling interval; default 5, positive and finite |
+| `--no-metrics` | Disable resource sampling and traffic reports for this run |
+| `--profile PATH` | Explicitly apply a resource/link profile for this run, then restore its original settings |
 
 To collect startup logs, use `--start-lab --configure-routers` on a stopped lab.
 Nodes remain running when collection finishes. Launch any
@@ -209,6 +213,7 @@ All experiment files share one run ID:
 | `runs/<run-id>/logs/devices.jsonl` | Normalized container diagnostics |
 | `runs/<run-id>/logs/syslog.jsonl` | Router syslog and bridged switch events |
 | `runs/<run-id>/logs/raw/` | Original container lines, with secret redaction |
+| `runs/<run-id>/metrics/` | Resource samples, traffic rates, summary, and charts |
 
 | Source | Collection path and limits |
 |---|---|
@@ -234,6 +239,145 @@ blocks are redacted; review arbitrary log text before sharing.
 
 Record formats: [run schema](../../schemas/experiment-run.schema.json) and
 [event schema](../../schemas/device-log-event.schema.json).
+
+## CPU, memory, and traffic reports
+
+`experiment_run` starts read-only resource collection before optional lab
+startup and stops it on completion, errors, or interruption. It discovers
+containers from GNS3 and connects to the Docker engine on each node's compute
+using the same `--docker-host` mappings as log collection, including remote
+computes. The Docker SDK is installed by `uv sync --group dev`.
+SSH metrics use keys or an agent and require a trusted host key in the user's
+known-hosts file. They read ordinary SSH host, user, port, and identity settings;
+`ProxyCommand` is unsupported for resource metrics. Remote sampling has bounded
+worker processes so an unresponsive compute cannot hold up cleanup indefinitely.
+
+| File under `runs/<run-id>/metrics/` | Contents |
+|---|---|
+| `containers.jsonl` | Incremental container CPU, memory, identity, and existing resource limits |
+| `computes.jsonl` | Incremental overall compute CPU/RAM and available capacity information |
+| `bandwidth.csv` | Packets, original packet bytes, packets/s, and bits/s per captured link and time interval |
+| `summary.json` | Measurement coverage, summaries, output paths, and failures |
+| `charts/` | Named CPU/RAM and traffic charts generated after collection |
+
+Samples carry the shared run ID and UTC time. Container CPU at 100% means one
+fully used CPU core and can exceed 100% across several cores. Compute CPU is
+the overall percentage reported by GNS3. Memory records preserve raw usage,
+cache-adjusted working set, and the reported limit. Existing CPU/memory limits
+are observed without changing them. Container CPU needs two readings; its first
+sample is unavailable. Collection does not add network traffic
+inside the testbed or apply bandwidth, delay, jitter, packet-loss, or device
+resource restrictions.
+
+Bandwidth is **observed traffic rate**, derived after the run from successful
+PCAP copies in one-second intervals. Each capture point remains separate:
+the same packet can appear on several links, so their rates are not summed into
+a global network total. First and last intervals use their actual captured
+duration when packet timestamps fit the recorded capture window. Small clock
+differences use clearly marked estimated whole-second bounds; a discrepancy
+above 60 seconds fails that link's report. Rates use original packet lengths,
+excluding physical-layer overhead; they describe capture coverage, not link capacity or proof that no
+packets were missed. Charts identify each compute, container, or captured link.
+
+Missing readings remain unavailable rather than becoming zero. Container
+restarts retain the new container identity. Unsupported nodes, collection
+failures, and report failures are recorded in the run manifest; incremental
+resource records remain available after a failed run. The
+[resource sample schema](../../schemas/resource-metric.schema.json) describes
+both container and compute records.
+
+VyOS QEMU appliances have no Docker container resource sample. Their work,
+Open vSwitch kernel forwarding, capture, and other processes may contribute to
+overall compute usage. High utilization can indicate possible overload; it
+does not establish what caused a slowdown. Unavailable GNS3 compute readings
+are reported explicitly. Tests use mocked services and PCAP fixtures; verify
+actual collection, attribution, and overhead in your GNS3 environment.
+
+## Optional device and link profiles
+
+Profiles deliberately constrain selected devices and communication links.
+Without `--profile`, experiment behavior and measurement-only reporting stay
+unchanged. Enforcement uses separate tooling from the read-only collector.
+
+Copy the [example YAML](profiles/constrained-field.example.yaml), replace its
+placeholder node name and declared link ID with selectors from your selected
+dataset, then run:
+
+```bash
+uv run python scripts/gns3/run.py experiment_run \
+  --run-id constrained_001 --duration 120 --profile /path/to/profile.yaml \
+  --docker-host "$COMPUTE_DOCKER"
+```
+
+| Setting | Meaning |
+|---|---|
+| `devices[].node` | Declared Docker device or switch name; addresses are resolved from the dataset |
+| `cpus` | CPU allowance in cores, at least `0.01`, such as `0.5` |
+| `memory_bytes` | RAM limit in bytes; at least 6 MiB |
+| `links[].link` | Declared link ID, resolved to both GNS3 endpoint identities and port numbers |
+| `bandwidth_kbps` | Per-direction bandwidth ceiling in decimal kilobits/s |
+| `delay_ms`, `jitter_ms` | Added latency and variable delay, in milliseconds |
+| `loss_percent` | Random packet-loss percentage per direction |
+
+The [profile schema](../../schemas/run-profile.schema.json) requires at least
+one selected device or link and one setting for each entry. Unknown targets,
+duplicate targets, unknown keys, and invalid numeric settings are rejected.
+CPU/RAM limits require Docker access to the target's compute. Reversible RAM
+changes require a finite existing memory limit; the runner rejects an unlimited
+baseline rather than silently keeping a new limit or recreating the container.
+If RAM profiles are needed, deliberately establish a baseline before the run.
+For example, after identifying the target container on its compute:
+
+```bash
+# Choose the container and baseline size for your device; this changes setup.
+CONTAINER_ID=YOUR_CONTAINER_ID
+docker --host "${COMPUTE_DOCKER#*=}" update \
+  --memory 512m --memory-swap 512m "$CONTAINER_ID"
+```
+
+Both values must be explicit. Size the baseline for the simulator's normal
+operation; the run temporarily applies its selected RAM limit and restores the
+baseline afterward. This preparation is optional and is never applied by
+default. CPU and link profiles do not require a RAM baseline.
+
+GNS3 link filters provide delay, jitter, and loss. Actual bandwidth control
+requires a port on the repo-owned Open vSwitch image: ingress policing limits
+traffic entering that port, while Linux HTB shaping limits traffic leaving it.
+Policing can drop excess traffic. Rebuild the Open vSwitch image using the
+[image-build instructions](#2-build-the-images-on-the-compute) to install its
+profile helper and required tools. Existing switch containers must be recreated
+or redeployed to use the rebuilt image; the builder reuses existing nodes.
+A bandwidth profile on a link without a
+supported switch endpoint fails explicitly. Existing custom switch QoS is not
+overwritten.
+Only an empty/default `noqueue` kernel queue is supported; existing custom
+queue disciplines are rejected before any profile settings are applied.
+
+Every target is checked and its original settings are saved in
+`runs/<run-id>/profiles.json` before enforcement. The run records selected
+profile identity, hash, configuration readback, failures, and restoration.
+Original settings are restored when the run ends, including on errors and
+interruption. Retain the state file for recovery if the controller process is
+killed before cleanup.
+Unlimited CPU capacity is restored with Docker's equivalent unlimited quota;
+its zero-valued metadata can become a period of 100000 and quota of -1.
+Restored values and any such metadata differences remain in the state file.
+
+For manual recovery, use the matching project and compute connections:
+
+```bash
+uv run python scripts/gns3/run.py restore_profile \
+  --state /path/to/run/profiles.json --docker-host "$COMPUTE_DOCKER"
+```
+
+Configuration readback verifies the requested settings, not the achieved
+communication conditions. Existing CPU/RAM and PCAP reports provide observed
+usage and throughput; low offered traffic cannot establish a bandwidth ceiling,
+and one capture point cannot establish added delay, jitter, or packet loss.
+The runner does not generate stress loads or active probe traffic. Compare
+observed conditions with a baseline while checking overall compute load;
+overload can confound the result. Live achieved-limit checks remain part of
+your GNS3 verification.
 
 ## Routed firewall policy
 
@@ -276,6 +420,7 @@ If restoration fails, check the router policy before the next experiment.
 | Switch configuration failure | Docker mapping, OVS kernel support, permissions, and adapter count |
 | Empty PCAP | Selected physical link, actual traffic, and capture manifest failures |
 | Missing logs | Compute ID/URI, Docker access, node startup, log rotation, source status |
+| Missing metrics/charts | Compute Docker access, source status and failures, and the installed development dependencies |
 | Legacy static routes | Use the router loader; it removes only routes from earlier Metropolis scripts and its managed `MET_` firewall rules |
 | Need port numbers | `build_topology --plan --write-ports PATH` or the [generated switch reference](../../testbeds/metropolis/switch/README.md) |
 

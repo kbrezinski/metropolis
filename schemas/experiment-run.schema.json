@@ -48,6 +48,71 @@
     "attack_events_path": {"type": "string"},
     "selected_capture_links": {"type": "array", "uniqueItems": true, "items": {"type": "string"}},
     "captures": {"type": "array", "items": {"type": "string"}},
+    "profiles": {
+      "type": "object",
+      "required": ["enabled"],
+      "properties": {
+        "enabled": {"type": "boolean"},
+        "name": {"type": "string"},
+        "path": {"type": "string"},
+        "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+        "state_path": {"type": "string"},
+        "status": {"enum": ["planned", "applied", "restored", "failed"]},
+        "configuration_verified": {"type": "boolean"},
+        "restored": {"type": "boolean"},
+        "devices": {"type": "array", "items": {"type": "object"}},
+        "links": {"type": "array", "items": {"type": "object"}},
+        "failures": {"$ref": "#/$defs/metricFailures"},
+        "observations": {"type": "object"}
+      },
+      "additionalProperties": false
+    },
+    "metrics": {
+      "type": "object",
+      "required": ["enabled", "status", "sample_interval_seconds"],
+      "properties": {
+        "enabled": {"type": "boolean"},
+        "status": {"enum": ["disabled", "running", "complete", "failed"]},
+        "sample_interval_seconds": {"type": "number", "exclusiveMinimum": 0},
+        "resource": {
+          "type": "object",
+          "required": ["status", "container_samples_path", "compute_samples_path", "sources", "computes", "failures"],
+          "properties": {
+            "status": {"enum": ["running", "complete", "failed"]},
+            "started_at_utc": {"type": "string", "format": "date-time"},
+            "stopped_at_utc": {"type": "string", "format": "date-time"},
+            "container_samples_path": {"type": "string"},
+            "compute_samples_path": {"type": "string"},
+            "sources": {"type": "object", "additionalProperties": {"$ref": "#/$defs/metricSource"}},
+            "computes": {"type": "object", "additionalProperties": {"$ref": "#/$defs/metricCompute"}},
+            "failures": {"$ref": "#/$defs/metricFailures"}
+          },
+          "additionalProperties": false
+        },
+        "traffic": {
+          "type": "object",
+          "required": ["csv_path", "bin_seconds", "links", "failures"],
+          "properties": {
+            "csv_path": {"type": "string"},
+            "bin_seconds": {"const": 1},
+            "links": {"type": "object", "additionalProperties": {"type": "object"}},
+            "failures": {"$ref": "#/$defs/metricFailures"}
+          },
+          "additionalProperties": false
+        },
+        "summary_path": {"type": "string"},
+        "charts": {"type": "array", "items": {"type": "string"}},
+        "failures": {"$ref": "#/$defs/metricFailures"}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"enabled": {"const": false}}},
+          "then": {"properties": {"status": {"const": "disabled"}}},
+          "else": {"properties": {"status": {"enum": ["running", "complete", "failed"]}}}
+        }
+      ],
+      "additionalProperties": false
+    },
     "capture": {
       "type": "object",
       "required": ["manifest_path", "links", "unavailable_declared_links", "failures"],
@@ -110,5 +175,46 @@
       }
     }
   },
-  "additionalProperties": false
+  "additionalProperties": false,
+  "$defs": {
+    "metricSource": {
+      "type": "object",
+      "required": ["name", "node_id", "node_type", "compute_id", "container_ids", "samples", "status"],
+      "properties": {
+        "name": {"type": "string"},
+        "node_id": {"type": "string"},
+        "node_type": {"type": "string"},
+        "compute_id": {"type": "string"},
+        "container_ids": {"type": "array", "items": {"type": "string"}},
+        "samples": {"type": "integer", "minimum": 0},
+        "status": {"enum": ["pending", "collecting", "complete", "unavailable", "unsupported"]},
+        "reason": {"type": "string"}
+      },
+      "additionalProperties": false
+    },
+    "metricCompute": {
+      "type": "object",
+      "required": ["name", "compute_id", "samples", "status"],
+      "properties": {
+        "name": {"type": "string"},
+        "compute_id": {"type": "string"},
+        "samples": {"type": "integer", "minimum": 0},
+        "status": {"enum": ["pending", "collecting", "complete", "unavailable"]},
+        "reason": {"type": "string"}
+      },
+      "additionalProperties": false
+    },
+    "metricFailures": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["source", "reason"],
+        "properties": {
+          "source": {"type": "string"},
+          "reason": {"type": "string"}
+        },
+        "additionalProperties": false
+      }
+    }
+  }
 }

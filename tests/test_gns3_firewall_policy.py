@@ -499,6 +499,7 @@ def test_experiment_restores_baseline_after_failure_or_interrupt(
         baseline_firewall_commands={"router-a": ["baseline"]},
         firewall_exceptions=[{"source": "attack", "destination": "target"}],
         collector_factory=Collector,
+        metrics_enabled=False,
     )
     assert calls == [
         {"router-a": ["exception"]},
@@ -555,6 +556,7 @@ def test_experiment_reports_failed_baseline_restoration(tmp_path, monkeypatch):
         baseline_firewall_commands={"router-a": ["baseline"]},
         firewall_exceptions=[{"source": "attack", "destination": "target"}],
         collector_factory=Collector,
+        metrics_enabled=False,
     )
     assert calls == 2
     assert manifest["firewall"]["restored_baseline"] is False

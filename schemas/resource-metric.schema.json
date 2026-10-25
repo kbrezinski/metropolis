@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://metropolis.local/schemas/resource-metric.schema.json",
+  "title": "Metropolis container or compute resource sample",
+  "description": "Read-only run measurements. Null means unavailable, not zero usage.",
+  "oneOf": [
+    {"$ref": "#/$defs/container"},
+    {"$ref": "#/$defs/compute"}
+  ],
+  "$defs": {
+    "timestamp": {"type": "string", "format": "date-time", "pattern": "(?:Z|\\+00:00)$"},
+    "identity": {"type": "string", "minLength": 1},
+    "bytes": {"type": ["integer", "null"], "minimum": 0},
+    "percent": {"type": ["number", "null"], "minimum": 0},
+    "container": {
+      "type": "object",
+      "required": ["schema_version", "timestamp", "run_id", "source", "node_id", "compute_id", "container_id", "elapsed_seconds", "cpu_percent", "memory_usage_bytes", "memory_working_set_bytes", "memory_limit_bytes", "configured_limits", "oom_killed"],
+      "properties": {
+        "schema_version": {"const": "1.0"},
+        "timestamp": {"$ref": "#/$defs/timestamp"},
+        "run_id": {"$ref": "#/$defs/identity"},
+        "source": {"$ref": "#/$defs/identity"},
+        "node_id": {"$ref": "#/$defs/identity"},
+        "compute_id": {"$ref": "#/$defs/identity"},
+        "container_id": {"$ref": "#/$defs/identity"},
+        "elapsed_seconds": {"type": ["number", "null"], "exclusiveMinimum": 0},
+        "cpu_percent": {
+          "$ref": "#/$defs/percent",
+          "description": "One fully used CPU core is 100%; multiple cores can exceed 100%."
+        },
+        "memory_usage_bytes": {"$ref": "#/$defs/bytes"},
+        "memory_working_set_bytes": {
+          "$ref": "#/$defs/bytes",
+          "description": "Memory usage excluding inactive file cache when the counter is available."
+        },
+        "memory_limit_bytes": {"$ref": "#/$defs/bytes"},
+        "configured_limits": {
+          "type": "object",
+          "description": "Selected resource-limit fields from Docker inspection; no container environment or credentials.",
+          "properties": {
+            "Memory": {"type": ["integer", "null"]},
+            "MemorySwap": {"type": ["integer", "null"]},
+            "MemoryReservation": {"type": ["integer", "null"]},
+            "NanoCpus": {"type": ["integer", "null"]},
+            "CpuPeriod": {"type": ["integer", "null"]},
+            "CpuQuota": {"type": ["integer", "null"]},
+            "CpusetCpus": {"type": ["string", "null"]},
+            "CpusetMems": {"type": ["string", "null"]}
+          },
+          "additionalProperties": false
+        },
+        "oom_killed": {"type": ["boolean", "null"]}
+      },
+      "additionalProperties": false
+    },
+    "compute": {
+      "type": "object",
+      "required": ["schema_version", "timestamp", "run_id", "source", "compute_id", "cpu_percent", "memory_percent", "cpu_count", "memory_total_bytes"],
+      "properties": {
+        "schema_version": {"const": "1.0"},
+        "timestamp": {"$ref": "#/$defs/timestamp"},
+        "run_id": {"$ref": "#/$defs/identity"},
+        "source": {"$ref": "#/$defs/identity"},
+        "compute_id": {"$ref": "#/$defs/identity"},
+        "cpu_percent": {"type": ["number", "null"], "minimum": 0, "maximum": 100},
+        "memory_percent": {"type": ["number", "null"], "minimum": 0, "maximum": 100},
+        "cpu_count": {"type": ["integer", "null"], "minimum": 1},
+        "memory_total_bytes": {"$ref": "#/$defs/bytes"}
+      },
+      "additionalProperties": false
+    }
+  }
+}

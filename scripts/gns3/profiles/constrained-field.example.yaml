@@ -1,0 +1,15 @@
+# Copy this file and replace both selectors with names from your selected dataset.
+# No profile is applied unless --profile PATH is supplied to experiment_run.
+schema_version: "1.0"
+name: constrained-field-example
+devices:
+  - node: YOUR_DEVICE_NAME
+    cpus: 0.5
+    # A reversible memory change requires a finite existing RAM limit.
+    memory_bytes: 134217728  # 128 MiB
+links:
+  - link: YOUR_DECLARED_LINK_ID
+    bandwidth_kbps: 1000
+    delay_ms: 20
+    jitter_ms: 5
+    loss_percent: 1

@@ -10,6 +10,8 @@ Metropolis is a GNS3 water-treatment OT testbed with versioned topology data, si
 
 Read PLANS.md when discussing or changing priorities. Category 1 (testbed and attack scripts) is active. Record future ideas and decisions in PLANS.md without starting categories 2–4. Keep the plan brief. For substantial implementation, expand the relevant item into an executable plan before coding. Remove completed tasks rather than checking them off.
 
+For paper writing and brainstorming, read and update [docs/paper/PAPER_PLAN.md](docs/paper/PAPER_PLAN.md). It holds paper objectives, writing tasks, and exploratory feature ideas or research questions. Record all new feature proposals and implementation tasks in root PLANS.md, reusing existing entries rather than duplicating them. Paper drafts and supporting material belong in docs/paper/.
+
 Python 3.12 is managed with uv. The package uses a src/ layout; GNS3 and attack tooling live under scripts/.
 
 ## Useful commands

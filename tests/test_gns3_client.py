@@ -52,6 +52,16 @@ def test_version_and_reachability():
     assert transport.calls[-1] == ("GET", "/version", None)
 
 
+def test_compute_usage_preserves_missing_measurements():
+    records = [
+        {"compute_id": "remote", "cpu_usage_percent": 10, "memory_usage_percent": None}
+    ]
+    client, transport = client_with([records, None])
+    assert client.computes() == records
+    assert client.computes() == []
+    assert transport.calls == [("GET", "/computes", None)] * 2
+
+
 def test_reachable_is_false_when_the_server_refuses():
     class Unreachable(FakeTransport):
         def request(self, *args, **kwargs):

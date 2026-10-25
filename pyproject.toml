@@ -54,12 +54,14 @@ packages = ["src/metropolis"]
 # device models and tools are written against those APIs: pymodbus 4.x moves the
 # server API and breaks the Modbus controller. Keep the two lists in step.
 #
-# matplotlib and networkx are only needed to draw a topology as an image
-# (metropolis.topology.draw), so the library imports them lazily and they stay
-# out of the runtime dependencies. networkx already arrives transitively with
+# matplotlib is used for topology images and experiment metrics charts;
+# Docker SDK access is used only by the read-only experiment resource collector.
+# These tools import them lazily and keep them out of runtime dependencies.
+# networkx already arrives transitively with
 # scikit-learn; it is named here because it is used directly.
 dev = [
     "codespell>=2.4.2",
+    "docker[ssh]>=7.1,<8",
     "jsonschema>=4.23.0",
     "matplotlib>=3.9",
     "networkx>=3.0",
@@ -67,6 +69,7 @@ dev = [
     "paramiko==4.0.0",
     "pre-commit>=4.5.1",
     "pymodbus==3.8.6",
+    "pywin32>=308; sys_platform == 'win32'",
     "pytest>=9.0.3",
     "ruff>=0.15.11",
     "scapy==2.6.1",

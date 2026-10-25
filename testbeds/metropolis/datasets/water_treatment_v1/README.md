@@ -49,9 +49,11 @@ uv run python -m metropolis.topology \
 |---|---|
 | `captures/<run-id>/` | Copied PCAPs and their capture manifest |
 | `runs/<run-id>/manifest.json` | Configuration, collection results, and failures |
+| `runs/<run-id>/profiles.json` | Selected optional limits, original settings, readback, and restoration state |
 | `runs/<run-id>/timeline.jsonl` | Run actions and project status |
 | `runs/<run-id>/attacks.jsonl` | Separately launched attack actions |
 | `runs/<run-id>/logs/` | Syslog, normalized container diagnostics, and raw logs |
+| `runs/<run-id>/metrics/` | CPU/RAM samples, per-link traffic rates, summary, and charts |
 | `runs/<run-id>/features/` | Extracted/cleaned CSVs and processing reports |
 
 Capture and run outputs are Git ignored. Archive them with their manifests
@@ -61,3 +63,9 @@ version when the experiment configuration needs a new identity.
 Use the [GNS3 guide](../../../../scripts/gns3/README.md) to collect a run and
 the [processing guide](../../../../scripts/README.md#dataset-processing-pipeline)
 to extract its packet features.
+
+Experiment metrics are enabled by default. CPU/RAM is sampled every five
+seconds; traffic rates reuse the PCAPs in one-second intervals per captured
+link. These observations do not apply device limits or degrade links. See the
+[metrics guide](../../../../scripts/gns3/README.md#cpu-memory-and-traffic-reports)
+for options, file formats, missing-source reporting, and compute limitations.

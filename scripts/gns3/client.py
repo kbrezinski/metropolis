@@ -76,6 +76,10 @@ class Gns3Client:
             return False
         return True
 
+    def computes(self) -> list[dict]:
+        """Read compute identities and overall CPU/memory usage, when available."""
+        return list(self.transport.request("GET", "/computes") or [])
+
     # -- projects ---------------------------------------------------------
 
     def projects(self) -> list[Project]:
@@ -256,6 +260,12 @@ class Gns3Client:
         return self.transport.request("POST", f"/projects/{project_id}/links", payload)
 
     # -- captures ---------------------------------------------------------
+
+    def set_link_filters(self, project_id: str, link_id: str, filters: dict) -> dict:
+        """Update only a physical link's native GNS3 packet filters."""
+        return self.transport.request(
+            "PUT", f"/projects/{project_id}/links/{link_id}", {"filters": filters}
+        )
 
     def start_capture(
         self, project_id: str, link_id: str, *, data_link_type: str = "DLT_EN10MB"
