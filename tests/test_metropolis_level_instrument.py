@@ -18,14 +18,6 @@ sys.modules[spec.name] = instrument
 spec.loader.exec_module(instrument)
 
 
-def test_level_changes_slowly_and_stays_in_range():
-    assert instrument.sample(0, minimum=400, maximum=700, period=180) == 400
-    assert instrument.sample(45, minimum=400, maximum=700, period=180) == 550
-    assert instrument.sample(90, minimum=400, maximum=700, period=180) == 700
-    assert instrument.sample(135, minimum=400, maximum=700, period=180) == 550
-    assert instrument.sample(180, minimum=400, maximum=700, period=180) == 400
-
-
 def test_modbus_level_and_heartbeat_registers():
     context = instrument.make_context()
     assert context[0].getValues(3, 0, 2) == [400, 0]

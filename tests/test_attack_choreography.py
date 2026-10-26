@@ -16,59 +16,11 @@ import threading
 from pathlib import Path
 
 import pytest
-import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 ATTACKS = ROOT / "scripts/attacks"
 MIRAI = ROOT / "testbeds/metropolis/devices/attack/mirai"
 MERLIN = ROOT / "testbeds/metropolis/devices/attack/merlin"
-
-
-@pytest.fixture
-def choreography_inventory(tmp_path):
-    inventory = tmp_path / "initial_devices.yaml"
-    inventory.write_text(
-        yaml.safe_dump(
-            {
-                "testbed_id": "fixture",
-                "devices": [
-                    {
-                        "name": "MIRAI-CNC-A",
-                        "address": "10.77.4.10/24",
-                        "protocols": ["mirai-cnc"],
-                    },
-                    {
-                        "name": "MIRAI-LISTENER-A",
-                        "address": "10.77.4.11/24",
-                        "protocols": ["mirai-report"],
-                    },
-                    {
-                        "name": "MIRAI-LOADER-A",
-                        "address": "10.77.4.12/24",
-                        "protocols": ["payload-delivery"],
-                        "environment": {"LOADER_KIND": "wget"},
-                    },
-                    {
-                        "name": "MERLIN-CNC-A",
-                        "address": "10.77.4.20/24",
-                        "protocols": ["merlin-control"],
-                        "environment": {
-                            "MERLIN_CONTROL_PORT": "2323",
-                            "MERLIN_HTTP_PORT": "8444",
-                        },
-                    },
-                    {
-                        "name": "MERLIN-AGENT-A",
-                        "address": "10.77.4.21/24",
-                        "protocols": ["merlin-agent"],
-                        "environment": {"MERLIN_CNC_URL": "http://10.77.4.20:8444"},
-                    },
-                ],
-            }
-        ),
-        encoding="utf-8",
-    )
-    return inventory
 
 
 def invoke(name, *args, ack=True):
@@ -86,12 +38,6 @@ def invoke(name, *args, ack=True):
         text=True,
         timeout=30,
     )
-
-
-def records(result):
-    return [
-        json.loads(line) for line in result.stdout.splitlines() if line.startswith("{")
-    ]
 
 
 def load_file(name, path):
@@ -239,46 +185,7 @@ def test_merlin_cnc_listener_and_upload_lifecycle():
     assert state.uploads[0]["bytes"] == len(b"inert artefact")
 
 
-@pytest.mark.parametrize(
-    "name,args",
-    [
-        ("mirai/run_mirai_choreography.py", []),
-        ("merlin/run_merlin.py", []),
-    ],
-)
-def test_choreography_dry_runs_resolve_inventory(name, args, choreography_inventory):
-    """Both drivers resolve every node without sending traffic."""
-    result = invoke(
-        name, "--inventory", choreography_inventory, *args, "--dry-run", ack=False
-    )
-    assert result.returncode == 0, result.stdout + result.stderr
-    start = records(result)[0]
-    assert start["dry_run"] is True
-    if name == "mirai/run_mirai_choreography.py":
-        assert start["cnc"] == "10.77.4.10:23"
-        assert start["listener"] == "10.77.4.11:48101"
-        assert start["loader"] == "10.77.4.12:80"
-    else:
-        assert start["cnc"] == "10.77.4.20:2323"
-        assert start["http"] == "10.77.4.20:8444"
-        assert start["agent"] == "10.77.4.21"
-
-
 def test_choreography_requires_the_lab_acknowledgement():
     """Neither driver sends traffic without the explicit lab acknowledgement."""
     assert invoke("mirai/run_mirai_choreography.py", ack=False).returncode == 2
     assert invoke("merlin/run_merlin.py", ack=False).returncode == 2
-
-
-def test_choreography_rejects_unknown_nodes(choreography_inventory):
-    """An unknown node name fails during resolution, before any traffic."""
-    result = invoke(
-        "mirai/run_mirai_choreography.py",
-        "--inventory",
-        choreography_inventory,
-        "--cnc-node",
-        "MISSING-A",
-        "--dry-run",
-    )
-    assert result.returncode == 2
-    assert "not in the inventory" in result.stdout

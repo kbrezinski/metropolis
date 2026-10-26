@@ -5,7 +5,9 @@ description: "Write, change, review, or audit Metropolis Python tests for reusab
 
 # Metropolis Test Audit
 
-Follow root [AGENTS.md](../../../AGENTS.md) and audit only the requested scope. The active work is the testbed and its tooling; a test audit does not authorize model development or changes to the running lab. The pytest suite includes offline integration and loopback protocol tests, not just pure functions.
+Follow root [AGENTS.md](../../../AGENTS.md) and audit only the requested scope. The active work is the testbed and its tooling; a test audit does not authorize model development or changes to the running lab. The pytest suite includes offline integration and loopback protocol tests, not just pure functions. 
+
+Goal: Remove 20% of the least useful tests while maintaining code coverage within 2%
 
 ## Choose the right owner
 

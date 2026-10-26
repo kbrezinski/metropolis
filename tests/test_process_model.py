@@ -54,12 +54,6 @@ def step(model, state, seconds, pump_on):
     return model.update(state, seconds, pump_on)
 
 
-def test_update_is_pure(model):
-    """The same inputs must always give the same result."""
-    start = model.initial(650, 120, 950)
-    assert step(model, start, 1.0, True) == step(model, start, 1.0, True)
-
-
 def test_the_pump_raises_the_level_and_the_flow_register(model):
     start = model.initial(650, 120, 950)
     # A short interval keeps the level inside its bounds, so this measures the
@@ -73,24 +67,6 @@ def test_the_pump_raises_the_level_and_the_flow_register(model):
     assert without.flow == model.FLOW_PUMP_OFF
 
 
-def test_the_level_settles_instead_of_draining_or_overflowing(model):
-    """Left alone in one pump state, the level must reach a steady point."""
-    state = model.initial(650, 120, 950)
-    for _ in range(600):
-        state = step(model, state, 1.0, False)
-    off_settled = state.level
-
-    state = model.initial(650, 120, 950)
-    for _ in range(900):
-        state = step(model, state, 1.0, True)
-    on_settled = state.level
-
-    assert model.LEVEL_MIN < off_settled < model.LEVEL_MAX
-    assert off_settled < on_settled
-    # A further second must no longer move the level appreciably.
-    assert abs(step(model, state, 1.0, True).level - on_settled) <= 2
-
-
 def test_values_stay_inside_the_documented_bounds(model):
     state = model.initial(1, 0, 0)
     for pump in (True, False):
@@ -99,15 +75,6 @@ def test_values_stay_inside_the_documented_bounds(model):
         assert model.LEVEL_MIN <= state.level <= model.LEVEL_MAX
         assert model.FLOW_MIN <= state.flow <= model.FLOW_MAX
         assert model.QUALITY_MIN <= state.quality <= model.QUALITY_MAX
-
-
-def test_quality_moves_in_both_directions(model):
-    """Quality must change, or a constant would be the detector's give-away."""
-    state = model.initial(650, 120, 950)
-    rising = step(model, state, 60.0, True).quality
-    falling = step(model, state, 60.0, False).quality
-    assert rising > state.quality
-    assert falling < state.quality
 
 
 def test_the_registers_are_the_state(model):
@@ -133,14 +100,6 @@ def test_the_process_advances_a_fraction_at_a_time(model):
     after = step(model, start, 0.1, False)
     assert after.level != start.level
     assert start.level - after.level < 1.0
-
-
-def test_an_outside_write_moves_the_process_and_is_steered_back(model):
-    """A write is a real perturbation, not a value the model accepts."""
-    written = model.initial(999, 120, 950)
-    after = step(model, written, 1.0, False)
-    # The level falls from the manipulated value rather than staying put.
-    assert after.level < written.level
 
 
 # -- coupling with the sensor -------------------------------------------------

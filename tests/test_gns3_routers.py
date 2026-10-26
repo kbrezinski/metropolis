@@ -17,7 +17,6 @@ if str(GNS3) not in sys.path:
     sys.path.insert(0, str(GNS3))
 
 from router_config import (  # noqa: E402
-    CONFIG_PROMPT,
     OP_PROMPT,
     Console,
     RouterError,
@@ -138,23 +137,6 @@ def scripted_interfaces(script: Path) -> bytes:
 # -- script reading -----------------------------------------------------------
 
 
-def test_config_commands_drops_comments_and_blanks(tmp_path):
-    script = tmp_path / "router.sh"
-    script.write_text(
-        "# Comment\nconfigure\n\nset interfaces ethernet eth0 address '192.0.2.1/24'\n"
-        "commit\nsave\nexit\n",
-        encoding="utf-8",
-    )
-    commands = config_commands(script)
-    assert all(not item.startswith("#") for item in commands)
-    assert all(item.strip() for item in commands)
-    assert commands == [
-        "set interfaces ethernet eth0 address '192.0.2.1/24'",
-        "commit",
-        "save",
-    ]
-
-
 def test_expected_interfaces_reads_vif_addresses(tmp_path):
     """A trunk interface's subinterface addresses count as its interfaces."""
     script = tmp_path / "router.sh"
@@ -168,14 +150,6 @@ def test_expected_interfaces_reads_vif_addresses(tmp_path):
 
 
 # -- console ----------------------------------------------------------------
-
-
-def test_console_login_waits_for_each_prompt(scripted):
-    fake = scripted()
-    with Console("127.0.0.1", 1, timeout=1.0) as console:
-        console.login("vyos", "vyos")
-    # One line per prompt, in order: the username then the password.
-    assert fake.sent == [b"vyos\n", b"vyos\n"]
 
 
 def test_console_expect_raises_on_timeout(scripted):
@@ -226,6 +200,7 @@ def test_apply_sends_every_command_and_verifies_addresses(scripted, router_scrip
     assert result.applied is True
     assert result.commands == len(commands)
     assert result.missing == [], result.missing
+    assert fake.sent[:2] == [b"vyos\n", b"vyos\n"]
     sent = b"".join(fake.sent).decode()
     assert "configure" in sent
     for command in commands:
@@ -338,8 +313,3 @@ def test_apply_returns_an_error_when_login_never_completes(scripted, router_scri
     assert result.applied is False
     assert result.error is not None
     assert "timed out" in result.error
-
-
-def test_config_prompt_matches_a_vyos_configuration_prompt():
-    assert CONFIG_PROMPT.search(b"vyos@vyos# ")
-    assert not CONFIG_PROMPT.search(b"vyos@vyos:~$ ")

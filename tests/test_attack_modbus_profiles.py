@@ -101,39 +101,7 @@ def started(result):
     ("node", "action", "profile", "area", "address", "meaning"),
     [
         ("INTAKE", "set-flow", "intake", "holding-register", 1, "process_flow_x10"),
-        (
-            "DOSING",
-            "set-dose-setpoint",
-            "dosing",
-            "holding-register",
-            4,
-            "dose_setpoint_x10_percent",
-        ),
-        (
-            "FILTRATION",
-            "set-backwash-threshold",
-            "filtration",
-            "holding-register",
-            4,
-            "backwash_threshold_x10_kpa",
-        ),
-        (
-            "DISINFECTION",
-            "set-residual-target",
-            "disinfection",
-            "holding-register",
-            4,
-            "residual_target_x10_mg_per_l",
-        ),
         ("RESERVOIR", "force-pump", "reservoir", "coil", 0, "remote_pump_request"),
-        (
-            "RAW-WATER",
-            "set-level",
-            "raw_water",
-            "holding-register",
-            0,
-            "remote_level_x10_percent",
-        ),
     ],
 )
 def test_action_follows_selected_cell_profile(

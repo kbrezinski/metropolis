@@ -29,13 +29,6 @@ def test_show_prints_a_summary(capsys):
     assert "networks " in out
 
 
-def test_show_can_read_a_dataset_directory(capsys):
-    assert main(["show"]) == 0
-    bundled_summary = capsys.readouterr().out
-    assert main(["--dataset", str(DATASET), "show"]) == 0
-    assert capsys.readouterr().out == bundled_summary
-
-
 def test_show_can_write_to_a_file(capsys, tmp_path):
     target = tmp_path / "summary.txt"
     assert main(["show", "--out", str(target)]) == 0
@@ -90,11 +83,6 @@ def test_mermaid_render_goes_to_stdout(capsys):
     assert capsys.readouterr().out.startswith("graph TD")
 
 
-def test_dot_render_goes_to_stdout(capsys):
-    assert main(["render", "--format", "dot"]) == 0
-    assert capsys.readouterr().out.startswith("digraph topology {")
-
-
 def test_render_writes_a_file(capsys, tmp_path):
     target = tmp_path / "topology.dot"
     assert main(["render", "--format", "dot", "--out", str(target)]) == 0
@@ -130,10 +118,3 @@ def test_a_missing_dataset_is_reported_not_crashed(capsys, tmp_path):
 def test_no_command_is_a_usage_error():
     with pytest.raises(SystemExit):
         main([])
-
-
-@pytest.mark.parametrize("command", ["show", "check", "render", "export"])
-def test_every_command_has_help(command):
-    with pytest.raises(SystemExit) as caught:
-        main([command, "--help"])
-    assert caught.value.code == 0

@@ -26,7 +26,6 @@ from metropolis.topology import (  # noqa: E402
     Topology,
 )
 from metropolis.topology.draw import (  # noqa: E402
-    _edge_label,
     _graphs,
     available,
     render,
@@ -60,17 +59,6 @@ def small() -> Topology:
 # -- the graph handed to networkx ---------------------------------------------
 
 
-def test_every_node_becomes_a_graph_node(small):
-    graph, kinds, _ = _graphs(small)
-    assert graph.number_of_nodes() == 3
-    assert set(graph.nodes()) == set(kinds)
-
-
-def test_every_link_becomes_a_graph_edge(small):
-    graph, _, _ = _graphs(small)
-    assert graph.number_of_edges() == 2
-
-
 def test_node_kinds_come_from_the_topology(small):
     _, kinds, _ = _graphs(small)
     assert kinds == {"R-EDGE": "router", "sw-1": "switch", "PLC-1": "device"}
@@ -79,17 +67,6 @@ def test_node_kinds_come_from_the_topology(small):
     for kind in kinds.values():
         counts[kind] = counts.get(kind, 0) + 1
     assert counts == {"router": 1, "switch": 1, "device": 1}
-
-
-def test_endpoint_labels_carry_their_address(small):
-    _, _, labels = _graphs(small)
-    assert labels["PLC-1"].startswith("PLC-1")
-    assert str(small.devices[0].address) in labels["PLC-1"]
-
-
-def test_infrastructure_labels_carry_no_address(small):
-    _, _, labels = _graphs(small)
-    assert labels["R-EDGE"] == "R-EDGE"
 
 
 def test_edges_remember_their_kind_and_vlans(small):
@@ -115,28 +92,6 @@ def test_a_link_whose_endpoint_is_not_a_node_is_left_out():
     assert graph.number_of_edges() == 0
 
 
-def test_an_empty_topology_makes_an_empty_graph():
-    graph, kinds, labels = _graphs(Topology(testbed_id="empty"))
-    assert graph.number_of_nodes() == 0
-    assert kinds == {} and labels == {}
-
-
-# -- labels -------------------------------------------------------------------
-
-
-def test_a_link_with_no_vlans_labels_as_its_kind():
-    lab = Topology(testbed_id="x")
-    lab.add(Switch("sw", ports=("a",)), Device("d", image="i"))
-    assert _edge_label(lab.link("l", "sw:a", "d")) == "access"
-
-
-def test_a_link_with_vlans_labels_with_them():
-    lab = Topology(testbed_id="x")
-    lab.add(Switch("sw", ports=("a", "b")), Switch("sw2", ports=("c",)))
-    link = lab.link("l", "sw:a", "sw2:c", kind="trunk", vlans=(10, 11))
-    assert _edge_label(link) == "trunk 10,11"
-
-
 # -- rendering ----------------------------------------------------------------
 
 
@@ -149,19 +104,12 @@ def test_render_writes_a_png(small, tmp_path):
 
 
 @requires_matplotlib
-def test_render_writes_a_vector_image(small, tmp_path):
-    target = tmp_path / "topology.svg"
-    render(small, target)
-    text = target.read_text(encoding="utf-8")
-    assert text.lstrip().startswith("<?xml")
-    assert "svg" in text[:400]
-
-
-@requires_matplotlib
 def test_render_puts_the_title_and_note_in_the_picture(small, tmp_path):
     target = tmp_path / "t.svg"
     render(small, target, title="A title", note="A note")
     text = target.read_text(encoding="utf-8")
+    assert text.lstrip().startswith("<?xml")
+    assert "svg" in text[:400]
     assert "A title" in text
     assert "A note" in text
 

@@ -18,10 +18,6 @@ ROOT = Path(__file__).resolve().parents[1]
 SENSORS = ROOT / "testbeds/metropolis/devices/field/sensors"
 PROBE = ROOT / "testbeds/metropolis/devices/field/reachability_probe"
 
-GNS3 = ROOT / "scripts/gns3"
-if str(GNS3) not in sys.path:
-    sys.path.insert(0, str(GNS3))
-
 
 def load_sensor():
     directory = str(SENSORS)
@@ -172,13 +168,6 @@ def test_an_unknown_publish_mode_is_refused(monkeypatch):
     assert "PUBLISH_MODE" in str(caught.value)
 
 
-def test_persistent_is_the_default_mode():
-    """An existing deployment that sets nothing keeps the old behaviour."""
-    source = (SENSORS / "mqtt_sensor.py").read_text(encoding="utf-8")
-    assert 'os.getenv("PUBLISH_MODE", PERSISTENT)' in source
-    assert 'PERSISTENT = "persistent"' in source
-
-
 # -- reachability probe -------------------------------------------------------
 
 
@@ -187,10 +176,3 @@ def test_the_probe_runs_no_service():
     dockerfile = (PROBE / "Dockerfile").read_text(encoding="utf-8")
     assert 'CMD ["sleep", "infinity"]' in dockerfile
     assert "network-entrypoint.sh" in dockerfile
-
-
-def test_the_probe_template_is_registered():
-    from templates import TEMPLATES
-
-    registered = {item.image for item in TEMPLATES}
-    assert "metropolis/reachability-probe:dev" in registered

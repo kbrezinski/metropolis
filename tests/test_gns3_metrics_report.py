@@ -285,10 +285,3 @@ def test_no_samples_or_captures_is_never_success(tmp_path):
     assert any(
         item["reason"] == "no resource samples available" for item in result["failures"]
     )
-
-
-def test_chart_names_disambiguate_sanitized_identity_collisions():
-    one = metrics_report._chart_name("container", "node/a", "first-id")
-    two = metrics_report._chart_name("container", "node?a", "second-id")
-    assert one != two
-    assert "/" not in one and "?" not in two

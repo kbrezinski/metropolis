@@ -137,10 +137,6 @@ def test_a_missing_dataset_file_is_reported(tmp_path):
 # -- building -----------------------------------------------------------------
 
 
-def test_a_built_topology_validates():
-    assert two_cell().problems() == []
-
-
 def test_ports_are_numbered_by_position():
     """This is the rule the whole switch build depends on."""
     switch = Switch("sw", attachment_points=("router-uplink", "a-uplink", "b-uplink"))
@@ -153,14 +149,6 @@ def test_an_unknown_port_role_is_refused():
     switch = Switch("sw", attachment_points=("router-uplink",))
     with pytest.raises(TopologyError, match="has no port role"):
         switch.port_number("nowhere")
-
-
-def test_reordering_ports_renumbers_them():
-    """Changing the list order is how a port gets moved, so it must show."""
-    switch = Switch("sw", attachment_points=("a", "b"))
-    assert switch.port_number("a") == 0
-    switch.attachment_points = ("b", "a")
-    assert switch.port_number("a") == 1
 
 
 @pytest.mark.parametrize(
@@ -189,18 +177,6 @@ def test_endpoints_can_be_written_as_mappings():
 def test_an_unreadable_endpoint_is_refused():
     with pytest.raises(TopologyError, match="cannot read link endpoint"):
         Endpoint.parse(42)
-
-
-def test_link_other_returns_the_far_end():
-    lab = two_cell()
-    link = lab.links[1]
-    assert link.other("PLC-A").node == "sw-a"
-    assert link.other("sw-a").node == "PLC-A"
-
-
-def test_link_other_rejects_an_unrelated_node():
-    with pytest.raises(TopologyError, match="does not touch"):
-        two_cell().links[0].other("NOT-HERE")
 
 
 def test_add_refuses_something_that_is_not_a_node():
@@ -308,46 +284,6 @@ def test_validate_raises_and_lists_every_problem():
     assert "not in the address plan" in message
 
 
-def test_a_valid_topology_returns_itself_from_validate():
-    lab = two_cell()
-    assert lab.validate() is lab
-
-
-# -- helpers ------------------------------------------------------------------
-
-
-def test_node_names_covers_every_kind():
-    lab = two_cell()
-    lab.add(Segment("seg", network_id="cell-a"))
-    assert lab.node_names() == {"R-EDGE", "sw-a", "PLC-A", "seg"}
-
-
-def test_links_at_finds_both_ends():
-    lab = two_cell()
-    assert {link.id for link in lab.links_at("PLC-A")} == {"link-sw-plc"}
-    assert {link.id for link in lab.links_at("sw-a")} == {"link-r-sw", "link-sw-plc"}
-    assert lab.links_at("nothing") == []
-
-
-def test_lookups_raise_for_unknown_names():
-    lab = two_cell()
-    for method, name in (
-        (lab.network, "nowhere"),
-        (lab.switch, "nowhere"),
-        (lab.device, "nowhere"),
-        (lab.router, "nowhere"),
-    ):
-        with pytest.raises(TopologyError, match="no "):
-            method(name)
-
-
-def test_summary_names_the_testbed_and_its_counts():
-    text = two_cell().summary()
-    assert "topology demo" in text
-    assert "networks 2" in text
-    assert "PLC-A" in text or "cell-a" in text
-
-
 # -- serialising --------------------------------------------------------------
 
 
@@ -357,31 +293,6 @@ def test_optional_fields_are_left_out_rather_than_written_as_null():
     # No site was given, so the key should not appear at all.
     assert "site" not in network
     assert None not in network.values()
-
-
-def test_short_lists_are_written_inline_and_long_ones_are_broken_out():
-    """The generated YAML should read like the hand-written files.
-
-    A VLAN list and an environment mapping are short, so they go inline; a
-    document's own list of networks is long and goes one per line.
-    """
-    example = two_cell()
-
-    address_plan = example.to_yaml()["address-plan"]
-    assert "\nnetworks:\n- id: cell-a" in address_plan
-
-    devices = example.to_yaml()["initial-devices"]
-    assert "environment: {" in devices
-
-    infrastructure = example.to_yaml()["infrastructure"]
-    assert "vlans: [10]" in infrastructure
-
-
-def test_a_document_without_a_description_omits_the_key():
-    lab = Topology(testbed_id="bare")
-    lab.add(Network("a", "10.0.0.0/24"))
-    for document in lab.to_dicts().values():
-        assert "description" not in document
 
 
 def test_each_document_keeps_its_own_description():
@@ -413,11 +324,6 @@ def test_dot_groups_devices_under_their_subnet():
     assert plc > cluster
 
 
-def test_dot_edges_carry_vlan_information():
-    dot = two_cell().to_dot()
-    assert "vlan 10" in dot
-
-
 def test_dot_labels_are_escaped():
     lab = two_cell()
     lab.routers[0].name = 'R-"odd"'
@@ -433,17 +339,6 @@ def test_mermaid_output_is_a_graph_with_routers_switches_and_devices():
     assert 'sw_a{{"sw-a"}}' in mermaid
     assert "subgraph cell_a" in mermaid
     assert 'PLC_A["PLC-A"]' in mermaid
-
-
-def test_mermaid_identifiers_have_no_spaces_or_dashes():
-    """Mermaid reads a bare identifier as a node reference, so it must be clean."""
-    mermaid = two_cell().to_mermaid()
-    for line in mermaid.splitlines():
-        stripped = line.strip()
-        if stripped.startswith("subgraph "):
-            identifier = stripped.removeprefix("subgraph ").split("[")[0]
-            assert "-" not in identifier
-            assert " " not in identifier
 
 
 def test_mermaid_edges_carry_the_kind_and_vlans():
@@ -519,15 +414,6 @@ def test_an_unknown_network_id_is_refused():
 
 
 # -- allocating addresses -----------------------------------------------------
-
-
-def test_an_address_is_allocated_when_none_is_given():
-    lab = Topology()
-    lab.add_network("cell-a", "10.0.10.0/24", gateway="10.0.10.1")
-    device = lab.add_device("PLC-A", image="img", subnet="cell-a")
-
-    # The gateway holds .1, so the first host gets .2.
-    assert device.address == "10.0.10.2/24"
 
 
 def test_allocation_skips_the_gateway_and_taken_addresses():
@@ -631,15 +517,6 @@ def test_a_port_can_be_given_as_a_mapping_with_vlans():
     assert switch.port_number("plc-uplink") == 1
 
 
-def test_a_port_reads_as_an_object_or_a_mapping():
-    switch = Switch.with_ports("sw", (SwitchPort("p1", mode="trunk", vlans=(10, 11)),))
-
-    # Attribute access and mapping access must agree.
-    assert switch.ports[0].vlans == switch.ports[0]["vlans"] == (10, 11)
-    assert switch.ports[0].mode == switch.ports[0]["mode"] == "trunk"
-    assert switch.ports[0].role == "p1"
-
-
 def test_a_port_learns_its_vlans_from_the_link_on_it():
     """The cabling is the source of truth, so the port reports what it carries."""
     lab = two_cell()
@@ -648,16 +525,6 @@ def test_a_port_learns_its_vlans_from_the_link_on_it():
     assert port.vlans == (10,)
     assert port.mode == "trunk"
     assert port.link is not None and port.link.id == "link-r-sw"
-
-
-def test_port_vlans_and_mode_are_readable_directly():
-    lab = two_cell()
-    assert lab.port_vlans("sw-a", "router-uplink") == (10,)
-    assert lab.port_mode("sw-a", "router-uplink") == "trunk"
-    # The PLC link names no network, so the port carries nothing and its mode
-    # is unknown rather than assumed to be an access port.
-    assert lab.port_vlans("sw-a", "plc-uplink") == ()
-    assert lab.port_mode("sw-a", "plc-uplink") is None
 
 
 def test_a_spare_port_has_no_vlans_and_no_link():
@@ -738,17 +605,6 @@ def test_the_example_builds_and_validates():
         assert device.environment["NODE_HOSTNAME"] == device.name
         assert device.environment["NODE_IP"] == device.address
         assert device.environment["NODE_GATEWAY"] == device.gateway
-
-
-def test_the_example_allocates_addresses_rather_than_repeating_them():
-    lab = load_example("example_topology_2").build()
-
-    addresses = [device.address for device in lab.devices]
-    assert len(addresses) == len(set(addresses)), "two hosts share an address"
-
-    sensor = lab.device("SENSOR-A")
-    assert sensor.subnet == "10.0.10.0/24", "the subnet was given by network id"
-    assert sensor.environment["NODE_IP"] == sensor.address
 
 
 def test_the_example_switch_reads_its_ports_from_the_cabling():

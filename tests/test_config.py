@@ -12,23 +12,6 @@ from metropolis.config import (
 )
 
 
-def test_runtime_config_defaults():
-    cfg = RuntimeConfig()
-
-    assert cfg.seed == 1337
-    assert cfg.device == "auto"
-    assert cfg.deterministic is True
-    assert cfg.cudnn_benchmark is False
-    assert cfg.cudnn_deterministic is True
-    assert cfg.test_num_workers == 0
-
-
-def test_resolve_device_returns_cpu_when_cuda_unavailable(monkeypatch):
-    monkeypatch.setattr(config_mod.torch.cuda, "is_available", lambda: False)
-
-    assert resolve_device("auto") == "cpu"
-
-
 def test_resolve_device_returns_cuda_when_cuda_available(monkeypatch):
     monkeypatch.setattr(config_mod.torch.cuda, "is_available", lambda: True)
 

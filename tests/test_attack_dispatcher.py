@@ -128,35 +128,6 @@ def test_dispatcher_lists_runnable_modules_and_no_helpers():
         assert len(list(ATTACKS.glob(f"*/{name}.py"))) == 1
 
 
-def test_dispatcher_forwards_arguments_to_the_module(role_inventory):
-    """A dispatched dry run behaves exactly like invoking the module directly."""
-    result = invoke(
-        "mqtt_bruteforce_attack", "--inventory", role_inventory, "--dry-run"
-    )
-    assert result.returncode == 0, result.stdout + result.stderr
-    start = records(result)[0]
-    assert start["tool"] == "mqtt_credentials"
-    assert start["dry_run"] is True
-
-
-def test_dispatcher_forwards_flagged_arguments():
-    """Positional and flagged arguments reach the target module intact."""
-    result = invoke(
-        "hping3_attack",
-        "--mode",
-        "udp",
-        "--host",
-        "10.77.1.20",
-        "--port",
-        "5683",
-        "--dry-run",
-    )
-    assert result.returncode == 0, result.stdout + result.stderr
-    start = records(result)[0]
-    assert start["mode"] == "udp"
-    assert start["host"] == "10.77.1.20"
-
-
 def test_gotham_mirai_setup_maps_inventory_without_contacting_gns3(role_inventory):
     result = invoke(
         "gotham_mirai_setup",
@@ -369,13 +340,6 @@ def test_dispatcher_rejects_unknown_tools_with_a_suggestion():
     assert "mqtt_bruteforce_attack" in result.stderr
 
 
-def test_dispatcher_requires_a_tool_name():
-    """No arguments prints usage on stderr and exits 2."""
-    result = invoke()
-    assert result.returncode == 2
-    assert "usage:" in result.stderr
-
-
 def test_dispatcher_preserves_the_lab_acknowledgement_gate(role_inventory):
     """The gate lives in the tools, and dispatch must not bypass it."""
     assert invoke("mqtt_bruteforce_attack").returncode == 2
@@ -385,23 +349,12 @@ def test_dispatcher_preserves_the_lab_acknowledgement_gate(role_inventory):
     assert with_ack.returncode == 0
 
 
-@pytest.mark.parametrize("name", sorted(runnable_names()))
-def test_discovered_tools_respond_to_help(name):
+@pytest.mark.parametrize("name", ["hping3_attack", "coap_experiment_report"])
+def test_cli_parser_variants_respond_to_help(name):
     result = invoke(name, "--help")
     assert result.returncode == 0, f"{name}: {result.stdout}{result.stderr}"
     if name != "coap_experiment_report":
         assert "--gotham-script" in result.stdout
-
-
-def test_gotham_script_dry_run_does_not_execute(tmp_path):
-    script = tmp_path / "gotham.sh"
-    script.write_text("exit 9\n", encoding="utf-8")
-    result = invoke("hping3_attack", "--gotham-script", script, "--dry-run")
-    assert result.returncode == 0, result.stdout + result.stderr
-    start = records(result)[0]
-    assert start["tool"] == "gotham_shell"
-    assert start["script"] == str(script)
-    assert start["dry_run"] is True
 
 
 def test_gotham_script_keeps_acknowledgement_gate(tmp_path):
@@ -410,22 +363,6 @@ def test_gotham_script_keeps_acknowledgement_gate(tmp_path):
     result = invoke("hping3_attack", "--gotham-script", script)
     assert result.returncode == 2
     assert "METROPOLIS_LAB_ACK" in result.stdout
-
-
-def test_gotham_script_requires_an_existing_shell_file(tmp_path):
-    result = invoke(
-        "hping3_attack", "--gotham-script", tmp_path / "missing.sh", "--dry-run"
-    )
-    assert result.returncode == 2
-    other = tmp_path / "other.py"
-    other.write_text("pass\n", encoding="utf-8")
-    assert (
-        invoke("hping3_attack", "--gotham-script", other, "--dry-run").returncode == 2
-    )
-
-
-def test_gotham_script_args_require_selection():
-    assert invoke("hping3_attack", "--gotham-arg", "value", "--dry-run").returncode == 2
 
 
 def test_selected_gotham_script_runs_once_and_returns_its_status(tmp_path, monkeypatch):

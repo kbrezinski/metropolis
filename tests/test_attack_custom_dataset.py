@@ -47,13 +47,12 @@ def custom_dataset(tmp_path):
         device(
             "MIRAI-CNC-A", "10.77.4.10", ["mirai-cnc", "mirai-report"], C2_PORT="23"
         ),
-        device("MIRAI-LISTENER-A", "10.77.4.11", ["mirai-report"], C2_PORT="48101"),
+        device("MIRAI-LISTENER-A", "10.77.4.11", ["mirai-report"]),
         device(
             "MIRAI-LOADER-A",
             "10.77.4.12",
             ["payload-delivery"],
             LOADER_KIND="wget",
-            C2_PORT="80",
         ),
         device("MIRAI-BOT-A", "10.77.4.13", ["mirai-bot"]),
         device(
@@ -100,38 +99,31 @@ def invoke(tool, *args):
 
 def started(result):
     assert result.returncode == 0, result.stdout + result.stderr
-    return next(
+    assert "lab-secret" not in result.stdout
+    record = next(
         json.loads(line) for line in result.stdout.splitlines() if line.startswith("{")
     )
+    assert record["dry_run"] is True
+    return record
 
 
 @pytest.mark.parametrize(
     ("tool", "arguments", "field", "expected"),
     [
         ("modbus_manipulation_attack", ["--action", "set-level"], "host", "10.77.1.10"),
-        ("coap_response_measurement", [], "host", "10.77.1.20"),
         ("mqtt_bruteforce_attack", [], "host", "10.77.2.10"),
-        ("mqtt_flood_attack", [], "host", "10.77.2.10"),
-        ("ssh_bruteforce_attack", [], "host", "10.77.3.10"),
-        ("mirai_infection_sim", [], "hosts", ["10.77.1.30"]),
-        ("hping3_attack", [], "host", "10.77.1.10"),
-        ("iot_discovery", [], "hosts", None),
-        ("network_recon_scan", [], "protocol", "both"),
         ("run_mirai_choreography", [], "cnc", "10.77.4.10:23"),
-        ("mirai_scenario", [], "targets", ["TELNET-A"]),
         ("run_merlin", [], "cnc", "10.77.4.20:23"),
-        ("merlin_scenario", [], "agent", "10.77.4.21"),
         ("gotham_mirai_setup", [], "project", "custom_custom_v2"),
-        ("gotham_merlin_setup", [], "project", "custom_custom_v2"),
     ],
 )
 def test_renamed_dataset_targets(tool, arguments, field, expected, custom_dataset):
     root, _, _ = custom_dataset
     record = started(invoke(tool, "--dataset", root, *arguments))
-    if tool == "iot_discovery":
-        assert "10.77.1.10" in record["hosts"]
-    else:
-        assert record[field] == expected
+    assert record[field] == expected
+    if tool == "run_mirai_choreography":
+        assert record["listener"] == "10.77.4.11:48101"
+        assert record["loader"] == "10.77.4.12:80"
 
 
 def test_missing_service_reports_why(custom_dataset):
@@ -294,6 +286,7 @@ def test_custom_role_ports_come_from_inventory(custom_dataset):
     merlin = started(invoke("run_merlin", "--dataset", root))
     assert merlin["cnc"] == "10.77.4.20:2223"
     assert merlin["http"] == "10.77.4.20:8444"
+    assert merlin["agent"] == "10.77.4.21"
 
 
 def test_http_choreography_rejects_tftp_only_loader(custom_dataset):

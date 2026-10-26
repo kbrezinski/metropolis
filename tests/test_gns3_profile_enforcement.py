@@ -309,16 +309,6 @@ def test_recovery_retries_original_baseline_without_applying_again(profile_lab):
     )
 
 
-def test_observations_do_not_claim_achieved_limits_from_passive_samples(profile_lab):
-    session = profile_lab.create()
-    session.prepare()
-    session.apply()
-    session.restore()
-    session.observe(None)
-    session.close()
-    assert session.result["observations"]["achieved_verified"] is False
-
-
 def test_pressure_observations_use_only_active_profile_window(profile_lab):
     session = profile_lab.create()
     session.prepare()
@@ -346,6 +336,7 @@ def test_pressure_observations_use_only_active_profile_window(profile_lab):
     )
     session.observe(None)
     session.close()
+    assert session.result["observations"]["achieved_verified"] is False
     assert session.result["observations"]["computes"]["remote"] == {
         "peak_cpu_percent": 10,
         "peak_memory_percent": 20,

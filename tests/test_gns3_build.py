@@ -15,7 +15,6 @@ import threading
 from pathlib import Path
 
 import pytest
-import yaml
 from jsonschema import Draft202012Validator, FormatChecker
 
 GNS3 = Path(__file__).resolve().parents[1] / "scripts" / "gns3"
@@ -23,26 +22,20 @@ if str(GNS3) not in sys.path:
     sys.path.insert(0, str(GNS3))
 
 from _cli import template_name_by_image  # noqa: E402
-from builder import build, existing_link_keys, port_map_yaml  # noqa: E402
+from builder import build, existing_link_keys  # noqa: E402
 from capture import LinkResolution, capture_for, coverage_report, resolve_links  # noqa: E402
 from client import Node, Project  # noqa: E402
 from experiment import run_experiment  # noqa: E402
 from device_logs import DeviceLogCollector  # noqa: E402
 from lifecycle import (  # noqa: E402
-    TIER_CLIENT,
-    TIER_ROUTER,
-    TIER_SERVER,
-    TIER_SWITCH,
     start_all,
     startup_order,
     stop_all,
-    tier_for,
     wait_until_running,
 )
 from templates import APPLIANCES  # noqa: E402
 from topology import (  # noqa: E402
     build_plan,
-    environment_string,
     port_map,
     switch_port_settings,
 )
@@ -238,19 +231,6 @@ def test_router_interfaces_become_adapter_numbers(documents, plan):
         assert actual.adapter == int(endpoint["interface"].removeprefix("eth"))
 
 
-def test_environment_string_quotes_values():
-    rendered = environment_string(
-        {"NODE_IP": "10.20.10.10/24", "NODE_HOSTNAME": "MET-PLC"}
-    )
-    assert rendered == 'NODE_HOSTNAME="MET-PLC"\nNODE_IP="10.20.10.10/24"'
-
-
-def test_placement_gives_every_node_a_position(plan):
-    topology, _ = plan
-    positions = {(node.x, node.y) for node in topology.nodes}
-    assert len(positions) == len(topology.nodes)
-
-
 def test_segments_are_created_as_switch_nodes(documents, plan):
     _, _, infrastructure, _ = documents
     topology, _ = plan
@@ -258,13 +238,6 @@ def test_segments_are_created_as_switch_nodes(documents, plan):
     assert all(
         kinds[segment["name"]] == "switch" for segment in infrastructure["segments"]
     )
-
-
-def test_port_map_yaml_lists_every_switch(plan):
-    topology, _ = plan
-    rendered = yaml.safe_load(port_map_yaml(topology, "lab"))
-    assert rendered["project"] == "lab"
-    assert rendered["switches"] == topology.port_map
 
 
 # -- builder -----------------------------------------------------------------
@@ -351,21 +324,6 @@ def template_ids() -> dict[str, str]:
     """Template name to id, for devices and for the router and switch appliances."""
     names = set(template_name_by_image().values()) | set(APPLIANCES.values())
     return {name: f"t-{name}" for name in names}
-
-
-def test_build_creates_every_node_and_link(plan):
-    topology, _ = plan
-    client = FakeClient()
-    result = build(client, "lab", topology, template_ids())
-
-    assert len(result.created_nodes) == len(topology.nodes)
-    assert len(result.created_links) == len(topology.links)
-    assert result.reused_nodes == []
-    assert result.reused_links == []
-    assert result.switch_configuration
-    assert all(
-        item["status"] == "failed" for item in result.switch_configuration.values()
-    )
 
 
 def test_build_reruns_without_duplicating(plan):
@@ -532,13 +490,6 @@ def test_builder_rejects_wrong_existing_ports(plan):
 
 
 # -- lifecycle ---------------------------------------------------------------
-
-
-def test_tiers_order_infrastructure_before_clients():
-    assert tier_for("switch", None) == TIER_SWITCH
-    assert tier_for("router", None) == TIER_ROUTER
-    assert tier_for("device", "metropolis/mqtt-broker:dev") == TIER_SERVER
-    assert tier_for("device", "metropolis/scada:dev") == TIER_CLIENT
 
 
 def test_startup_order_puts_switches_first_and_pollers_last():
@@ -979,6 +930,7 @@ def test_experiment_shares_run_id_and_reports_missing_log_sources(
         selected_links=[chosen],
         metadata={"testbed_id": address_plan["testbed_id"], "dataset_version": "v1"},
         capture_fn=fast_capture,
+        metrics_enabled=False,
     )
     capture_entry = manifest["capture"]["links"][chosen]
     assert capture_entry["gns3_link_id"] == resolution.resolved[chosen]
@@ -1086,6 +1038,7 @@ def test_experiment_collects_router_syslog_and_pcap_under_one_run(
         selected_links=[chosen],
         collector_factory=collector_factory,
         capture_fn=fast_capture,
+        metrics_enabled=False,
     )
     assert manifest["status"] == "complete"
     assert len(manifest["syslog"]["sources"]) == len(infrastructure["routers"])

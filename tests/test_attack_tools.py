@@ -89,35 +89,20 @@ def records(result):
     ]
 
 
-@pytest.mark.parametrize(
-    "name,args",
-    [
-        ("coap/coap_response_measurement.py", []),
-        ("mqtt/mqtt_bruteforce_attack.py", []),
-        ("mqtt/mqtt_flood_attack.py", []),
-        ("modbus/modbus_manipulation_attack.py", ["--action", "set-level"]),
-        ("scanner/network_recon_scan.py", []),
-        ("ssh/ssh_bruteforce_attack.py", []),
-        ("mirai/mirai_infection_sim.py", []),
-    ],
-)
-def test_dry_runs_resolve_inventory_without_ack(name, args, attack_inventory):
+def test_reconnaissance_defaults_without_ack(attack_inventory):
     result = invoke(
-        name, "--inventory", attack_inventory, *args, "--dry-run", ack=False
+        "scanner/network_recon_scan.py",
+        "--inventory",
+        attack_inventory,
+        "--dry-run",
+        ack=False,
     )
     assert result.returncode == 0, result.stdout + result.stderr
     start = records(result)[0]
     assert start["dry_run"] is True
-    if name == "ssh/ssh_bruteforce_attack.py":
-        assert start["host"] == "10.77.3.10"
-    if name == "mirai/mirai_infection_sim.py":
-        assert start["hosts"] == ["10.77.1.30"]
-    if name == "scanner/network_recon_scan.py":
-        assert start["protocol"] == "both"
-        ports = start["command"][start["command"].index("-p") + 1]
-        assert ports == (
-            "T:22,23,53,80,443,502,1883,8080,8443,8883,48101,U:53,69,123,5683"
-        )
+    assert start["protocol"] == "both"
+    ports = start["command"][start["command"].index("-p") + 1]
+    assert ports == ("T:22,23,53,80,443,502,1883,8080,8443,8883,48101,U:53,69,123,5683")
     assert "LabOnly_" not in result.stdout
 
 

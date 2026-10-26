@@ -44,14 +44,6 @@ def client_with(responses=None) -> tuple[Gns3Client, FakeTransport]:
     return Gns3Client(transport.server, transport=transport), transport
 
 
-def test_version_and_reachability():
-    client, transport = client_with([{"version": "2.2.43"}, {"version": "2.2.43"}])
-    assert client.version() == "2.2.43"
-    assert transport.calls == [("GET", "/version", None)]
-    assert client.reachable() is True
-    assert transport.calls[-1] == ("GET", "/version", None)
-
-
 def test_compute_usage_preserves_missing_measurements():
     records = [
         {"compute_id": "remote", "cpu_usage_percent": 10, "memory_usage_percent": None}
@@ -92,22 +84,6 @@ def test_ensure_project_reuses_and_opens_an_existing_project():
     assert transport.calls[1] == ("POST", "/projects/p9/open", None)
 
 
-def test_docker_template_payload_shape():
-    client, transport = client_with([{"template_id": "t1", "name": "Metropolis PLC"}])
-    client.create_docker_template(
-        "Metropolis PLC", "metropolis/controller:dev", description="a controller"
-    )
-    method, path, payload = transport.calls[0]
-
-    assert (method, path) == ("POST", "/templates")
-    assert payload["template_type"] == "docker"
-    assert payload["image"] == "metropolis/controller:dev"
-    assert payload["adapters"] == 1
-    assert payload["console_type"] == "none"
-    # An empty environment string is meaningful: the node supplies NODE_* later.
-    assert payload["environment"] == ""
-
-
 def test_create_node_posts_to_the_template_path():
     client, transport = client_with([{"node_id": "n1", "name": "MET-PLC-INTAKE-01"}])
     node = client.create_node("p1", "t1", name="MET-PLC-INTAKE-01", x=10, y=20)
@@ -130,15 +106,6 @@ def test_create_link_sends_both_endpoints():
         {"node_id": "n1", "adapter_number": 0, "port_number": 0},
         {"node_id": "n2", "adapter_number": 3, "port_number": 0},
     ]
-
-
-def test_node_returns_none_for_an_unknown_id():
-    class NotFound(FakeTransport):
-        def request(self, method, path, payload=None, **kwargs):
-            return None
-
-    client = Gns3Client(Server("gns3.test", 3080), transport=NotFound())
-    assert client.node("p1", "missing") is None
 
 
 def test_capture_endpoints_and_payload_match_the_api():

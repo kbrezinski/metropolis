@@ -100,7 +100,9 @@ def test_receiver_counts_real_loopback_reply(tmp_path):
             "--experiment-id",
             "beef",
             "--duration",
-            "2",
+            "5",
+            "--max-responses",
+            "1",
             "--output",
             str(output),
         ],
@@ -110,12 +112,16 @@ def test_receiver_counts_real_loopback_reply(tmp_path):
         text=True,
     )
     try:
-        time.sleep(0.8)
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sender:
             sender.bind(("127.0.0.1", sensor_port))
             request = coap.build_get("/status", bytes.fromhex("beef1234"), 7)
             reply = sensor.handle_get(request, "SENSOR-A", "level", 65)
-            sender.sendto(reply, ("127.0.0.1", listen_port))
+            # Process startup varies under coverage; the one-response cap makes
+            # bounded retries safe without assuming when the receiver has bound.
+            deadline = time.monotonic() + 10
+            while process.poll() is None and time.monotonic() < deadline:
+                sender.sendto(reply, ("127.0.0.1", listen_port))
+                time.sleep(0.05)
         stdout, stderr = process.communicate(timeout=5)
         assert process.returncode == 0, stdout + stderr
         rows = [

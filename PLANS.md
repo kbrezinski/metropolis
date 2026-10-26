@@ -16,10 +16,6 @@ Expand one cell at a time, prioritizing credible packet timing, polling, and val
 
 ### GNS3 tooling and cleanup
 
-- [ ] Reduce redundant pytest cases by about 20% while keeping line coverage within two percentage points.
-  - Measure the unchanged suite's collected cases, coverage, and runtime under `.venv/`.
-  - Remove low-value duplicates in owner batches while retaining independent protocol, lifecycle, and validation contracts.
-  - Rerun the suite and compare identical coverage settings; document retained coverage and remove this task when complete.
 - [ ] Define a normal-traffic and capture-point matrix: endpoints, protocols, polling/cyclic rates, fault traffic, and local/routed links. Distinguish populated networks from declarations without devices.
 - [ ] Detect image, environment, and adapter drift when the builder reuses nodes; define how to report or reconcile it.
 - [ ] Make the builder and lifecycle commands honor the selected `--dataset` consistently.

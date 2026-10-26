@@ -80,7 +80,7 @@ def test_dry_run_reports_limits_without_credential_or_lab_ack(ssh_inventory):
 
 @pytest.mark.parametrize(
     "option,value",
-    [("--rate", "101"), ("--duration", "601"), ("--max-attempts", "1001")],
+    [("--rate", "101"), ("--duration", "601")],
 )
 def test_hard_ceiling_rejects_oversized_dry_run(option, value, ssh_inventory):
     result = subprocess.run(

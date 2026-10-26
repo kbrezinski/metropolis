@@ -141,31 +141,6 @@ def test_metasploit_dry_run_needs_no_binary_or_lab_ack(broker_inventory):
     assert "LabOnly_MQTT_2026" not in result.stdout
 
 
-def test_default_candidates_have_failures_then_lab_success(tmp_path):
-    args = SimpleNamespace(engine="metasploit", wordlist=None, max_attempts=25)
-    candidates = attack.password_candidates(args, "LabOnly_MQTT_2026")
-    assert len(candidates) == len(set(candidates)) == 25
-    assert candidates[-1] == "LabOnly_MQTT_2026"
-    assert all(value != candidates[-1] for value in candidates[:-1])
-
-    args.max_attempts = 10
-    assert attack.password_candidates(args, "LabOnly_MQTT_2026") == candidates[:9] + [
-        candidates[-1]
-    ]
-
-    args.engine = "paho"
-    assert attack.password_candidates(args, "LabOnly_MQTT_2026") == [
-        "incorrect-lab-password",
-        "LabOnly_MQTT_2026",
-    ]
-
-    wordlist = tmp_path / "custom.txt"
-    wordlist.write_text("guess1\nguess2\n", encoding="utf-8")
-    args.engine = "metasploit"
-    args.wordlist = wordlist
-    assert attack.password_candidates(args, "LabOnly_MQTT_2026") == ["guess1", "guess2"]
-
-
 def test_metasploit_timeout_is_recorded_without_console_text(monkeypatch):
     events = []
 
