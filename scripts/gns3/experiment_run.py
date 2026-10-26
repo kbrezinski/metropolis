@@ -26,6 +26,7 @@ from experiment import run_experiment
 from firewall_policy import compile_policy, parse_attack_exception
 from router_config import DEFAULT_PASSWORD, DEFAULT_USERNAME
 from run_profiles import load_profile
+from baseline_config import BASELINE_FILE, load_baseline
 from topology import build_plan
 
 RUN_ID = re.compile(r"^[A-Za-z0-9_-]+$")
@@ -96,6 +97,13 @@ def main() -> int:
         parser.error(str(exc))
     dataset = args.dataset.resolve()
     address_plan, inventory, infrastructure, link_plan = load_documents(dataset)
+    baseline = None
+    baseline_path = dataset / BASELINE_FILE
+    if baseline_path.is_file():
+        try:
+            baseline = load_baseline(baseline_path, inventory, infrastructure)
+        except (ValueError, OSError) as exc:
+            parser.error(f"baseline: {exc}")
     profile = None
     if args.profile is not None:
         try:
@@ -174,22 +182,21 @@ def main() -> int:
             metrics_enabled=not args.no_metrics,
             metrics_interval=args.metrics_interval,
             profile=profile,
+            baseline=baseline,
         )
     except FileExistsError:
         print(f"error: run ID already exists: {run_id}", file=sys.stderr)
         return 2
-    print(
-        json.dumps(
-            {
-                "run_id": run_id,
-                "status": manifest["status"],
-                "run_manifest": str(dataset / "runs" / run_id / "manifest.json"),
-                "capture_manifests": manifest["captures"],
-                "failures": manifest["failures"],
-            },
-            indent=2,
-        )
-    )
+    report = {
+        "run_id": run_id,
+        "status": manifest["status"],
+        "run_manifest": str(dataset / "runs" / run_id / "manifest.json"),
+        "capture_manifests": manifest["captures"],
+        "failures": manifest["failures"],
+    }
+    if "resource_baseline" in manifest:
+        report["baseline_status"] = manifest["resource_baseline"]["status"]
+    print(json.dumps(report, indent=2))
     return 0 if manifest["status"] == "complete" else 1
 
 

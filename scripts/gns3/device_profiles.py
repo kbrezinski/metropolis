@@ -264,6 +264,32 @@ class DeviceProfileBackend:
         snapshot = self.inspect(node)
         return self._write_and_verify(node, self.prepare(snapshot, settings))
 
+    @staticmethod
+    def prepare_baseline(snapshot: dict, settings: dict) -> dict:
+        """Validate explicit, persistent setup limits, including unlimited RAM."""
+        if not isinstance(settings, dict) or set(settings) != {
+            "cpus",
+            "memory_bytes",
+            "memory_swap_bytes",
+        }:
+            raise ValueError("a resource baseline requires CPU, RAM, and swap limits")
+        validate_settings({key: settings[key] for key in ("cpus", "memory_bytes")})
+        swap = settings["memory_swap_bytes"]
+        if type(swap) is not int or (swap != -1 and swap < settings["memory_bytes"]):
+            raise ValueError("memory_swap_bytes must be -1 or at least memory_bytes")
+        fields = DeviceProfileBackend.prepare(snapshot, {"cpus": settings["cpus"]})
+        if snapshot.get("capabilities", {}).get("MemoryLimit") is False:
+            raise ValueError("the Docker compute cannot enforce memory limits")
+        if settings["memory_bytes"] < snapshot.get("memory_reservation", 0):
+            raise ValueError("baseline RAM is below the existing memory reservation")
+        fields.update(Memory=settings["memory_bytes"], MemorySwap=swap)
+        return fields
+
+    def apply_baseline(self, node: dict, settings: dict) -> dict:
+        """Persist an explicitly selected baseline without creating a container."""
+        snapshot = self.inspect(node)
+        return self._write_and_verify(node, self.prepare_baseline(snapshot, settings))
+
     def restore(self, node: dict, snapshot: dict) -> dict:
         managed = snapshot.get("managed_fields")
         if managed is None:

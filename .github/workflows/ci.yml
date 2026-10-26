@@ -48,6 +48,9 @@ jobs:
       - name: Check GNS3 template registry
         run: uv run python scripts/gns3/run.py register_templates --check
 
+      - name: Validate container resource baseline
+        run: uv run python scripts/gns3/run.py configure_baseline --plan
+
       - name: Run tests
         run: |
           uv pip install -r scripts/attacks/requirements.txt

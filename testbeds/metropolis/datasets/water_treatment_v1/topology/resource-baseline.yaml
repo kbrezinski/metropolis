@@ -1,0 +1,12 @@
+# Editable setup ceilings, not reserved resources or validated sizing requirements.
+# Apply explicitly with configure_baseline --apply; experiments only check drift.
+schema_version: "1.0"
+defaults:
+  cpus: 1.0
+  memory_bytes: 536870912       # 512 MiB RAM
+  memory_swap_bytes: 536870912  # Total RAM + swap; equal to RAM disables swap
+overrides:
+  images:
+    metropolis/scada:dev:
+      memory_bytes: 1073741824
+      memory_swap_bytes: 1073741824

@@ -37,6 +37,7 @@ appropriate.
 | Run an attack scenario | [Attack toolkit](scripts/attacks/README.md) |
 | Extract or clean PCAP features | [Processing scripts](scripts/README.md#dataset-processing-pipeline) |
 | Change devices or protocol settings | [Device reference](testbeds/metropolis/devices/README.md) |
+| Set shared CPU/RAM defaults and check drift | [Container resource baseline](scripts/gns3/README.md#container-resource-baseline) |
 | Find topology settings and run files | [Dataset guide](testbeds/metropolis/datasets/water_treatment_v1/README.md) |
 | Review declared network security | [Codex Security review](scripts/security/README.md) |
 | Connect the external REA tool | [REA guide](docs/rea.md) |
@@ -66,6 +67,10 @@ does not build images or create a GNS3 project.
 - **Select optional device and link profiles** to constrain CPU, RAM, bandwidth,
   delay, jitter, and loss for a run, with saved baselines and cleanup. See the
   [profile guide](scripts/gns3/README.md#optional-device-and-link-profiles).
+- **Configure a shared resource baseline** from one dataset file, with CPU/RAM
+  defaults and model/image overrides. Setup applies it explicitly; experiments
+  report drift without changing limits. See the
+  [baseline guide](scripts/gns3/README.md#container-resource-baseline).
 - **Extract and conservatively clean packet features** from completed PCAP runs
   with the two Metropolis processing scripts.
 - **Design a topology in Python** — build a network, check it for contradictions,

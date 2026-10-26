@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://metropolis.local/schemas/resource-baseline.schema.json",
+  "title": "Metropolis declared container resource baseline",
+  "description": "Persistent setup settings. Defaults merge with model overrides, then exact image overrides.",
+  "type": "object",
+  "required": ["schema_version", "defaults"],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "defaults": {
+      "allOf": [
+        {"$ref": "#/$defs/settings"},
+        {"required": ["cpus", "memory_bytes", "memory_swap_bytes"]}
+      ]
+    },
+    "overrides": {
+      "type": "object",
+      "properties": {
+        "models": {"$ref": "#/$defs/overrides"},
+        "images": {"$ref": "#/$defs/overrides"}
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "settings": {
+      "type": "object",
+      "minProperties": 1,
+      "properties": {
+        "cpus": {"type": "number", "minimum": 0.01},
+        "memory_bytes": {"type": "integer", "minimum": 6291456},
+        "memory_swap_bytes": {"oneOf": [{"type": "integer", "minimum": 6291456}, {"const": -1}]}
+      },
+      "additionalProperties": false
+    },
+    "overrides": {
+      "type": "object",
+      "propertyNames": {"type": "string", "minLength": 1, "pattern": "\\S"},
+      "additionalProperties": {"$ref": "#/$defs/settings"}
+    }
+  }
+}

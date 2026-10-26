@@ -1,63 +1,76 @@
 # AGENTS.md
 
-Guidance for agents working in this repository. Do not update CLAUDE.md.
+Repository guidance. Do not update CLAUDE.md.
 
-## Current scope
+## Scope and planning
 
-Metropolis is a GNS3 water-treatment OT testbed with versioned topology data, simulated devices, attack traffic, and experiment capture tools. The PyTorch detection package is early-stage; data processing, model development, experiments, and paper work remain future work unless the user asks for them.
+- Metropolis is a GNS3 water-treatment OT testbed with versioned topology, simulated devices, attacks, and capture tools. The PyTorch package is early-stage.
+- Only category 1 (testbed and attacks) is active. Data processing, models, experiments, and paper work require a user request.
+- Read and update root `PLANS.md` for priorities, decisions, and all feature proposals. Reuse existing entries, keep plans brief, expand substantial changes into executable plans before coding, and remove completed tasks.
+- Use [PAPER_PLAN.md](docs/paper/PAPER_PLAN.md) for paper objectives, writing, and exploratory ideas/questions; put paper artifacts in `docs/paper/`.
 
-## ExecPlans
+## Dev environment tips
 
-Read PLANS.md when discussing or changing priorities. Category 1 (testbed and attack scripts) is active. Record future ideas and decisions in PLANS.md without starting categories 2–4. Keep the plan brief. For substantial implementation, expand the relevant item into an executable plan before coding. Remove completed tasks rather than checking them off.
+- Use Python 3.12 and uv: `uv sync --group dev`. Package code is under `src/`; GNS3 and attack tools are under `scripts/`.
+- Keep dev dependency pins aligned with `scripts/attacks/requirements.txt` for pymodbus, paho-mqtt, paramiko, and scapy.
+- Scripts/devices are not regular packages. Tests use `importlib.util.spec_from_file_location` or add their directory to `sys.path`.
 
-For paper writing and brainstorming, read and update [docs/paper/PAPER_PLAN.md](docs/paper/PAPER_PLAN.md). It holds paper objectives, writing tasks, and exploratory feature ideas or research questions. Record all new feature proposals and implementation tasks in root PLANS.md, reusing existing entries rather than duplicating them. Paper drafts and supporting material belong in docs/paper/.
+## Testing instructions
 
-Python 3.12 is managed with uv. The package uses a src/ layout; GNS3 and attack tooling live under scripts/.
+- For unit test authoring, review, or audits, use [metropolis-test-audit](.agents/skills/metropolis-test-audit/SKILL.md).
 
-## Useful commands
+```bash
+uv run pytest
+uv run ruff check .
+uv run ruff format --check .
+uv run python scripts/validate_metropolis_topology.py
+uv run python scripts/generate_switch_reference.py --check
+uv run python -m metropolis.topology check
+python scripts/gns3/run.py register_templates --check
+python scripts/gns3/run.py build_topology --plan
+python scripts/gns3/run.py render_firewall --check
+python scripts/attacks/run.py network_recon_scan --dry-run
+```
 
-    uv sync --group dev
-    uv run pytest
-    uv run ruff check .
-    uv run ruff format --check .
-    uv run python scripts/validate_metropolis_topology.py
-    uv run python scripts/generate_switch_reference.py --check
-    uv run python -m metropolis.topology check
-    python scripts/gns3/run.py register_templates --check
-    python scripts/gns3/run.py build_topology --plan
-    python scripts/gns3/run.py render_firewall --check
-    python scripts/attacks/run.py network_recon_scan --dry-run
+- Run focused pytest tests for changed simulator/tooling behavior, then applicable validation commands. Another instance of an existing model needs no duplicate unit tests.
+- Validate selected-dataset inventory, addresses, links, router configuration, and switch roles with the standalone topology validator; avoid exact node/IP/count assertions in pytest.
+- Keep pytest caches and temporary files, including custom `--basetemp`, under ignored `.venv/`; never create root `.pytest_*` directories.
+- The topology validator, firewall renderer, and attack dry run need no server. CI also checks builds, spelling, and links.
+- Inspect skipped build-plan links; exit status alone is insufficient. Offline checks validate declarations, not actual cabling, built images, service startup, packets, or logs.
+- The user verifies live GNS3 cabling, VLAN isolation, OSPF, firewall enforcement, and traffic. Do not claim live topology/routing verification from offline checks.
 
-The topology validator, firewall renderer, and dry run above do not need a live GNS3 server. CI also checks the build, spelling, and links. Use pytest for reusable simulator and tooling behavior; use the standalone topology validator for the selected dataset's inventory, addresses, links, router configuration, and switch roles. Adding another instance of an existing device model does not require a copy of its unit tests. Run focused tests for changed behavior, then the relevant validation commands above.
+## Topology and device reference
 
-Pytest temporary files and caches belong under the ignored `.venv/` directory. If you override `--basetemp` for a separate test run, keep that path under `.venv/` as well; do not create `.pytest_*` directories at the repository root.
+- Authoritative dataset: `testbeds/metropolis/datasets/water_treatment_v1/`. Its four documents are `topology/address-plan.yaml`, `topology/links.yaml`, `device_instances/initial_devices.yaml`, and `device_instances/infrastructure.yaml`.
+- Resolve addresses from the selected dataset; never hardcode them in reusable tools. Schemas live in `schemas/`; keep them aligned with `src/metropolis/topology/` load/save behavior. The bundled address-plan loader uses package resources.
+- After topology edits, run the validator and `scripts/generate_switch_reference.py --write`. Never hand-edit generated `testbeds/metropolis/switch/README.md`.
+- Reusable Docker models live in `testbeds/metropolis/devices/`. Keep inventory, links, image/template registration, startup order, and focused tests aligned.
 
-## Topology and devices
+| Cell/site | Controller and field devices |
+|---|---|
+| Intake | PLC; three cyclic EtherNet/IP actuators |
+| Dosing | PLC; Modbus analyzer; two cyclic drives |
+| Filtration | PLC; Modbus differential-pressure instrument; cyclic backwash pump and valve |
+| Disinfection | PLC; Modbus residual analyzer; two cyclic pump drives |
+| Reservoir and raw-water (each) | RTU; Modbus level instrument; cyclic pump drive |
 
-- The authoritative dataset is testbeds/metropolis/datasets/water_treatment_v1/. Its topology/address-plan.yaml, topology/links.yaml, device_instances/initial_devices.yaml, and device_instances/infrastructure.yaml define networks, links, hosts, routers, and switches. Schemas live in schemas/. Do not hardcode node addresses in reusable tools; resolve them from the selected dataset.
-- After changing topology data, run scripts/validate_metropolis_topology.py and regenerate the switch reference with scripts/generate_switch_reference.py --write. The file testbeds/metropolis/switch/README.md is generated; do not edit it by hand.
-- The topology API in src/metropolis/topology/ models the four authoritative documents. Keep its load/save behavior and the schemas in step. The bundled address-plan loader in src/metropolis/testbeds/ uses package resources.
-- Reusable Docker device models live in testbeds/metropolis/devices/. Keep inventory, links, image/template registration, startup order, and focused tests aligned when changing a device. Intake has a PLC and three cyclic EtherNet/IP actuators. Dosing has a PLC, networked Modbus analyzer, and two cyclic drives. Filtration has a PLC, networked Modbus differential-pressure instrument, and cyclic backwash pump and valve. Disinfection has a PLC, networked Modbus residual analyzer, and two cyclic pump drives. The reservoir and raw-water sites each have an RTU, networked Modbus level instrument, and cyclic pump drive. Central SCADA polls the four PLCs and two RTUs; HMI setpoint readback applies to the plant cells. These are lab protocol models, not vendor profiles or a physical process simulation.
-- Router scripts in testbeds/metropolis/router/ use OSPF area 0. The dataset firewall policy grants selected LANs or CIDRs access by protocol and port, with default drop for other routed traffic. Same-VLAN traffic bypasses router firewalls. The simulated WAN models an untrusted public-network underlay; site-to-site IPsec is planned and not configured. The switch configuration is applied by scripts/gns3/switch_config.py to the repo-owned Open vSwitch image. VyOS is a separately imported GNS3 appliance.
+- Central SCADA polls four PLCs and two RTUs; HMI setpoint readback covers plant cells. These are lab protocol models, not vendor profiles or physical process simulation.
+- Router scripts in `testbeds/metropolis/router/` use OSPF area 0. Firewall policy permits selected LANs/CIDRs by protocol/port and drops other routed traffic; same-VLAN traffic bypasses it.
+- The WAN is an untrusted public-network underlay; site-to-site IPsec is planned, not configured. VyOS is imported separately; `scripts/gns3/switch_config.py` configures the repo-owned Open vSwitch image.
 
-## Change workflow
+## Node change workflow
 
-For a new or changed node, check these in order:
+1. Define role and normal traffic. Choose unique names/addresses avoiding collisions with hosts, router interfaces, gateways, and reservations; align inventory environment and ports with the model.
+2. For new images, provide Docker builds and template entries, adapters, and startup dependencies. Build on the hosting GNS3 compute; the offline registry check only compares image names.
+3. Declare links/switch roles or `link_policy: intentionally_uncabled` for deliberately unlinked support nodes; regenerate the switch reference. Existing subnets need no new route; new subnets need VLAN/trunk, router interface/gateway, and OSPF changes.
+4. Check service targets, protocols, and startup/readiness. Run `render_firewall --check` for routed flows; change permissions only as needed.
+5. Check capture points and log attribution, run applicable tests/validation, and update owning docs and `PLANS.md` when scope/status changes.
 
-1. Define its role and expected normal traffic. Give it a unique name and address that do not collide with hosts, router interfaces, gateways, or reserved addresses. Keep its inventory environment and service ports consistent with the device model.
-2. Provide the Docker build and template registry entry for a new image, and account for its adapters and startup dependencies. Images must be built on the GNS3 compute that will host them; the offline registry check only compares image names.
-3. Declare the intended link and switch port role, or set `link_policy: intentionally_uncabled` for a support node deliberately left without a link. Regenerate the switch reference. A new node on an existing subnet needs no new route; a new subnet also needs VLAN/trunk, router interface/gateway, and OSPF changes.
-4. Check service targets, protocol behavior, and startup/readiness. Compile the network-level firewall policy with render_firewall --check for routed flows; same-VLAN traffic bypasses it. Add or change permissions only when needed.
-5. Check whether capture points and log-source attribution can observe the new traffic. Add focused tests when simulator or tooling behavior changes; validate dataset wiring with the standalone topology command instead of exact node/IP/count assertions in pytest. Then update setup docs and PLANS.md when scope or status changes.
+The builder reuses nodes by name without reconciling changed images or environments.
 
-Run the topology validator, generated switch-reference check, template-registry check, build_topology --plan, and firewall renderer as applicable. Inspect the build plan's skipped links rather than relying on its exit code. The validator checks declared YAML, router scripts, and switch plans; it does not prove every intended device is cabled, an image is built, a service starts, or packets and logs appear. The builder reuses existing GNS3 nodes by name without reconciling changed image or environment settings. The user verifies actual GNS3 cabling, VLAN isolation, OSPF, firewall enforcement, and traffic in their GNS3 environment.
+## Runs, attacks, and documentation
 
-Keep the root README as the entry point. GNS3 setup and image builds belong in `scripts/gns3/README.md`, attack usage in `scripts/attacks/README.md`, and device settings in the device README. Update the owning guide and link to it instead of repeating setup sequences.
-
-## Runs and attacks
-
-- scripts/gns3/run.py is the GNS3 command entry point. Its builder, router/switch configuration, lifecycle, capture, and experiment commands use the selected dataset. See scripts/gns3/README.md for usage and limits. Do not claim live topology, route, VLAN, or firewall verification from offline checks; the user validates those in GNS3.
-- Experiment runs share a run ID across manifest, timeline, captures, and logs. Keep timeline actions separate from device/service logs; record capture and collector failures. The firewall attack allowance is temporary and must restore the baseline when the run ends.
-- scripts/attacks/run.py dispatches lab-only attacks. Targets resolve from the selected dataset unless explicitly supplied. Live attack commands require METROPOLIS_LAB_ACK=yes; use --dry-run for offline checks. Keep the bounded Python entry points and optional external scripts distinct.
-- Scripts and device models are not regular importable packages. Their tests use importlib.util.spec_from_file_location or add the script directory to sys.path.
-- Keep the dev dependency pins and scripts/attacks/requirements.txt aligned for pymodbus, paho-mqtt, paramiko, and scapy.
+- `scripts/gns3/run.py` dispatches builder, router/switch, lifecycle, capture, and experiment commands using the selected dataset; see `scripts/gns3/README.md` for usage and limits.
+- Share run IDs across manifests, timelines, captures, and logs. Keep timeline actions separate from service logs; record capture/collector failures and restore baseline firewall policy when a run with temporary attack allowances ends.
+- `scripts/attacks/run.py` dispatches lab-only attacks. Resolve targets from the selected dataset unless explicitly overridden. Live runs require `METROPOLIS_LAB_ACK=yes`; use `--dry-run` offline. Keep bounded Python tools distinct from optional external scripts.
+- Keep root README as the entry point. Put GNS3 setup/image builds in `scripts/gns3/README.md`, attacks in `scripts/attacks/README.md`, and device settings in the device README. Update and link the owning guide instead of duplicating setup steps.

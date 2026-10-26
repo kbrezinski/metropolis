@@ -1,49 +1,45 @@
 # Metropolis research plan
 
-This is a living, concise plan. Record new ideas and decisions here when we discuss future work. Tasks are ordered from higher to lower priority. Only category 1 is active; categories 2–4 are parked until the user explicitly asks to work on them.
+Record future ideas and decisions here. Earlier items have higher priority. Only category 1 is active; categories 2–4 stay parked until requested. Remove completed tasks.
 
 ## 1. Testbed and attack scripts — current focus
 
-Expand the GNS3 water-treatment network one cell at a time. Prioritize credible packet timing, polling rates, and value-change patterns; physically accurate values and cross-cell process coupling are not required. Check images, links, subnets, routes, and capture coverage for each addition. Retain syslog events and collection metadata for later analysis; treat ordinary Docker output as simulator diagnostics.
-
-The intake, dosing, filtration, and disinfection cells have declared and implemented nodes. Their HMIs send setpoints through SCADA and receive PLC register readback acknowledgements. The reservoir and raw-water sites now have networked level instruments and pump drives around their RTUs, with read-only central SCADA polling. Local devices use Modbus TCP and cyclic EtherNet/IP; the WAN carries routed RTU polls without IPsec. These paths have offline checks, but startup, packet timing, and alarms have not been verified in live GNS3. Measurements are simple and independent of physical process behavior.
-
-An on-demand Daybreak Blue security review tool discovers a selected dataset's settings, router files, and attack catalog to record SDK findings separately from theoretical attack paths. It does not verify the running GNS3 network.
+Expand one cell at a time, prioritizing credible packet timing, polling, and value-change patterns over physical process accuracy. Check images, wiring, routing, firewall permissions, and capture coverage. Retain syslog as research telemetry and Docker output as simulator diagnostics. See [README.md](README.md) for current capabilities.
 
 ### Testbed features
 
-- [ ] Add route-based site-to-site IPsec tunnels between the WAN hub and both remote-site routers. Route operational traffic through the tunnels, keep the simulated WAN as the untrusted underlay, and add offline checks for tunnel configuration and routed paths.
-- [ ] Give the declared DMZ and enterprise networks a purposeful, controlled data or administration path, such as a DMZ relay and enterprise consumer; define the service and firewall flows before adding hosts.
-- [ ] Explore paired plant and operations aggregation switches with dual-uplink access switches, then consider DMZ, WAN, and remote-site redundancy. Revisit router uplinks and Open vSwitch RSTP before adding loops; these are proposals, not declared nodes.
-- [ ] Consider one additional interoperable protocol where it has a realistic peer and observable traffic, such as OPC UA for supervisory exchange or DNP3 for remote telemetry. Separately decide whether CoAP security/features or MQTT ACLs serve a research scenario; document simulator fidelity limits.
-- [ ] Consider a controlled RDP endpoint for future remote administration traffic. Define its host role, normal TCP/UDP behavior, permitted path, and capture point before adding it; the imported RDP-UDP attack recipe is only a reference image and has no current target.
+- [ ] Add route-based site-to-site IPsec between the WAN hub and both remote sites. Route operational traffic through the tunnels over the untrusted WAN; check tunnel configuration and routes offline.
+- [ ] Define a controlled DMZ-to-enterprise data or administration path, such as a relay and consumer. Specify services and firewall permissions before adding hosts.
+- [ ] Explore redundant plant and operations aggregation switches with dual-uplink access switches, then other sites. Plan router uplinks and Open vSwitch RSTP before adding loops.
+- [ ] Evaluate OPC UA or DNP3 where realistic peers and observable traffic exist. Assess CoAP security and MQTT ACLs for a defined research scenario; document protocol-model limits.
+- [ ] Consider an RDP administration endpoint. Define its role, normal TCP/UDP traffic, firewall path, and capture point before adding it.
 
 ### GNS3 tooling and cleanup
 
-- [ ] Define an expected normal-flow and capture-point matrix for populated cells and remote RTUs: endpoints, protocols, polling and cyclic rates, fault traffic, and local versus routed links. Mark declared but unpopulated networks separately; keep Docker output as simulator diagnostics.
-- [ ] Make the GNS3 builder detect stale image, environment, and adapter settings when it reuses a node by name; plan how to report or reconcile drift before expanding the inventory.
-- [ ] Make GNS3 dataset selection consistent: the builder uses the bundled dataset, and lifecycle accepts `--dataset` without applying it. Support the selected dataset before claiming a complete custom-dataset build/start workflow.
-- [ ] Extend `protocol_profiles/` beyond the versioned Modbus attack action map with the full register maps, MQTT topics, EtherNet/IP assemblies, service settings, and timing defaults; check profiles against inventory and simulator configuration. Preserve stable per-cell SCADA polling rates as targets are added.
-- [ ] Add the existing firewall policy as an optional document in `metropolis.topology`, including load/save and validation; have the GNS3 compiler consume that model instead of reading the YAML separately.
+- [ ] Reduce redundant pytest cases by about 20% while keeping line coverage within two percentage points.
+  - Measure the unchanged suite's collected cases, coverage, and runtime under `.venv/`.
+  - Remove low-value duplicates in owner batches while retaining independent protocol, lifecycle, and validation contracts.
+  - Rerun the suite and compare identical coverage settings; document retained coverage and remove this task when complete.
+- [ ] Define a normal-traffic and capture-point matrix: endpoints, protocols, polling/cyclic rates, fault traffic, and local/routed links. Distinguish populated networks from declarations without devices.
+- [ ] Detect image, environment, and adapter drift when the builder reuses nodes; define how to report or reconcile it.
+- [ ] Make the builder and lifecycle commands honor the selected `--dataset` consistently.
+- [ ] Extend `protocol_profiles/` with register maps, MQTT topics, EtherNet/IP assemblies, service settings, and timing defaults. Validate against inventory and simulators; keep per-cell SCADA polling rates stable as targets grow.
+- [ ] Add optional firewall-policy load/save and validation to `metropolis.topology`; make the GNS3 compiler consume that model.
+- [ ] Consider automated image preparation and prerequisite checks on each compute, plus reproducible VyOS appliance setup.
+- [ ] Consider explicit node placement across computes when capacity requires it; verify configuration, capture, and log attribution across them.
 
 ### Attack scripts — later
 
-Users select attacks and launch timing through scripts/attacks/run.py. Keep attack actions attributable to the capture run ID; user-controlled execution is the preferred workflow.
-
-- [ ] Add dedicated attack cases for newly populated cells after their normal packet patterns are confirmed. Keep this separate from adding the normal device traffic.
-
-### Further feature proposals from the paper comparison
-
-Discuss and scope these before implementation; existing tasks above retain priority. Deployment drift detection and consistent dataset selection are already listed under GNS3 tooling and cleanup.
-
-- [ ] Add configurable device resource and link profiles: container CPU/RAM limits plus bandwidth, delay, jitter, and packet loss to approximate constrained field devices and communication links. Keep enforcement separate from measurement-only reporting, preserve current behavior unless a profile is selected, and verify achieved limits while accounting for compute overload.
-- [ ] Consider automated Docker image preparation and prerequisite checks on each selected compute; document reproducible VyOS appliance preparation.
-- [ ] Consider explicit node placement across multiple computes if single-compute capacity becomes limiting; verify configuration, capture, and log attribution across them.
+- [ ] Add scenarios for newly populated cells after normal traffic is established. Use `scripts/attacks/run.py`, user-selected launch timing, and attribution to the capture run ID.
 
 ## 2. Data processing and model development — future
 
-Existing PCAP extraction and cleaning are an initial foundation. Record future feature, labeling, dataset, and model ideas here when discussed. Do not begin this work until prompted.
+Build on existing PCAP extraction and cleaning when requested. Record feature, labeling, dataset, and model ideas here.
 
 ## 3. Experimentation, ablation, and model comparison — future
 
-Record proposed experiment designs and comparison questions here when discussed. Do not begin this work until prompted.
+Record experiment designs, ablations, and model comparisons here when discussed.
+
+## 4. Paper authoring — future
+
+Keep paper objectives, questions, and writing in [PAPER_PLAN.md](docs/paper/PAPER_PLAN.md).

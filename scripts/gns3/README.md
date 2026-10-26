@@ -130,6 +130,10 @@ the password override is the `METROPOLIS_ROUTER_PASSWORD` environment variable.
 Check cabling, VLAN isolation, router neighbors, permitted/blocked paths, and
 service startup in your GNS3 environment. Offline checks validate declarations.
 
+To give containers shared CPU/RAM limits, apply the optional
+[resource baseline](#container-resource-baseline) after startup and before
+selecting an experiment profile.
+
 ## 5. Collect an experiment
 
 On a running lab, choose a **new run ID**:
@@ -293,6 +297,64 @@ does not establish what caused a slowdown. Unavailable GNS3 compute readings
 are reported explicitly. Tests use mocked services and PCAP fixtures; verify
 actual collection, attribution, and overhead in your GNS3 environment.
 
+## Container resource baseline
+
+The selected dataset's `topology/resource-baseline.yaml` is the single place
+for normal container CPU, RAM, and swap limits. The bundled
+[baseline file](../../testbeds/metropolis/datasets/water_treatment_v1/topology/resource-baseline.yaml)
+starts with 1 CPU core and 512 MiB RAM per container. Its memory-plus-swap
+limit is also 512 MiB, allowing no additional swap. SCADA has a 1 GiB override.
+These are editable starting ceilings, not reserved resources or validated
+device sizing requirements. VyOS QEMU appliances are outside this baseline.
+
+Edit `defaults` for shared settings and `overrides.models` or
+`overrides.images` for exceptions. Resolution is defaults, then model, then
+exact image; an image override takes precedence. RAM and memory-plus-swap
+values must be explicit in the resolved settings. See the
+[baseline schema](../../schemas/resource-baseline.schema.json).
+
+Inspect the resolved settings without Docker or GNS3:
+
+```bash
+uv run python scripts/gns3/run.py configure_baseline --plan
+```
+
+After starting the lab, apply the baseline to its containers:
+
+```bash
+uv run python scripts/gns3/run.py configure_baseline --apply \
+  --docker-host "$COMPUTE_DOCKER"
+```
+
+This deliberately establishes persistent setup limits and checks their
+readback. It does not recreate or start nodes, and it does not roll the
+baseline back when an experiment finishes. Repeating it skips matching
+settings. Missing containers and partial failures are reported; fix or start
+the affected nodes and rerun. A stopped container with an existing container
+ID can still receive its settings. Reapply after containers are recreated.
+
+Check the live lab without changing it:
+
+```bash
+uv run python scripts/gns3/run.py configure_baseline --check \
+  --docker-host "$COMPUTE_DOCKER"
+```
+
+`--check` is the default. Use `--dataset PATH`, `--project NAME`, and the usual
+compute mappings for another lab. Each dataset has one baseline file at
+`topology/resource-baseline.yaml`.
+
+When that optional dataset file exists, `experiment_run` checks it after
+optional startup and before applying an experiment profile. It records the
+baseline path, hash, node settings, and differences in the manifest's
+`resource_baseline` section, and reports `baseline_status` as `matched`,
+`drift`, or `failed`. This check does not enforce limits or block capture
+because of drift. A dataset without the file keeps the existing behavior.
+Temporary profiles still restore the actual settings recorded before the run.
+
+These checks establish configured limits, not demonstrated resource capacity.
+Verify operation and sizing in your GNS3 environment.
+
 ## Optional device and link profiles
 
 Profiles deliberately constrain selected devices and communication links.
@@ -325,20 +387,11 @@ duplicate targets, unknown keys, and invalid numeric settings are rejected.
 CPU/RAM limits require Docker access to the target's compute. Reversible RAM
 changes require a finite existing memory limit; the runner rejects an unlimited
 baseline rather than silently keeping a new limit or recreating the container.
-If RAM profiles are needed, deliberately establish a baseline before the run.
-For example, after identifying the target container on its compute:
-
-```bash
-# Choose the container and baseline size for your device; this changes setup.
-CONTAINER_ID=YOUR_CONTAINER_ID
-docker --host "${COMPUTE_DOCKER#*=}" update \
-  --memory 512m --memory-swap 512m "$CONTAINER_ID"
-```
-
-Both values must be explicit. Size the baseline for the simulator's normal
-operation; the run temporarily applies its selected RAM limit and restores the
-baseline afterward. This preparation is optional and is never applied by
-default. CPU and link profiles do not require a RAM baseline.
+For RAM profiles, first apply the [resource baseline](#container-resource-baseline).
+Size it for the simulator's normal operation. The run temporarily applies its
+selected RAM limit and restores the recorded settings afterward. Baseline
+preparation is optional and is never applied by default. CPU and link profiles
+do not require a RAM baseline.
 
 GNS3 link filters provide delay, jitter, and loss. Actual bandwidth control
 requires a port on the repo-owned Open vSwitch image: ingress policing limits

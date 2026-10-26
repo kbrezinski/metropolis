@@ -1,0 +1,3 @@
+interface:
+  display_name: "Metropolis Test Audit"
+  short_description: "Test reusable OT behavior without pinning topology"

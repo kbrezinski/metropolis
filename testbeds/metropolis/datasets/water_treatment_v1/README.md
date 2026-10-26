@@ -10,6 +10,7 @@ Run commands from the repository root.
 | [topology/address-plan.yaml](topology/address-plan.yaml) | Sites, VLANs, subnets, and gateways |
 | [topology/links.yaml](topology/links.yaml) | Declared cabling and capture-point IDs |
 | [topology/firewall-policy.yaml](topology/firewall-policy.yaml) | Permitted routed flows by network/CIDR, protocol, and port |
+| [topology/resource-baseline.yaml](topology/resource-baseline.yaml) | Optional shared container CPU, RAM, and explicit swap limits, with model/image overrides |
 | [device_instances/initial_devices.yaml](device_instances/initial_devices.yaml) | Device names, addresses, images, and environments |
 | [device_instances/infrastructure.yaml](device_instances/infrastructure.yaml) | Routers, switch port roles, and router-script paths |
 | [protocol_profiles/modbus_actions_v1.yaml](protocol_profiles/modbus_actions_v1.yaml) | Cell-specific Modbus attack actions |
@@ -22,6 +23,15 @@ under `scripts/attacks/`.
 Router scripts configure OSPF, BFD, SNMP, and syslog. The simulated WAN is an
 untrusted underlay with no site-to-site IPsec. Same-VLAN traffic bypasses the
 routed firewall policy.
+
+The resource baseline is applied only by the explicit
+[`configure_baseline --apply` setup command](../../../../scripts/gns3/README.md#container-resource-baseline).
+The bundled starting limits are 1 CPU core and 512 MiB RAM, with no additional
+swap and a 1 GiB SCADA override. They are editable ceilings, not reserved
+resources or validated device requirements. Experiments check the optional
+file without enforcing it and record `resource_baseline` status and drift in
+the run manifest. Model overrides follow shared defaults; exact image
+overrides take precedence. VyOS QEMU appliances are reported separately.
 
 ## Validate changes
 

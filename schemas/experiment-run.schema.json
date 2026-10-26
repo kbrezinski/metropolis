@@ -48,6 +48,21 @@
     "attack_events_path": {"type": "string"},
     "selected_capture_links": {"type": "array", "uniqueItems": true, "items": {"type": "string"}},
     "captures": {"type": "array", "items": {"type": "string"}},
+    "resource_baseline": {
+      "type": "object",
+      "required": ["path", "sha256", "mode", "status", "nodes", "unsupported", "failures"],
+      "properties": {
+        "path": {"type": "string"},
+        "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+        "mode": {"enum": ["check", "apply"]},
+        "status": {"enum": ["matched", "drift", "failed"]},
+        "checked_at_utc": {"type": "string", "format": "date-time"},
+        "nodes": {"type": "object", "additionalProperties": {"type": "object"}},
+        "unsupported": {"type": "array", "items": {"type": "object"}},
+        "failures": {"$ref": "#/$defs/metricFailures"}
+      },
+      "additionalProperties": false
+    },
     "profiles": {
       "type": "object",
       "required": ["enabled"],

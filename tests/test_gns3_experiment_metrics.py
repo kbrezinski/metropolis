@@ -268,6 +268,64 @@ def test_default_run_does_not_construct_profile_enforcement(run_fixture):
     assert "profiles" not in manifest
 
 
+@pytest.mark.parametrize("status", ["matched", "drift", "failed"])
+def test_optional_baseline_check_is_read_only_and_does_not_block_capture(
+    run_fixture, status
+):
+    baseline = {
+        "path": "baseline.yaml",
+        "sha256": "a" * 64,
+        "targets": [],
+        "unsupported": [],
+    }
+
+    def check(_client, _project, selected, _hosts, *, apply):
+        assert apply is False
+        assert selected is baseline
+        run_fixture.events.append("baseline_checked")
+        return {
+            "path": selected["path"],
+            "sha256": selected["sha256"],
+            "mode": "check",
+            "status": status,
+            "nodes": {},
+            "unsupported": [],
+            "failures": [],
+        }
+
+    manifest = run_fixture.run(baseline=baseline, baseline_check_fn=check)
+    assert manifest["status"] == "complete"
+    assert manifest["resource_baseline"]["status"] == status
+    schema = json.loads(
+        (GNS3.parents[1] / "schemas/experiment-run.schema.json").read_text()
+    )
+    Draft202012Validator(schema, format_checker=FormatChecker()).validate(manifest)
+    assert run_fixture.events.index("baseline_checked") < run_fixture.events.index(
+        "capture"
+    )
+
+
+def test_unavailable_baseline_check_preserves_collection(run_fixture):
+    def unavailable(*_args, **_kwargs):
+        raise RuntimeError("compute unavailable")
+
+    manifest = run_fixture.run(
+        baseline={"path": "baseline.yaml", "sha256": "a" * 64},
+        baseline_check_fn=unavailable,
+    )
+    assert manifest["status"] == "complete"
+    assert manifest["resource_baseline"]["status"] == "failed"
+    assert "capture" in run_fixture.events
+
+
+def test_no_baseline_keeps_existing_run_behavior(run_fixture):
+    def unwanted(*_args, **_kwargs):
+        pytest.fail("run without a baseline performed baseline checks")
+
+    manifest = run_fixture.run(baseline_check_fn=unwanted)
+    assert "resource_baseline" not in manifest
+
+
 def test_cli_rejects_unknown_profile_targets_before_connecting(tmp_path, monkeypatch):
     profile = tmp_path / "profile.yaml"
     profile.write_text(
@@ -298,7 +356,10 @@ def test_cli_rejects_invalid_metric_intervals_before_connecting(monkeypatch, val
 
 
 @pytest.mark.parametrize("disabled", [False, True])
-def test_cli_passes_metric_settings_to_run(tmp_path, monkeypatch, disabled):
+@pytest.mark.parametrize("baseline_present", [False, True])
+def test_cli_passes_metric_settings_to_run(
+    tmp_path, monkeypatch, disabled, baseline_present
+):
     dataset = tmp_path / "dataset"
     for relative in (
         "topology/address-plan.yaml",
@@ -310,6 +371,12 @@ def test_cli_passes_metric_settings_to_run(tmp_path, monkeypatch, disabled):
         target = dataset / relative
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text("{}")
+    if baseline_present:
+        (dataset / "topology/resource-baseline.yaml").write_text(
+            'schema_version: "1.0"\ndefaults:\n'
+            "  cpus: 1\n  memory_bytes: 536870912\n"
+            "  memory_swap_bytes: 536870912\n"
+        )
     args = [
         "experiment_run",
         "--dataset",
@@ -343,6 +410,12 @@ def test_cli_passes_metric_settings_to_run(tmp_path, monkeypatch, disabled):
     def run(*_args, **kwargs):
         assert kwargs["metrics_enabled"] is (not disabled)
         assert kwargs["metrics_interval"] == 2.5
+        assert (kwargs["baseline"] is not None) is baseline_present
+        if baseline_present:
+            assert kwargs["baseline"]["path"] == str(
+                (dataset / "topology/resource-baseline.yaml").resolve()
+            )
+            assert len(kwargs["baseline"]["sha256"]) == 64
         return {"status": "complete", "captures": [], "failures": []}
 
     monkeypatch.setattr(experiment_run, "run_experiment", run)

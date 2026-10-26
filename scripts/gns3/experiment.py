@@ -16,6 +16,7 @@ from metrics_report import finalize_metrics
 from profile_enforcement import ProfileSession
 from resource_metrics import ResourceCollector
 from router_config import DEFAULT_PASSWORD, DEFAULT_USERNAME, configure_project_routers
+from resource_baseline import configure_baseline
 
 
 def run_experiment(
@@ -43,11 +44,13 @@ def run_experiment(
     metrics_enabled: bool = True,
     metrics_interval: float = 5.0,
     profile: dict | None = None,
+    baseline: dict | None = None,
     collector_factory=DeviceLogCollector,
     capture_fn=capture_for,
     resource_collector_factory=ResourceCollector,
     metrics_report_fn=finalize_metrics,
     profile_session_factory=ProfileSession,
+    baseline_check_fn=configure_baseline,
 ) -> dict:
     """Start telemetry before optional lab startup, and stop it after capture."""
     if not math.isfinite(metrics_interval) or metrics_interval <= 0:
@@ -215,6 +218,29 @@ def run_experiment(
                     firewall_commands is not None and not router_failures
                 )
             collector._write_manifest()
+        if baseline is not None:
+            try:
+                baseline_report = baseline_check_fn(
+                    client, project.project_id, baseline, docker_hosts, apply=False
+                )
+            except Exception as exc:  # noqa: BLE001 - drift observation must not stop capture
+                baseline_report = {
+                    "path": baseline["path"],
+                    "sha256": baseline["sha256"],
+                    "mode": "check",
+                    "status": "failed",
+                    "nodes": {},
+                    "unsupported": baseline.get("unsupported", []),
+                    "failures": [
+                        {
+                            "source": "baseline",
+                            "reason": f"baseline check failed: {type(exc).__name__}",
+                        }
+                    ],
+                }
+            collector.manifest["resource_baseline"] = baseline_report
+            collector._write_manifest()
+            record("resource_baseline_checked", status=baseline_report["status"])
         if profile is not None:
             profile_session = profile_session_factory(
                 client,
