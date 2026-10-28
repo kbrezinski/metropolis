@@ -79,6 +79,10 @@ Dedicated Layer 2 segment for attack-generation nodes.
 | 1 | `attack-host-1` | access | untagged | `MET-MIRAI-CNC-01` — Synthetic Mirai control node on the attack-test segment |
 | 2 | `attack-host-2` | access | untagged | `MET-MERLIN-CNC-01` — Merlin control node on the attack-test segment |
 | 3 | `attack-host-3` | access | untagged | `MET-MERLIN-AGENT-01` — Merlin agent on the attack-test segment |
+| 4 | `attack-host-4` | access | untagged | `MET-MIRAI-LISTENER-01` — Synthetic Mirai scan listener on the attack-test segment |
+| 5 | `attack-host-5` | access | untagged | `MET-MIRAI-LOADER-TFTP-01` — Synthetic Mirai TFTP loader on the attack-test segment |
+| 6 | `attack-host-6` | access | untagged | `MET-MIRAI-LOADER-WGET-01` — Synthetic Mirai HTTP loader on the attack-test segment |
+| 7 | `attack-host-7` | access | untagged | `MET-MIRAI-BOT-01` — Synthetic Mirai bot on the attack-test segment |
 
 ## `sw-reservoir-access`
 

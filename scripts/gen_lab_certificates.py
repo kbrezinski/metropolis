@@ -26,6 +26,8 @@ import datetime
 import ipaddress
 from pathlib import Path
 
+import yaml
+
 # The names and addresses the certificate must be valid for. A broker is reached
 # by address inside the lab and by name from a host, so both are covered. The
 # GNS3 node name is what the clients in this lab actually connect to.
@@ -117,22 +119,15 @@ def build_server_certificate(ca_key, ca_certificate, names, addresses):
     return key, certificate
 
 
-def write_pem(path: Path, key, certificate) -> None:
-    """Write a certificate and its key as PEM, the form TLS expects."""
+def write_pem(path: Path, certificate) -> None:
+    """Write only the public certificate; the private key has its own file."""
     from cryptography.hazmat.primitives import serialization
 
-    path.write_bytes(
-        key.private_bytes(
-            encoding=serialization.Encoding.PEM,
-            format=serialization.PrivateFormat.PKCS8,
-            encryption_algorithm=serialization.NoEncryption(),
-        )
-        + certificate.public_bytes(serialization.Encoding.PEM)
-    )
+    path.write_bytes(certificate.public_bytes(serialization.Encoding.PEM))
 
 
 def generate(out_dir: Path, names: list[str], addresses: list[str]) -> dict[str, Path]:
-    """Write the CA, the server certificate and key, and a CoAP PSK file."""
+    """Write the CA, server certificate, and server private key."""
     from cryptography.hazmat.primitives import serialization
 
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -143,14 +138,16 @@ def generate(out_dir: Path, names: list[str], addresses: list[str]) -> dict[str,
 
     ca_path = out_dir / "ca.crt"
     ca_path.write_bytes(ca_certificate.public_bytes(serialization.Encoding.PEM))
-    write_pem(out_dir / "server.crt", server_key, server_certificate)
-    (out_dir / "server.key").write_bytes(
+    write_pem(out_dir / "server.crt", server_certificate)
+    key_path = out_dir / "server.key"
+    key_path.write_bytes(
         server_key.private_bytes(
             encoding=serialization.Encoding.PEM,
             format=serialization.PrivateFormat.PKCS8,
             encryption_algorithm=serialization.NoEncryption(),
         )
     )
+    key_path.chmod(0o600)
     return {
         "ca": ca_path,
         "server": out_dir / "server.crt",
@@ -158,13 +155,39 @@ def generate(out_dir: Path, names: list[str], addresses: list[str]) -> dict[str,
     }
 
 
+def merlin_identity(dataset: Path) -> tuple[list[str], list[str]]:
+    """Find the one Merlin control endpoint in a selected dataset."""
+    inventory_path = dataset / "device_instances" / "initial_devices.yaml"
+    inventory = yaml.safe_load(inventory_path.read_text(encoding="utf-8"))
+    matches = [
+        device
+        for device in inventory.get("devices", [])
+        if "merlin-control" in device.get("protocols", [])
+    ]
+    if len(matches) != 1:
+        raise ValueError(
+            f"Expected one Merlin control node in {inventory_path}; found {len(matches)}"
+        )
+    device = matches[0]
+    address = str(ipaddress.ip_interface(device["address"]).ip)
+    return [device["name"]], [address]
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     parser.add_argument(
+        "--service",
+        choices=("mqtt", "merlin"),
+        default="mqtt",
+        help="Certificate identity to generate (default: mqtt)",
+    )
+    parser.add_argument(
+        "--dataset", type=Path, help="Selected dataset directory (required for merlin)"
+    )
+    parser.add_argument(
         "--out-dir",
         type=Path,
-        default=Path("certs"),
-        help="Where to write the certificates (Git-ignored)",
+        help="Output directory (default: certs or certs/merlin)",
     )
     parser.add_argument(
         "--name",
@@ -180,17 +203,25 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    names = DEFAULT_NAMES + (args.names or [])
-    addresses = DEFAULT_ADDRESSES + (args.addresses or [])
-    written = generate(args.out_dir, names, addresses)
+    if args.service == "merlin":
+        if args.dataset is None:
+            parser.error("--dataset is required for --service merlin")
+        names, addresses = merlin_identity(args.dataset)
+        out_dir = args.out_dir or Path("certs/merlin")
+    else:
+        names, addresses = DEFAULT_NAMES.copy(), DEFAULT_ADDRESSES.copy()
+        out_dir = args.out_dir or Path("certs")
+    names += args.names or []
+    addresses += args.addresses or []
+    written = generate(out_dir, names, addresses)
 
     for label, path in written.items():
         print(f"  {label}: {path}")
     print(f"valid for: {', '.join(names)} and {', '.join(addresses)}")
-    print(
-        "Load ca.crt into the broker and set TLS=true on the clients that should "
-        "use it."
-    )
+    if args.service == "mqtt":
+        print("Load ca.crt into broker clients that should use MQTT TLS.")
+    else:
+        print("Rebuild both Merlin images with this bundle on their hosting compute.")
     return 0
 
 

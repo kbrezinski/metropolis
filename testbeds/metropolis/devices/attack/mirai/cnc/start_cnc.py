@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Adapted from Gotham: https://github.com/xsaga/gotham-iot-testbed/blob/master/src/run_mirai.py
 """Synthetic Mirai command-and-control console.
 
 Mirrors the Gotham ``iotsim-mirai-cnc`` node: a controller that maintains a
@@ -31,7 +32,9 @@ LOG = logging.getLogger("mirai.cnc")
 # Bound the registry so a runaway scanner cannot exhaust memory.
 MAX_BOTS = 512
 # Bound a single control line so a stuck peer cannot exhaust memory.
-MAX_LINE = 512
+MAX_LINE = 4096
+MAX_PENDING = 32
+MAX_RESULTS = 16
 
 
 @dataclass
@@ -42,7 +45,11 @@ class Bot:
     address: str
     arch: str
     reported_at: float
+    peer_address: str | None = None
     commands: list[str] = field(default_factory=list)
+    pending: list[dict] = field(default_factory=list)
+    results: list[dict] = field(default_factory=list)
+    next_task: int = 0
 
 
 class Registry:
@@ -52,7 +59,7 @@ class Registry:
         self._lock = threading.Lock()
         self._bots: dict[str, Bot] = {}
 
-    def check_in(self, address: str, arch: str) -> Bot:
+    def check_in(self, address: str, arch: str, peer_address: str | None = None) -> Bot:
         with self._lock:
             bot = self._bots.get(address)
             if bot is None:
@@ -63,13 +70,61 @@ class Registry:
                     address=address,
                     arch=arch,
                     reported_at=time.time(),
+                    peer_address=peer_address,
                 )
                 self._bots[address] = bot
                 LOG.info("bot %s checked in from %s (%s)", bot.bot_id, address, arch)
             else:
                 bot.reported_at = time.time()
                 bot.arch = arch
+                bot.peer_address = peer_address
             return bot
+
+    def queue(self, bot_id: str, command: str) -> str:
+        with self._lock:
+            bot = next((item for item in self._bots.values() if item.bot_id == bot_id), None)
+            if bot is None:
+                raise ValueError("unknown bot")
+            if len(bot.pending) >= MAX_PENDING:
+                raise ValueError("bot task queue is full")
+            bot.next_task += 1
+            task_id = f"task-{bot.next_task:04d}"
+            bot.commands.append(command)
+            bot.pending.append({"task_id": task_id, "command": command})
+            return task_id
+
+    def poll(self, bot_id: str, peer_address: str) -> dict | None:
+        with self._lock:
+            bot = next((item for item in self._bots.values() if item.bot_id == bot_id), None)
+            if bot is None or bot.peer_address != peer_address:
+                raise ValueError("bot is not registered from this address")
+            return bot.pending.pop(0) if bot.pending else None
+
+    def add_result(self, bot_id: str, peer_address: str, result: dict) -> bool:
+        with self._lock:
+            bot = next((item for item in self._bots.values() if item.bot_id == bot_id), None)
+            if bot is None or bot.peer_address != peer_address:
+                return False
+            if not isinstance(result.get("task_id"), str) or not isinstance(
+                result.get("outcome"), str
+            ):
+                return False
+            bot.results.append(result)
+            del bot.results[:-MAX_RESULTS]
+            return True
+
+    def status(self, bot_id: str) -> dict | None:
+        with self._lock:
+            bot = next((item for item in self._bots.values() if item.bot_id == bot_id), None)
+            if bot is None:
+                return None
+            return {
+                "bot_id": bot.bot_id,
+                "address": bot.address,
+                "peer_address": bot.peer_address,
+                "pending": len(bot.pending),
+                "results": list(bot.results),
+            }
 
     def get(self, bot_id: str) -> Bot | None:
         with self._lock:
@@ -83,6 +138,7 @@ class Registry:
                 {
                     "bot_id": bot.bot_id,
                     "address": bot.address,
+                    "peer_address": bot.peer_address,
                     "arch": bot.arch,
                     "commands": len(bot.commands),
                 }
@@ -118,34 +174,54 @@ def report_listener(
 
 
 def handle_bot(registry: Registry, connection: socket.socket, peer) -> None:
-    """Serve one bot session: a check-in line, then command polls."""
-    for _ in range(4):
+    """Serve one bot check-in, poll, or result frame."""
+    try:
+        connection.settimeout(3)
         line = read_line(connection)
         if not line:
             return
         command = line.split(" ", 2)
+        stream = connection.makefile("wb")
         if command[0] == "CHECKIN" and len(command) >= 2:
             try:
                 bot = registry.check_in(
-                    command[1], command[2] if len(command) > 2 else "unknown"
+                    command[1], command[2] if len(command) > 2 else "unknown", peer[0]
                 )
             except ValueError as exc:
-                send_line(connection.makefile("wb"), f"REJECT {exc}")
+                send_line(stream, f"REJECT {exc}")
                 return
-            send_line(connection.makefile("wb"), f"ACK {bot.bot_id}")
-        elif command[0] == "CLEAR":
-            return
-    connection.close()
+            send_line(stream, f"ACK {bot.bot_id}")
+        elif command[0] == "POLL" and len(command) == 2:
+            try:
+                task = registry.poll(command[1], peer[0])
+            except ValueError as exc:
+                send_line(stream, f"REJECT {exc}")
+            else:
+                send_line(stream, f"TASK {json.dumps(task)}" if task else "IDLE")
+        elif command[0] == "RESULT" and len(command) == 3:
+            try:
+                result = json.loads(command[2])
+            except json.JSONDecodeError:
+                result = {}
+            accepted = registry.add_result(command[1], peer[0], result)
+            send_line(stream, "ACKRESULT" if accepted else "REJECT invalid result")
+    finally:
+        connection.close()
 
 
 def read_line(connection: socket.socket) -> str:
+    data = bytearray()
     try:
-        data = connection.recv(MAX_LINE)
+        while len(data) < MAX_LINE:
+            chunk = connection.recv(min(1024, MAX_LINE - len(data)))
+            if not chunk:
+                break
+            data.extend(chunk)
+            if b"\n" in chunk:
+                break
     except OSError:
         return ""
-    if not data:
-        return ""
-    return data.decode("utf-8", errors="replace").strip()
+    return bytes(data).decode("utf-8", errors="replace").strip()
 
 
 def handle_operator(registry: Registry, connection: socket.socket) -> None:
@@ -177,8 +253,15 @@ def handle_operator(registry: Registry, connection: socket.socket) -> None:
                 send_line(stream, "run needs a command")
             else:
                 # Recorded only; this lab never executes delivered commands.
-                selection.commands.append(argument)
-                send_line(stream, f"queued for {selection.bot_id}: {argument}")
+                try:
+                    task_id = registry.queue(selection.bot_id, argument)
+                except ValueError as exc:
+                    send_line(stream, f"queue failed: {exc}")
+                else:
+                    send_line(stream, f"queued for {selection.bot_id}: {task_id}")
+        elif verb == "status":
+            status = registry.status(argument)
+            send_line(stream, json.dumps(status) if status else "unknown bot")
         elif verb == "back":
             selection = None
             send_line(stream, "selection cleared")

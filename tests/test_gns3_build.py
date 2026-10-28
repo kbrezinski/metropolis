@@ -529,6 +529,24 @@ def test_actuators_start_before_the_intake_controller():
     ]
 
 
+def test_attack_support_services_start_before_agents():
+    images = {
+        "mirai-cnc": "metropolis/mirai-cnc:dev",
+        "mirai-listener": "metropolis/mirai-scan-listener:dev",
+        "mirai-tftp": "metropolis/mirai-loader:dev",
+        "mirai-http": "metropolis/mirai-wget-loader:dev",
+        "mirai-bot": "metropolis/mirai-bot:dev",
+        "merlin-cnc": "metropolis/merlin-cnc:dev",
+        "merlin-agent": "metropolis/merlin-agent:dev",
+    }
+    order = startup_order([{"name": name} for name in images], {}, images)
+    services = {"mirai-cnc", "mirai-listener", "mirai-tftp", "mirai-http", "merlin-cnc"}
+    agents = {"mirai-bot", "merlin-agent"}
+    assert max(order.index(name) for name in services) < min(
+        order.index(name) for name in agents
+    )
+
+
 def test_start_all_starts_in_order_and_reports_failures():
     class Flaky(FakeClient):
         def __init__(self):

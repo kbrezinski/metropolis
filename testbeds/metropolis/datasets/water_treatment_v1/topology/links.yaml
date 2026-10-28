@@ -626,9 +626,46 @@ links:
       - node: MET-MIRAI-CNC-01
       - node: sw-attack-test
         port_role: attack-host-1
-    notes: >-
-      Other attack-lab nodes require their own declared physical links before
-      they can participate in a built GNS3 topology.
+
+  - id: attach-mirai-listener
+    kind: access
+    description: Synthetic Mirai scan listener on the attack-test segment
+    network_id: attack-lab
+    cidr: 10.99.10.0/24
+    endpoints:
+      - node: MET-MIRAI-LISTENER-01
+      - node: sw-attack-test
+        port_role: attack-host-4
+
+  - id: attach-mirai-loader-tftp
+    kind: access
+    description: Synthetic Mirai TFTP loader on the attack-test segment
+    network_id: attack-lab
+    cidr: 10.99.10.0/24
+    endpoints:
+      - node: MET-MIRAI-LOADER-TFTP-01
+      - node: sw-attack-test
+        port_role: attack-host-5
+
+  - id: attach-mirai-loader-wget
+    kind: access
+    description: Synthetic Mirai HTTP loader on the attack-test segment
+    network_id: attack-lab
+    cidr: 10.99.10.0/24
+    endpoints:
+      - node: MET-MIRAI-LOADER-WGET-01
+      - node: sw-attack-test
+        port_role: attack-host-6
+
+  - id: attach-mirai-bot
+    kind: access
+    description: Synthetic Mirai bot on the attack-test segment
+    network_id: attack-lab
+    cidr: 10.99.10.0/24
+    endpoints:
+      - node: MET-MIRAI-BOT-01
+      - node: sw-attack-test
+        port_role: attack-host-7
 
   - id: attach-merlin-cnc
     kind: access

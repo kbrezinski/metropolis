@@ -662,7 +662,6 @@ devices:
   - name: MET-MIRAI-LISTENER-01
     model: testbeds/metropolis/devices/attack/mirai/scan_listener
     image: metropolis/mirai-scan-listener:dev
-    link_policy: intentionally_uncabled
     site: treatment_plant
     subnet: 10.99.10.0/24
     address: 10.99.10.11/24
@@ -678,7 +677,6 @@ devices:
   - name: MET-MIRAI-LOADER-TFTP-01
     model: testbeds/metropolis/devices/attack/mirai/loader
     image: metropolis/mirai-loader:dev
-    link_policy: intentionally_uncabled
     site: treatment_plant
     subnet: 10.99.10.0/24
     address: 10.99.10.12/24
@@ -694,7 +692,6 @@ devices:
   - name: MET-MIRAI-LOADER-WGET-01
     model: testbeds/metropolis/devices/attack/mirai/wget_loader
     image: metropolis/mirai-wget-loader:dev
-    link_policy: intentionally_uncabled
     site: treatment_plant
     subnet: 10.99.10.0/24
     address: 10.99.10.13/24
@@ -711,7 +708,6 @@ devices:
   - name: MET-MIRAI-BOT-01
     model: testbeds/metropolis/devices/attack/mirai/bot
     image: metropolis/mirai-bot:dev
-    link_policy: intentionally_uncabled
     site: treatment_plant
     subnet: 10.99.10.0/24
     address: 10.99.10.100/24
@@ -743,6 +739,8 @@ devices:
       NODE_GATEWAY: 10.99.10.1
       MERLIN_CONTROL_PORT: "23"
       MERLIN_HTTP_PORT: "8443"
+      MERLIN_TLS_CERT_FILE: /opt/metropolis/tls/server.crt
+      MERLIN_TLS_KEY_FILE: /opt/metropolis/tls/server.key
       C2_PORT: "23"
 
   - name: MET-MERLIN-AGENT-01
@@ -757,8 +755,9 @@ devices:
       NODE_HOSTNAME: MET-MERLIN-AGENT-01
       NODE_IP: 10.99.10.21/24
       NODE_GATEWAY: 10.99.10.1
-      MERLIN_CNC_URL: http://10.99.10.20:8443
+      MERLIN_CNC_URL: https://10.99.10.20:8443
       MERLIN_CNC_HOST: 10.99.10.20
+      MERLIN_CA_FILE: /opt/metropolis/tls/ca.crt
       AGENT_ARCH: linux-x64-synthetic
       AGENT_SLEEP: "20"
       AGENT_UPLOAD_ONCE: "true"

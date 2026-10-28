@@ -162,8 +162,8 @@ networks:
     gateway: 10.99.10.1
     purpose: >-
       Isolated experiment hosts: synthetic Mirai and Merlin control-plane nodes
-      plus the payload-delivery and reporting services they use. Filtering
-      remains to be configured.
+      plus the payload-delivery and reporting services they use. Routed
+      traffic is filtered by the router firewall policy.
   - id: wan-underlay
     name: Simulated WAN underlay
     site: inter_site

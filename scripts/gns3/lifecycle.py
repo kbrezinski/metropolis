@@ -31,7 +31,15 @@ INFRASTRUCTURE_TIERS = {"switch": TIER_SWITCH, "router": TIER_ROUTER}
 
 # Roles that something else depends on being up first, keyed by the image the
 # node was created from.
-SERVER_IMAGES = ("metropolis/controller:dev", "metropolis/mqtt-broker:dev")
+SERVER_IMAGES = (
+    "metropolis/controller:dev",
+    "metropolis/mqtt-broker:dev",
+    "metropolis/mirai-cnc:dev",
+    "metropolis/mirai-scan-listener:dev",
+    "metropolis/mirai-loader:dev",
+    "metropolis/mirai-wget-loader:dev",
+    "metropolis/merlin-cnc:dev",
+)
 PRODUCER_IMAGES = (
     "metropolis/mqtt-sensor:dev",
     "metropolis/hmi:dev",

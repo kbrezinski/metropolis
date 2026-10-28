@@ -5,6 +5,7 @@
 # Temporary files
 tmp
 .tmp/
+certs/
 .pytest_tmp*/
 pytest-of-*/
 .uv-cache/

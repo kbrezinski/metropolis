@@ -27,6 +27,10 @@ Expand one cell at a time, prioritizing credible packet timing, polling, and val
 ### Attack scripts — later
 
 - [ ] Add scenarios for newly populated cells after normal traffic is established. Use `scripts/attacks/run.py`, user-selected launch timing, and attribution to the capture run ID.
+- [ ] Cable the Mirai listener, HTTP/TFTP loaders, and example bot into the isolated attack segment; verify reachability and capture coverage.
+- [ ] Move Mirai choreography from the host runner into the declared nodes: bounded bot probing and Telnet attempts, listener-to-loader reporting, inert delivery, and observable C&C command delivery. Distinguish each simulated stage from an actual infection.
+- [ ] Extend the Merlin scenario with observable, controlled tool-transfer and attack stages from the agent node; verify their traffic and effects without arbitrary command execution.
+- [ ] Decide whether Mirai or Merlin needs real binaries for the intended research claims, and define isolation and evidence requirements before considering that work.
 
 ## 2. Data processing and model development — future
 

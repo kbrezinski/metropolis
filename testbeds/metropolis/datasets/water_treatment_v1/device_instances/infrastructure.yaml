@@ -153,14 +153,17 @@ switches:
     kind: ethernet-switch
     role: Dedicated Layer 2 segment for attack-generation nodes
     notes: >-
-      The switch specification warns that VLAN separation here does not provide
-      routed isolation. Keep this segment disconnected until router firewall
-      policy exists.
+      VLAN separation here does not provide routed isolation. The router
+      firewall policy controls traffic between this segment and other LANs.
     attachment_points:
       - router-uplink
       - attack-host-1
       - attack-host-2
       - attack-host-3
+      - attack-host-4
+      - attack-host-5
+      - attack-host-6
+      - attack-host-7
 
   - name: sw-reservoir-access
     kind: ethernet-switch

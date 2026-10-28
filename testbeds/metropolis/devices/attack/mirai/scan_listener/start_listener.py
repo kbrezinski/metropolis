@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Adapted from Gotham: https://github.com/xsaga/gotham-iot-testbed/blob/master/src/run_mirai.py
 """Synthetic Mirai scan listener.
 
 Mirrors the Gotham ``iotsim-mirai-scan-listener`` node: the service a bot
@@ -47,7 +48,8 @@ def handle(
             buffer += chunk
             while b"\n" in buffer:
                 line, buffer = buffer.split(b"\n", 1)
-                record(line.decode("utf-8", errors="replace"), peer)
+                accepted = record(line.decode("utf-8", errors="replace"), peer)
+                connection.sendall(b"ACK\n" if accepted else b"REJECT\n")
             if len(buffer) > MAX_LINE:
                 LOG.warning("oversized report from %s discarded", peer[0])
                 buffer = b""
@@ -56,16 +58,16 @@ def handle(
             counter["active"] -= 1
 
 
-def record(line: str, peer) -> None:
+def record(line: str, peer) -> bool:
     """Emit one report as a structured event on stdout."""
     line = line.strip()
     if not line:
-        return
+        return False
     try:
         payload = json.loads(line)
     except json.JSONDecodeError:
         LOG.warning("non-JSON report from %s: %s", peer[0], line[:120])
-        return
+        return False
     print(
         json.dumps(
             {
@@ -78,6 +80,7 @@ def record(line: str, peer) -> None:
         ),
         flush=True,
     )
+    return True
 
 
 def main() -> None:
