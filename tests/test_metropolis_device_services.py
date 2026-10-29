@@ -25,17 +25,13 @@ coap_sensor = importlib.util.module_from_spec(COAP_SPEC)
 COAP_SPEC.loader.exec_module(coap_sensor)
 
 
-def test_mosquitto_requires_authentication_and_generates_password_file() -> None:
+def test_mosquitto_requires_authentication_and_topic_acl() -> None:
     config = (
         ROOT / "testbeds/metropolis/devices/services/mqtt_broker/mosquitto.conf"
     ).read_text(encoding="utf-8")
-    entrypoint = (
-        ROOT / "testbeds/metropolis/devices/services/mqtt_broker/broker-entrypoint.sh"
-    ).read_text(encoding="utf-8")
     assert "allow_anonymous false" in config
     assert "password_file /mosquitto/data/passwordfile" in config
-    assert "mosquitto_passwd -b -c" in entrypoint
-    assert 'mosquitto_passwd -b "$password_file"' in entrypoint
+    assert "acl_file /mosquitto/data/aclfile" in config
 
 
 def test_coap_sensor_answers_get_with_its_configured_status() -> None:

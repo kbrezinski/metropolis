@@ -3,8 +3,6 @@ FROM python:3.12-slim
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     DEVICE_NAME=MET-HMI-INTAKE-01 \
-    MQTT_USERNAME=lab_device \
-    MQTT_PASSWORD=LabOnly_Device_2026 \
     MQTT_HOST=10.20.23.10 \
     MQTT_PORT=1883 \
     MQTT_TOPIC=metropolis/plant/intake/command \
@@ -19,6 +17,7 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/* \
     && pip install --no-cache-dir paho-mqtt==2.1.0
 COPY testbeds/metropolis/devices/operations/hmi/hmi_simulator.py /opt/metropolis/hmi_simulator.py
+COPY testbeds/metropolis/devices/operations/hmi/mqtt_acl_probe.py /opt/metropolis/mqtt_acl_probe.py
 COPY testbeds/metropolis/devices/operations/hmi/hmi_web.py /opt/metropolis/hmi_web.py
 COPY testbeds/metropolis/devices/operations/hmi/hmi.html /opt/metropolis/hmi.html
 COPY testbeds/metropolis/devices/runtime/tls_config.py /opt/metropolis/tls_config.py

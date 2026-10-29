@@ -23,7 +23,7 @@ def main():
         ]
         responses[task.id] = [
             {
-                "content": "Install trusted reference submission (pipeline check only).",
+                "content": "Write trusted reference command (pipeline check only).",
                 "tool_calls": edits,
             },
             {"content": "Reference submission complete; independent grading has not run yet."},

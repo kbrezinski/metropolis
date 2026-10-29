@@ -9,7 +9,9 @@ flows:
     destination: [plant-intake, plant-dosing, plant-filtration, plant-disinfection, reservoir, raw-water]
     protocol: tcp
     port: 502
+  - {id: scada-dnp3, source: scada, destination: [reservoir, raw-water], protocol: tcp, port: 20000}
   - {id: engineering-modbus, source: engineering, destination: plant-intake, protocol: tcp, port: 502}
+  - {id: engineering-coap, source: engineering, destination: plant-intake, protocol: udp, port: 5683}
   - {id: intake-mqtt, source: plant-intake, destination: mqtt, protocol: tcp, port: 1883}
   - {id: scada-mqtt, source: scada, destination: mqtt, protocol: tcp, port: 1883}
   - {id: historian-mqtt, source: historian, destination: mqtt, protocol: tcp, port: 1883}

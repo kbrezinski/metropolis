@@ -1,9 +1,10 @@
-"""Routine Modbus operator client with DNS and NTP background requests."""
+"""Routine Modbus operator client with DNS, NTP, SNMP, and CoAP requests."""
 
 from __future__ import annotations
 
 import logging
 import os
+import secrets
 import socket
 import struct
 import subprocess
@@ -79,6 +80,27 @@ def sample_snmp(host: str, community: str) -> str:
     return result.stdout.strip()
 
 
+def sample_coap(host: str, port: int) -> tuple[str, int, int]:
+    """Read the sensor's CoAP status resource without changing its state."""
+    message_id = secrets.randbelow(65536)
+    # Confirmable GET, no token, Uri-Path option 11 with the value "status".
+    request = struct.pack("!BBH", 0x40, 1, message_id) + b"\xb6status"
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+        sock.settimeout(2)
+        sock.connect((host, port))
+        sock.send(request)
+        response = sock.recv(2048)
+    if (
+        len(response) < 4
+        or response[0] != 0x60  # Version 1, ACK, no token.
+        or struct.unpack_from("!H", response, 2)[0] != message_id
+        or response[1] == 0
+    ):
+        raise ValueError("Invalid CoAP status response")
+    code = f"{response[1] >> 5}.{response[1] & 31:02d}"
+    return code, len(request), len(response)
+
+
 def control_cycle(plc_host: str, port: int, unit_id: int, level: int, pump: bool):
     """Read the current process snapshot, then issue bounded routine writes."""
     from pymodbus.client import ModbusTcpClient
@@ -114,6 +136,10 @@ def main() -> None:
     unit_id = int(os.getenv("MODBUS_UNIT_ID", "1"))
     targets = snmp_targets(os.getenv("SNMP_TARGETS", ""))
     community = os.getenv("SNMP_COMMUNITY", "")
+    coap_host = os.getenv("COAP_HOST", "")
+    coap_port = int(os.getenv("COAP_PORT", "5683"))
+    coap_target = os.getenv("COAP_TARGET_NODE", coap_host)
+    source = os.getenv("NODE_HOSTNAME", socket.gethostname())
     cycle = 0
     while True:
         try:
@@ -148,6 +174,23 @@ def main() -> None:
             except (OSError, RuntimeError, subprocess.TimeoutExpired):
                 # Never include command arguments or community in collected logs.
                 log.warning("SNMP poll failed: router=%s", name)
+        if coap_host:
+            try:
+                code, request_bytes, response_bytes = sample_coap(coap_host, coap_port)
+                log.info(
+                    "CoAP poll: source=%s target=%s resource=/status code=%s request_bytes=%s response_bytes=%s",
+                    source,
+                    coap_target,
+                    code,
+                    request_bytes,
+                    response_bytes,
+                )
+            except (OSError, ValueError):
+                log.warning(
+                    "CoAP poll failed: source=%s target=%s resource=/status",
+                    source,
+                    coap_target,
+                )
         time.sleep(interval)
 
 

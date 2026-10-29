@@ -27,6 +27,7 @@ from firewall_policy import compile_policy, parse_attack_exception
 from router_config import DEFAULT_PASSWORD, DEFAULT_USERNAME
 from run_profiles import load_profile
 from baseline_config import BASELINE_FILE, load_baseline
+from mqtt_acl_run import declared_probe
 from rdp_run import declared_rdp
 from topology import build_plan
 
@@ -46,6 +47,11 @@ def main() -> int:
         default=[],
         metavar="NODE",
         help="Temporarily amplify synthetic UDP 3389 replies on a declared RDP server; repeatable",
+    )
+    parser.add_argument(
+        "--mqtt-acl-probe",
+        metavar="SOURCE:TARGET",
+        help="Opt-in HMI-origin MQTT own-cell allow and cross-cell deny check",
     )
     parser.add_argument(
         "--metrics-interval",
@@ -114,6 +120,16 @@ def main() -> int:
         declared_rdp(inventory, args.rdp_udp_amplify)
     except ValueError as exc:
         parser.error(f"RDP: {exc}")
+    mqtt_probe = None
+    if args.mqtt_acl_probe:
+        parts = args.mqtt_acl_probe.split(":")
+        if len(parts) != 2 or not all(parts):
+            parser.error("--mqtt-acl-probe requires SOURCE:TARGET HMI node names")
+        try:
+            declared_probe(inventory, *parts)
+        except ValueError as exc:
+            parser.error(f"MQTT ACL probe: {exc}")
+        mqtt_probe = tuple(parts)
     baseline = None
     baseline_path = dataset / BASELINE_FILE
     if baseline_path.is_file():
@@ -201,6 +217,7 @@ def main() -> int:
             profile=profile,
             baseline=baseline,
             rdp_udp_amplify=args.rdp_udp_amplify,
+            mqtt_acl_probe=mqtt_probe,
         )
     except FileExistsError:
         print(f"error: run ID already exists: {run_id}", file=sys.stderr)

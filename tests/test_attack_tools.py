@@ -102,7 +102,9 @@ def test_reconnaissance_defaults_without_ack(attack_inventory):
     assert start["dry_run"] is True
     assert start["protocol"] == "both"
     ports = start["command"][start["command"].index("-p") + 1]
-    assert ports == ("T:22,23,53,80,443,502,1883,8080,8443,8883,48101,U:53,69,123,5683")
+    assert ports == (
+        "T:22,23,53,80,443,502,1883,8080,8443,8883,20000,48101,U:53,69,123,5683"
+    )
     assert "LabOnly_" not in result.stdout
 
 

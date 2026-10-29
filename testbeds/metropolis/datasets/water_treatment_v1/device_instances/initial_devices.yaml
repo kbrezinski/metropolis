@@ -266,7 +266,7 @@ devices:
     subnet: 10.20.14.0/24
     address: 10.20.14.10/24
     gateway: 10.20.14.1
-    protocols: [modbus-tcp, ethernet-ip]
+    protocols: [modbus-tcp, ethernet-ip, dnp3-outstation]
     environment:
       NODE_HOSTNAME: MET-RTU-RESERVOIR-01
       NODE_IP: 10.20.14.10/24
@@ -274,6 +274,8 @@ devices:
       DEVICE_ROLE: RTU
       CELL_ROLE: remote_site
       REMOTE_SITE_ROLE: reservoir
+      DNP3_ENABLED: "true"
+      DNP3_PORT: "20000"
       INSTRUMENT_HOST: 10.20.14.20
       LEVEL_POLL_INTERVAL: "1"
       INSTRUMENT_STALE_SECONDS: "3"
@@ -314,7 +316,7 @@ devices:
     subnet: 10.20.15.0/24
     address: 10.20.15.10/24
     gateway: 10.20.15.1
-    protocols: [modbus-tcp, ethernet-ip]
+    protocols: [modbus-tcp, ethernet-ip, dnp3-outstation]
     environment:
       NODE_HOSTNAME: MET-RTU-RAW-WATER-01
       NODE_IP: 10.20.15.10/24
@@ -322,6 +324,8 @@ devices:
       DEVICE_ROLE: RTU
       CELL_ROLE: remote_site
       REMOTE_SITE_ROLE: raw_water
+      DNP3_ENABLED: "true"
+      DNP3_PORT: "20000"
       INSTRUMENT_HOST: 10.20.15.20
       LEVEL_POLL_INTERVAL: "1"
       INSTRUMENT_STALE_SECONDS: "3"
@@ -375,8 +379,10 @@ devices:
       SENSOR_REGISTER: "0"
       SENSOR_DIVISOR: "10"
       MQTT_TOPIC: metropolis/plant/intake/telemetry
-      MQTT_USERNAME: lab_device
-      MQTT_PASSWORD: LabOnly_Device_2026
+      MQTT_HOST: 10.20.23.10
+      MQTT_ACCESS_ROLE: publisher
+      MQTT_USERNAME: sensor_intake
+      MQTT_PASSWORD: LabOnly_Sensor_Intake_2026
       COAP_ENABLED: "true"
       COAP_PORT: "5683"
 
@@ -392,8 +398,6 @@ devices:
       NODE_HOSTNAME: MET-MQTT-BROKER-01
       NODE_IP: 10.20.23.10/24
       NODE_GATEWAY: 10.20.23.1
-      MQTT_DEVICE_USERNAME: lab_device
-      MQTT_DEVICE_PASSWORD: LabOnly_Device_2026
       MQTT_OPERATOR_USERNAME: lab_operator
       MQTT_OPERATOR_PASSWORD: LabOnly_MQTT_2026
 
@@ -404,7 +408,7 @@ devices:
     subnet: 10.20.20.0/24
     address: 10.20.20.10/24
     gateway: 10.20.20.1
-    protocols: [modbus-tcp, mqtt]
+    protocols: [modbus-tcp, mqtt, dnp3-master]
     environment:
       NODE_HOSTNAME: MET-SCADA-01
       NODE_IP: 10.20.20.10/24
@@ -412,9 +416,11 @@ devices:
       PLC_HOST: 10.20.10.10
       SCADA_TARGETS: >-
         [{"id":"intake","host":"10.20.10.10","profile":"intake","topic":"metropolis/scada/intake/status"},{"id":"dosing","host":"10.20.11.10","profile":"dosing","topic":"metropolis/scada/dosing/status"},{"id":"filtration","host":"10.20.12.10","profile":"filtration","topic":"metropolis/scada/filtration/status"},{"id":"disinfection","host":"10.20.13.10","profile":"disinfection","topic":"metropolis/scada/disinfection/status"},{"id":"reservoir","host":"10.20.14.10","profile":"reservoir","topic":"metropolis/scada/reservoir/status"},{"id":"raw-water","host":"10.20.15.10","profile":"raw_water","topic":"metropolis/scada/raw-water/status"}]
+      DNP3_PEER_NODES: MET-RTU-RESERVOIR-01,MET-RTU-RAW-WATER-01
       MQTT_HOST: 10.20.23.10
-      MQTT_USERNAME: lab_device
-      MQTT_PASSWORD: LabOnly_Device_2026
+      MQTT_ACCESS_ROLE: scada
+      MQTT_USERNAME: scada
+      MQTT_PASSWORD: LabOnly_SCADA_2026
 
   - name: MET-HISTORIAN-01
     model: testbeds/metropolis/devices/operations/historian
@@ -429,8 +435,10 @@ devices:
       NODE_IP: 10.20.22.10/24
       NODE_GATEWAY: 10.20.22.1
       MQTT_HOST: 10.20.23.10
-      MQTT_USERNAME: lab_device
-      MQTT_PASSWORD: LabOnly_Device_2026
+      MQTT_TOPIC: metropolis/#
+      MQTT_ACCESS_ROLE: subscriber
+      MQTT_USERNAME: historian
+      MQTT_PASSWORD: LabOnly_Historian_2026
 
   - name: MET-HMI-INTAKE-01
     model: testbeds/metropolis/devices/operations/hmi
@@ -453,8 +461,9 @@ devices:
       MQTT_TELEMETRY_TOPIC: metropolis/scada/intake/status
       MQTT_HOST: 10.20.23.10
       MQTT_TOPIC: metropolis/plant/intake/command
-      MQTT_USERNAME: lab_device
-      MQTT_PASSWORD: LabOnly_Device_2026
+      MQTT_ACCESS_ROLE: hmi
+      MQTT_USERNAME: hmi_intake
+      MQTT_PASSWORD: LabOnly_HMI_Intake_2026
 
   - name: MET-HMI-DOSING-01
     model: testbeds/metropolis/devices/operations/hmi
@@ -480,8 +489,9 @@ devices:
       MQTT_TELEMETRY_TOPIC: metropolis/scada/dosing/status
       MQTT_HOST: 10.20.23.10
       MQTT_TOPIC: metropolis/plant/dosing/command
-      MQTT_USERNAME: lab_device
-      MQTT_PASSWORD: LabOnly_Device_2026
+      MQTT_ACCESS_ROLE: hmi
+      MQTT_USERNAME: hmi_dosing
+      MQTT_PASSWORD: LabOnly_HMI_Dosing_2026
 
   - name: MET-HMI-FILTRATION-01
     model: testbeds/metropolis/devices/operations/hmi
@@ -508,8 +518,9 @@ devices:
       MQTT_ACK_TOPIC: metropolis/scada/filtration/ack
       MQTT_HOST: 10.20.23.10
       MQTT_TOPIC: metropolis/plant/filtration/command
-      MQTT_USERNAME: lab_device
-      MQTT_PASSWORD: LabOnly_Device_2026
+      MQTT_ACCESS_ROLE: hmi
+      MQTT_USERNAME: hmi_filtration
+      MQTT_PASSWORD: LabOnly_HMI_Filtration_2026
 
   - name: MET-HMI-DISINFECTION-01
     model: testbeds/metropolis/devices/operations/hmi
@@ -537,8 +548,9 @@ devices:
       MQTT_ACK_TOPIC: metropolis/scada/disinfection/ack
       MQTT_HOST: 10.20.23.10
       MQTT_TOPIC: metropolis/plant/disinfection/command
-      MQTT_USERNAME: lab_device
-      MQTT_PASSWORD: LabOnly_Device_2026
+      MQTT_ACCESS_ROLE: hmi
+      MQTT_USERNAME: hmi_disinfection
+      MQTT_PASSWORD: LabOnly_HMI_Disinfection_2026
 
   - name: MET-ENGINEERING-01
     model: testbeds/metropolis/devices/operations/engineering_workstation
@@ -595,7 +607,7 @@ devices:
     subnet: 10.20.21.0/24
     address: 10.20.21.20/24
     gateway: 10.20.21.1
-    protocols: [modbus-tcp, dns, ntp, snmp-manager]
+    protocols: [modbus-tcp, dns, ntp, snmp-manager, coap-client]
     environment:
       NODE_HOSTNAME: MET-CONTROL-CLIENT-01
       NODE_IP: 10.20.21.20/24
@@ -604,6 +616,8 @@ devices:
       DNS_SERVER: 10.20.30.10
       NTP_SERVER: 10.20.30.11
       CONTROL_INTERVAL: "30"
+      COAP_PORT: "5683"
+      COAP_TARGET_NODE: MET-SENSOR-INTAKE-01
       SNMP_COMMUNITY: metropolis_ro
       SNMP_TARGETS: MET-PLANT=10.20.10.1,MET-OT-CORE=10.20.30.1,MET-OT-DMZ=10.20.40.1,MET-OT-WAN=172.31.255.1,MET-RESERVOIR=10.20.14.1,MET-RAW-WATER=10.20.15.1
 

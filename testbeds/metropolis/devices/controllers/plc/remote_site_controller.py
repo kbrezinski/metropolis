@@ -140,6 +140,19 @@ def main() -> None:
     context = make_context()
     freshness = InstrumentFreshness(stale_after)
     stop = threading.Event()
+    dnp3 = None
+    dnp3_setting = os.getenv("DNP3_ENABLED", "false").strip().lower()
+    if dnp3_setting not in {"0", "false", "no", "1", "true", "yes"}:
+        raise ValueError("DNP3_ENABLED must be true or false")
+    if dnp3_setting in {"1", "true", "yes"}:
+        from dnp3_outstation import AlarmOutstation
+
+        dnp3 = AlarmOutstation(
+            name,
+            host=os.getenv("DNP3_HOST", "0.0.0.0"),
+            port=int(os.getenv("DNP3_PORT", "20000")),
+        )
+        dnp3.start()
     pump.command(True)
     pump.start()
 
@@ -185,6 +198,8 @@ def main() -> None:
                 instrument_alarm=instrument_alarm,
                 confirmation_due=now - requested_since >= confirm_seconds,
             )
+            if dnp3 is not None:
+                dnp3.publish(alarms)
             if alarms != previous_alarms:
                 raised, cleared = alarm_changes(previous_alarms, alarms)
                 for alarm in raised:
@@ -206,6 +221,8 @@ def main() -> None:
     finally:
         stop.set()
         pump.close()
+        if dnp3 is not None:
+            dnp3.close()
 
 
 if __name__ == "__main__":

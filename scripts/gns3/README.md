@@ -126,7 +126,11 @@ uv run python scripts/gns3/run.py build_topology --docker-host "$COMPUTE_DOCKER"
 The builder creates nodes and links, starts switches, applies VLAN access/trunk
 settings, and checks the switch port state. If your router template or compute
 has another name, supply `--router-template NAME` or `--compute-id ID` to the
-build command. The router scripts target VyOS 1.3; changing a template name
+build command; use `--dataset PATH` for another versioned dataset. Reused
+Docker nodes keep their original environment. The builder reports stale
+MQTT/DNP3/CoAP settings without printing credentials; refresh or recreate
+those nodes before a run, then rebuild their images on the hosting compute.
+The router scripts target VyOS 1.3; changing a template name
 does not make them compatible with another VyOS release.
 
 ## 4. Start and configure
@@ -176,6 +180,17 @@ generate a run ID if omitted. Traffic reports reuse the completed PCAPs.
 | `--no-metrics` | Disable resource sampling and traffic reports for this run |
 | `--profile PATH` | Explicitly apply a resource/link profile for this run, then restore its original settings |
 | `--rdp-udp-amplify NODE` | Repeat to temporarily enable the synthetic UDP 3389 amplification mode on a declared RDP server |
+| `--mqtt-acl-probe SOURCE:TARGET` | After capture starts, test one HMI's own topic and another HMI cell's command topic from the source HMI node |
+
+The MQTT check is opt-in. For the bundled dataset, select two distinct HMI
+names, for example `--mqtt-acl-probe MET-HMI-INTAKE-01:MET-HMI-DOSING-01`.
+It sends inert payloads that SCADA will not treat as commands. Success requires
+broker log evidence of the own-topic publish and cross-cell denial, SCADA log
+evidence that it received the own-topic marker but not the cross-cell marker,
+and saved HMI, broker, and SCADA attachment PCAPs. A publish acknowledgement
+alone does not establish authorization. The run manifest and `attacks.jsonl`
+record the source, target, UTC times, capture links, result, and failures
+without passwords. Missing broker or SCADA evidence makes the check fail.
 
 When the selected dataset declares RDP clients, `experiment_run` starts one
 authenticated RDP session per routed client/server pair after captures start.
@@ -215,9 +230,9 @@ with the same run ID, then stop the lab when finished:
 uv run python scripts/gns3/run.py lab_lifecycle --stop
 ```
 
-Topology building and lifecycle currently load the bundled dataset. Lifecycle
-accepts `--dataset` but does not apply it yet. Registration can select
-`--inventory`; capture, log, experiment, and firewall commands apply `--dataset`.
+Topology building, capture, log, experiment, and firewall commands apply
+`--dataset`. Lifecycle accepts `--dataset` but does not apply it yet.
+Registration can select `--inventory`.
 
 ## Capture coverage and files
 
@@ -261,7 +276,7 @@ All experiment files share one run ID:
 | `captures/<run-id>/manifest.json` | PCAP results, coverage, and hashes |
 | `runs/<run-id>/manifest.json` | Run configuration, source status, and failures |
 | `runs/<run-id>/timeline.jsonl` | Orchestration actions and project status |
-| `runs/<run-id>/attacks.jsonl` | Actions from separately launched attack commands |
+| `runs/<run-id>/attacks.jsonl` | Attack actions and optional HMI-origin MQTT ACL check |
 | `runs/<run-id>/logs/devices.jsonl` | Normalized container diagnostics |
 | `runs/<run-id>/logs/syslog.jsonl` | Router syslog and bridged switch events |
 | `runs/<run-id>/logs/raw/` | Original container lines, with secret redaction |

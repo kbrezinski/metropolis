@@ -1,8 +1,9 @@
 FROM eclipse-mosquitto:2
 
-RUN apk add --no-cache iproute2
+RUN apk add --no-cache iproute2 python3
 COPY testbeds/metropolis/devices/services/mqtt_broker/mosquitto.conf /mosquitto/config/mosquitto.conf
 COPY testbeds/metropolis/devices/services/mqtt_broker/broker-entrypoint.sh /usr/local/bin/metropolis-broker-entrypoint
+COPY testbeds/metropolis/devices/services/mqtt_broker/mqtt_access.py /opt/metropolis/mqtt_access.py
 COPY testbeds/metropolis/devices/runtime/network-entrypoint.sh /usr/local/bin/metropolis-entrypoint
 RUN chmod +x /usr/local/bin/metropolis-entrypoint /usr/local/bin/metropolis-broker-entrypoint
 

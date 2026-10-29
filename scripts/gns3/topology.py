@@ -16,7 +16,10 @@ Two deliberate rules:
 
 from __future__ import annotations
 
+import base64
+import json
 from dataclasses import dataclass, field
+from ipaddress import ip_interface
 from pathlib import Path
 
 import yaml
@@ -99,8 +102,12 @@ def environment_string(environment: dict[str, str]) -> str:
 def _device_nodes(
     inventory: dict, templates: dict[str, str]
 ) -> tuple[list[PlannedNode], list[str]]:
+    from mqtt_acl import compile_mqtt_access
+
     nodes: list[PlannedNode] = []
     missing: list[str] = []
+    devices = {device["name"]: device for device in inventory["devices"]}
+    broker_access = compile_mqtt_access(inventory)
     for device in inventory["devices"]:
         template_name = templates.get(device["image"])
         if template_name is None:
@@ -108,11 +115,46 @@ def _device_nodes(
                 f"{device['name']} uses unregistered image {device['image']}"
             )
             continue
+        environment = dict(device.get("environment", {}))
+        if "MQTT_OPERATOR_USERNAME" in environment:
+            environment.update(broker_access)
+        if peer_names := environment.get("DNP3_PEER_NODES"):
+            targets = []
+            names = [name.strip() for name in peer_names.split(",")]
+            if len(names) != len(set(names)) or not all(names):
+                raise ValueError(f"{device['name']}: invalid DNP3_PEER_NODES")
+            for name in names:
+                peer = devices.get(name)
+                if peer is None or "dnp3-outstation" not in peer.get("protocols", []):
+                    raise ValueError(
+                        f"{device['name']}: {name} is not a DNP3 outstation"
+                    )
+                port = int(peer.get("environment", {}).get("DNP3_PORT", "20000"))
+                if not 1 <= port <= 65535:
+                    raise ValueError(f"{name}: invalid DNP3_PORT")
+                targets.append(
+                    {
+                        "name": name,
+                        "host": str(ip_interface(peer["address"]).ip),
+                        "port": port,
+                    }
+                )
+            payload = json.dumps(targets, sort_keys=True, separators=(",", ":"))
+            environment["DNP3_TARGETS_B64"] = base64.b64encode(
+                payload.encode()
+            ).decode()
+        if target_name := environment.get("COAP_TARGET_NODE"):
+            target = devices.get(target_name)
+            if target is None or "coap" not in target.get("protocols", []):
+                raise ValueError(
+                    f"{device['name']}: {target_name} is not a CoAP sensor"
+                )
+            environment["COAP_HOST"] = str(ip_interface(target["address"]).ip)
         nodes.append(
             PlannedNode(
                 name=device["name"],
                 template_name=template_name,
-                environment=dict(device.get("environment", {})),
+                environment=environment,
                 kind="device",
             )
         )

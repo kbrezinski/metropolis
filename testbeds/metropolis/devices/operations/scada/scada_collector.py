@@ -7,6 +7,7 @@ import logging
 import math
 import os
 import queue
+import re
 import threading
 import time
 from collections import OrderedDict
@@ -296,6 +297,33 @@ class CommandBridge:
             return None
         if not isinstance(payload, dict):
             return None
+        if payload.get("acl_probe") is True:
+            run_id = payload.get("run_id")
+            client_id = payload.get("client_id")
+            kind = payload.get("kind")
+            if (
+                isinstance(run_id, str)
+                and re.fullmatch(r"[A-Za-z0-9_-]+", run_id)
+                and isinstance(client_id, str)
+                and re.fullmatch(r"[A-Za-z0-9_-]{1,128}", client_id)
+                and isinstance(kind, str)
+                and kind in {"own", "cross"}
+            ):
+                log.info(
+                    "MQTT_ACL_PROBE %s",
+                    json.dumps(
+                        {
+                            "run_id": run_id,
+                            "client_id": client_id,
+                            "kind": kind,
+                            "topic": topic,
+                        },
+                        separators=(",", ":"),
+                    ),
+                )
+            else:
+                log.warning("Ignored invalid MQTT ACL probe on %s", topic)
+            return None
         try:
             request_id = str(UUID(str(payload.get("request_id"))))
         except (TypeError, ValueError, AttributeError):
@@ -360,11 +388,19 @@ def main() -> None:
     heartbeat_monitor = ControllerHeartbeatMonitor(
         float(os.getenv("PLC_STALE_SECONDS", "15"))
     )
+    stop_dnp3 = threading.Event()
+    dnp3_thread = None
+    if dnp3_encoded := os.getenv("DNP3_TARGETS_B64"):
+        from dnp3_master import configured_targets as configured_dnp3_targets
+        from dnp3_master import start_master
+
+        dnp3_targets = configured_dnp3_targets(dnp3_encoded)
+        dnp3_thread = start_master(dnp3_targets, stop_dnp3)
 
     publisher = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id=f"{name}-mqtt")
     publisher.username_pw_set(
-        os.getenv("MQTT_USERNAME", "lab_device"),
-        os.getenv("MQTT_PASSWORD", "LabOnly_Device_2026"),
+        os.environ["MQTT_USERNAME"],
+        os.environ["MQTT_PASSWORD"],
     )
     apply_to(publisher)
     publisher.reconnect_delay_set(min_delay=1, max_delay=30)
@@ -477,6 +513,9 @@ def main() -> None:
     except KeyboardInterrupt:
         pass
     finally:
+        stop_dnp3.set()
+        if dnp3_thread is not None:
+            dnp3_thread.join(timeout=4)
         stop_commands.set()
         command_worker.join(timeout=2)
         publisher.loop_stop()

@@ -163,25 +163,25 @@ the [firewall run guide](scripts/gns3/README.md#routed-firewall-policy).
 
 ## Device models
 
-The emulated set includes Modbus TCP, cyclic EtherNet/IP, MQTT, CoAP, HTTP,
+The emulated set includes Modbus TCP, DNP3, cyclic EtherNet/IP, MQTT, CoAP, HTTP,
 RDP over TCP, SSH/SFTP, Telnet, DNS, NTP, SNMP, and syslog, alongside OSPF/BFD
 routing traffic. A separate UDP 3389 service is synthetic lab traffic:
 
 | Role | What it does |
 |---|---|
-| PLC / RTU | Modbus TCP process registers; populated plant PLCs and remote-site RTUs exchange cyclic EtherNet/IP I/O with separate actuators |
+| PLC / RTU | Modbus TCP process registers; remote RTUs also report DNP3 alarm events; controllers exchange cyclic EtherNet/IP I/O with separate actuators |
 | Dosing analyzer | Networked Modbus TCP pH, turbidity, and heartbeat readings |
 | Filtration instrument | Networked Modbus TCP differential-pressure and heartbeat readings |
 | Disinfection analyzer | Networked Modbus TCP chlorine residual and heartbeat readings |
 | Remote-site level instrument | Networked Modbus TCP level and heartbeat readings at the reservoir and raw-water sites |
 | Pump drives and valve | Simplified cyclic EtherNet/IP command and status traffic on plant VLANs and remote-site LANs |
 | Field sensor | Publishes periodic JSON telemetry over MQTT, and answers CoAP discovery and status |
-| MQTT broker | Mosquitto on TCP 1883, requiring credentials |
-| SCADA | Polls the four plant PLCs and two remote RTUs over Modbus TCP; publishes MQTT status and plant-PLC setpoint readback acknowledgements |
+| MQTT broker | Mosquitto on TCP 1883, with distinct lab accounts and topic ACLs |
+| SCADA | Polls four plant PLCs and two remote RTUs over Modbus TCP; polls remote RTU DNP3 events; publishes MQTT status and plant-PLC setpoint readback acknowledgements |
 | HMI | Authenticated HTTP panel on TCP 8080; shows telemetry and controller status, and sends a command only after an operator submits a setpoint |
 | Historian | Subscribes to MQTT topics and logs what it receives |
 | Engineering workstation | OpenSSH shell and SFTP on TCP 22 |
-| Routine control client | Resolves the PLC via DNS, samples NTP, makes bounded periodic Modbus reads and writes, and polls router uptime over read-only SNMP |
+| Routine control client | Resolves the PLC via DNS, samples NTP, makes bounded periodic Modbus reads and writes, polls router uptime over read-only SNMP, and reads the sensor's CoAP status |
 | VyOS routers | Exchange OSPF and BFD control traffic on routed peer links; answer the control client's SNMP polls |
 | Open vSwitch | VLAN access and trunk switching for cell, HMI, and operations networks |
 | Legacy gateway | Telnet login and shell, for experiments needing legacy host access |
@@ -192,7 +192,8 @@ small coupled process model; the newer cells and remote instruments use simple
 readings that are not tied to pump behavior. There is no hydraulic or chemical
 process simulation. SCADA writes plant-HMI requests to the respective PLC and
 reports register readback; `stored` does not confirm physical actuation. The
-remote RTUs are read-only SCADA targets. Per-role MQTT ACLs remain future work.
+remote RTUs are read-only SCADA targets over Modbus. DNP3 reports a small set
+of alarm transitions; it is not a full vendor implementation.
 
 See [testbeds/metropolis/devices/README.md](testbeds/metropolis/devices/README.md)
 for environment settings, topics, register definitions, and protocol limits.
@@ -325,6 +326,11 @@ segments that are not cabled. A single uplink does not observe all local
 traffic; inspect the copied PCAPs before claiming coverage. See the
 [GNS3 capture guide](scripts/gns3/README.md#capture-coverage-and-files).
 
+For DNP3, include `attach-scada`, `attach-reservoir-rtu`,
+`attach-raw-water-rtu`, and the WAN uplinks. For the engineering CoAP read,
+include `attach-control-client`, `attach-intake-sensor`, and their routed
+uplinks. The default experiment selects every built, capturable link.
+
 For a combined run on an already started lab, collect PCAPs and device logs
 under one run ID:
 
@@ -368,14 +374,14 @@ investigation question.
   VLAN traffic is outside the router policy; the simulated WAN has no IPsec.
 - **Some protocols remain plaintext.** MQTT over TLS works with the lab CA for
   the sensor, SCADA, HMI, and historian. CoAP has no DTLS in this testbed, and
-  the remote-site WAN has no IPsec yet.
+  DNP3 has no secure authentication here; the remote-site WAN has no IPsec yet.
 - **Process behavior is simplified.** Intake has a small coupled PLC model;
   newer cells and remote instruments emit independent readings. A register
   write is not a validated model of physical process damage.
 - **Attack playback is separate from experiment collection.** `experiment_run`
-  coordinates startup, capture, logs, and run metadata. It does not schedule or
-  launch an attack; run the selected attack command separately and record its
-  timing with the experiment.
+  coordinates startup, capture, logs, and run metadata. Its optional MQTT ACL
+  check sends two inert HMI-origin probes; other attack commands run separately
+  with the same run ID.
 
 ## Dataset layout
 

@@ -1,0 +1,15 @@
+"""DNP3 binary-input point map shared by remote RTUs and SCADA."""
+
+from alarms import (
+    DUTY_UNAVAILABLE,
+    INSTRUMENT_STALE,
+    INSTRUMENT_UNAVAILABLE,
+    OUTPUT_UNCONFIRMED,
+)
+
+ALARM_BITS = (
+    INSTRUMENT_UNAVAILABLE,
+    INSTRUMENT_STALE,
+    DUTY_UNAVAILABLE,
+    OUTPUT_UNCONFIRMED,
+)

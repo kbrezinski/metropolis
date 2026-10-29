@@ -84,18 +84,22 @@ The inventory holds the actual settings and target addresses.
 | Analyzer | `ANALYZER_ROLE=dosing\|chlorine`, `ANALYZER_INTERVAL=1`, `MODBUS_PORT=502` |
 | Pressure / level | `DP_UPDATE_INTERVAL` / `LEVEL_UPDATE_INTERVAL`, minimum/maximum readings, cycle duration |
 | Sensor | `PLC_HOST`, `SENSOR_REGISTER`, `SENSOR_DIVISOR`, `MQTT_TOPIC`, `PUBLISH_MODE=persistent\|per-message`, `COAP_ENABLED` |
-| MQTT clients | `MQTT_HOST`, `MQTT_PORT`, `MQTT_USERNAME`, `MQTT_PASSWORD` |
-| SCADA | `SCADA_TARGETS` JSON entries with `id`, `host`, `profile`, `topic`; `PLC_STALE_SECONDS=15`, `COMMAND_MAX_AGE_SECONDS=15` |
+| MQTT clients | `MQTT_HOST`, `MQTT_PORT`, unique `MQTT_USERNAME` / `MQTT_PASSWORD`, `MQTT_ACCESS_ROLE` |
+| SCADA | `SCADA_TARGETS` JSON entries with `id`, `host`, `profile`, `topic`; `DNP3_TARGETS_B64` from named inventory peers; `PLC_STALE_SECONDS=15`, `COMMAND_MAX_AGE_SECONDS=15` |
+| Remote RTU | `DNP3_ENABLED=true`, `DNP3_PORT=20000` |
 | HMI | Required `HMI_PASSWORD`; `HMI_USERNAME=operator`, `HMI_HTTP_PORT=8080`, `HMI_CELL_ID`, topic settings, `COMMAND_ACK_TIMEOUT=15`, `TELEMETRY_STALE_SECONDS=30` |
 | Historian | `MQTT_TOPIC=metropolis/#` |
 | Engineering | Required `ENGINEER_PASSWORD`; fixed username `engineer`, TCP 22 |
-| Control client | `PLC_DNS_NAME`, `DNS_SERVER`, `NTP_SERVER`, `CONTROL_INTERVAL=30`, `SNMP_TARGETS` |
+| Control client | `PLC_DNS_NAME`, `DNS_SERVER`, `NTP_SERVER`, `CONTROL_INTERVAL=30`, `SNMP_TARGETS`, `COAP_TARGET_NODE` |
 | Legacy gateway | Required `LEGACY_ROOT_PASSWORD`, TCP 23 |
 
 SCADA without `SCADA_TARGETS` retains its single-intake `PLC_HOST` /
-`MQTT_TOPIC` behavior. The broker rejects anonymous clients and creates its
-password file from the configured lab accounts at startup. Passwords in the
-bundled inventory are public test fixtures.
+`MQTT_TOPIC` behavior. The builder resolves `DNP3_PEER_NODES` and
+`COAP_TARGET_NODE` to addresses from the selected inventory. The broker rejects
+anonymous clients and generates its password and topic-ACL files from that
+inventory. Bundled passwords are public lab fixtures.
+Client images require the inventoried MQTT username and password; they have no
+shared credential fallback.
 
 ## Modbus TCP register map
 
@@ -158,6 +162,16 @@ PLC-to-instrument and PLC-to-actuator traffic stays on the local cell/site LAN.
 Central SCADA polls cross routed links. Capture field attachments as well as
 uplinks to observe both paths.
 
+## DNP3 remote-site events
+
+The two remote RTUs run lab DNP3 outstations on TCP 20000. SCADA takes an
+integrity snapshot on connection and every 60 seconds, and polls class-1 alarm
+events every five seconds on a separate reconnecting worker. Modbus continues
+to carry the existing routine values and attack-facing registers. This is a
+small solicited-poll model, not a certified DNP3 implementation or secure
+authentication profile. Capture `attach-scada`, each RTU attachment, and the
+WAN uplinks for the routed path.
+
 ## HMI and engineering workstation
 
 The four plant HMIs use HTTP Basic authentication on TCP 8080.
@@ -189,7 +203,10 @@ SCADA reads the register back and publishes an acknowledgement.
 Only an explicit operator submission publishes a request. Panel state resets
 on restart. Match `COMMAND_MAX_AGE_SECONDS` to `COMMAND_ACK_TIMEOUT` when
 changing timing. MQTT credentials do not authenticate a payload's `device`
-field; topic ACLs are not currently configured.
+field. Broker ACLs restrict each HMI to its own command topic, SCADA to its
+declared commands/status, the sensor to telemetry publishing, and the
+historian to reading. Rebuild or refresh existing GNS3 nodes when inventory
+MQTT settings change; the builder reports stale settings.
 
 ### Engineering workstation
 
@@ -200,7 +217,8 @@ persist that directory separately per node if stable host identity is needed.
 ## Routine traffic, Telnet, DNS, and time
 
 The control client performs DNS and NTP requests, Modbus reads/writes and
-readbacks, and read-only router SNMP uptime polls each control cycle.
+readbacks, read-only router SNMP uptime polls, and a CoAP `/status` GET each
+control cycle.
 `CONTROL_INTERVAL` defaults to 30 seconds. Its NTP reply is observed without
 setting the clock.
 
@@ -289,7 +307,8 @@ The bundled plant cell IDs are `intake`, `dosing`, `filtration`, and
 | `metropolis/scada/<cell>/ack` | SCADA → HMI and historian |
 | `metropolis/scada/reservoir/status`, `metropolis/scada/raw-water/status` | SCADA → historian |
 
-The historian subscribes to `metropolis/#`. Plain MQTT and HTTP expose lab
+The historian subscribes to `metropolis/#`; the lab operator account can only
+publish under `metropolis/experiment/#`. Plain MQTT and HTTP expose lab
 credentials on the network; use only the intended isolated environment.
 
 ## CoAP discovery and status
@@ -305,4 +324,5 @@ Each response emits a `COAP_AUDIT` record with resource, code, byte counts,
 peer, and token-derived experiment ID. Unknown resources return 4.04,
 unsupported methods 4.05, and incompatible Accept formats 4.06. Malformed
 packets are ignored. This CON/NON GET server has no Observe, blockwise transfer,
-discovery query filtering, or duplicate-request cache.
+discovery query filtering, duplicate-request cache, application authentication,
+or DTLS. A reachable client can read its resources without credentials.

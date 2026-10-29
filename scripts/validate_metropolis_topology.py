@@ -12,6 +12,8 @@ import re
 
 import yaml
 
+from gns3.mqtt_acl import compile_mqtt_access
+
 try:
     from jsonschema import Draft202012Validator
 except ImportError:  # pragma: no cover - the dev dependency group provides it
@@ -447,10 +449,16 @@ def validate_topology(
             tuple(_validate_hmi_targets(inventory["devices"])),
         )
     )
+    try:
+        compile_mqtt_access(inventory)
+    except ValueError as exc:
+        checks.append(Check("MQTT accounts and topic ACLs compile", (str(exc),)))
+    else:
+        checks.append(Check("MQTT accounts and topic ACLs compile"))
     if firewall_policy is not None:
         checks.append(
             Check(
-                "Routed SCADA and HMI service paths are permitted by policy",
+                "Routed protocol service paths are permitted by policy",
                 tuple(
                     _validate_service_flows(
                         inventory["devices"], networks, firewall_policy
@@ -1146,9 +1154,32 @@ def render_report(
 
 def _validate_device_targets(devices: list[dict]) -> list[str]:
     known_addresses = {ip_interface(device["address"]).ip for device in devices}
+    by_name = {device["name"]: device for device in devices}
     problems = []
     for device in devices:
         environment = device.get("environment", {})
+        if target_name := environment.get("COAP_TARGET_NODE"):
+            target = by_name.get(target_name)
+            if target is None or "coap" not in target.get("protocols", []):
+                problems.append(
+                    f"{device['name']}: COAP_TARGET_NODE {target_name!r} is not an inventoried CoAP sensor"
+                )
+            elif environment.get("COAP_HOST") and environment["COAP_HOST"] != str(
+                ip_interface(target["address"]).ip
+            ):
+                problems.append(
+                    f"{device['name']}: COAP_HOST disagrees with {target_name}"
+                )
+        if peer_names := environment.get("DNP3_PEER_NODES"):
+            names = [name.strip() for name in peer_names.split(",")]
+            if len(names) != len(set(names)) or not all(names):
+                problems.append(f"{device['name']}: invalid DNP3_PEER_NODES")
+            for name in names:
+                peer = by_name.get(name)
+                if peer is None or "dnp3-outstation" not in peer.get("protocols", []):
+                    problems.append(
+                        f"{device['name']}: {name!r} is not a DNP3 outstation"
+                    )
         for key, target in environment.items():
             if not key.endswith("_HOST"):
                 continue
@@ -1253,12 +1284,13 @@ def _flow_allows(
     source: IPv4Address,
     destination: IPv4Address,
     port: int,
+    protocol: str = "tcp",
 ) -> bool:
     def selectors(value: str | list[str]) -> list[str]:
         return [value] if isinstance(value, str) else value
 
     return any(
-        flow["protocol"] == "tcp"
+        flow["protocol"] == protocol
         and flow["port"] == port
         and any(
             _selector_contains(selector, source, networks)
@@ -1275,8 +1307,9 @@ def _flow_allows(
 def _validate_service_flows(
     devices: list[dict], networks: list[dict], firewall_policy: dict
 ) -> list[str]:
-    """Check declared routed SCADA polls and HMI broker sessions."""
+    """Check declared routed protocol clients against the firewall policy."""
     problems: list[str] = []
+    devices_by_name = {device["name"]: device for device in devices}
     devices_by_address = {
         ip_interface(device["address"]).ip: device for device in devices
     }
@@ -1310,7 +1343,37 @@ def _validate_service_flows(
                         f"{device['name']}: no TCP/502 firewall flow to SCADA "
                         f"target {target.get('id', destination)} ({destination})"
                     )
-        if "HMI_CELL_ID" in environment and "MQTT_HOST" in environment:
+        if peer_names := environment.get("DNP3_PEER_NODES"):
+            for name in (part.strip() for part in peer_names.split(",")):
+                target_device = devices_by_name.get(name)
+                if target_device is None:
+                    continue  # The service-target check reports an unknown node.
+                source = ip_interface(device["address"]).ip
+                destination = ip_interface(target_device["address"]).ip
+                if ip_network(device["subnet"]) == ip_network(target_device["subnet"]):
+                    continue
+                if not _flow_allows(
+                    firewall_policy, networks, source, destination, 20000
+                ):
+                    problems.append(
+                        f"{device['name']}: no TCP/20000 firewall flow to DNP3 peer {name}"
+                    )
+        if target_name := environment.get("COAP_TARGET_NODE"):
+            target_device = devices_by_name.get(target_name)
+            if target_device is not None:
+                source = ip_interface(device["address"]).ip
+                destination = ip_interface(target_device["address"]).ip
+                if ip_network(device["subnet"]) == ip_network(target_device["subnet"]):
+                    continue
+                if not _flow_allows(
+                    firewall_policy, networks, source, destination, 5683, "udp"
+                ):
+                    problems.append(
+                        f"{device['name']}: no UDP/5683 firewall flow to CoAP peer {target_name}"
+                    )
+        if (
+            "MQTT_ACCESS_ROLE" in environment or "HMI_CELL_ID" in environment
+        ) and "MQTT_HOST" in environment:
             try:
                 source = ip_interface(device["address"]).ip
                 destination = IPv4Address(environment["MQTT_HOST"])

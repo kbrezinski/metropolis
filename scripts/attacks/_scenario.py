@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 
 CATALOG = Path(__file__).resolve().parent / "scenarios/v1.json"
-ORIGINS = {"invoking_host", "mixed", "external_script"}
+ORIGINS = {"invoking_host", "mixed", "external_script", "gns3_node"}
 
 
 def catalog(path: Path = CATALOG) -> dict[str, dict]:

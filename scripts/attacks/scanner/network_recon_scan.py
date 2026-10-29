@@ -11,7 +11,7 @@ from _common import Run, cli, inventory, ipv4, parser
 
 # Listener ports in the current Metropolis device inventory, plus conventional
 # HTTPS and optional MQTT TLS. No current model enables an HTTPS listener.
-TCP_PORTS = (22, 23, 53, 80, 443, 502, 1883, 8080, 8443, 8883, 48101)
+TCP_PORTS = (22, 23, 53, 80, 443, 502, 1883, 8080, 8443, 8883, 20000, 48101)
 UDP_PORTS = (53, 69, 123, 5683)
 
 

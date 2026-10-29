@@ -256,8 +256,8 @@ def main() -> None:
         port=port,
         topic=topic,
         client_id=name,
-        username=os.getenv("MQTT_USERNAME", "lab_device"),
-        password=os.getenv("MQTT_PASSWORD", "LabOnly_Device_2026"),
+        username=os.environ["MQTT_USERNAME"],
+        password=os.environ["MQTT_PASSWORD"],
         mode=os.getenv("PUBLISH_MODE", PERSISTENT),
         tls_config=tls_from_environment(),
     )

@@ -61,6 +61,7 @@ packages = ["src/metropolis"]
 # scikit-learn; it is named here because it is used directly.
 dev = [
     "codespell>=2.4.2",
+    "dnp3py==0.6.0",
     "docker[ssh]>=7.1,<8",
     "jsonschema>=4.23.0",
     "matplotlib>=3.9",

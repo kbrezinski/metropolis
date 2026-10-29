@@ -13,11 +13,14 @@
     "scenario_catalog_version": {"type": ["string", "null"]},
     "scenario_variant": {"type": "object"},
     "declared_capture_links": {"type": "array", "uniqueItems": true, "items": {"type": "string"}},
+    "broker_evidence": {"type": "object", "additionalProperties": {"type": "boolean"}},
+    "subscriber_evidence": {"type": "object", "additionalProperties": {"type": "boolean"}},
+    "downstream_delivery": {"enum": ["unverified", "blocked_by_broker"]},
     "traffic_origin": {
       "type": "object",
       "required": ["kind"],
       "properties": {
-        "kind": {"enum": ["invoking_host", "mixed", "external_script", "spoofed_source", "not_applicable"]},
+        "kind": {"enum": ["invoking_host", "mixed", "external_script", "spoofed_source", "not_applicable", "gns3_node"]},
         "execution_hostname": {"type": "string"},
         "reported_execution_ip": {"type": ["string", "null"], "format": "ipv4"},
         "source_verification": {"const": "check_pcap"}

@@ -50,6 +50,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     add_server_arguments(parser)
     add_appliance_arguments(parser)
+    parser.add_argument("--dataset", type=Path, default=DATASET)
     parser.add_argument(
         "--plan",
         action="store_true",
@@ -89,15 +90,18 @@ def main() -> int:
     )
     args = parser.parse_args()
 
+    dataset = args.dataset.resolve()
     topology, inventory = load_plan(
-        router_template=args.router_template, switch_template=args.switch_template
+        dataset=dataset,
+        router_template=args.router_template,
+        switch_template=args.switch_template,
     )
     firewall_commands = None
     infrastructure = None
     if args.configure_routers:
-        _, _, infrastructure, _ = load_documents()
+        _, _, infrastructure, _ = load_documents(dataset)
         try:
-            firewall_commands, _ = compile_policy(DATASET, infrastructure, inventory)
+            firewall_commands, _ = compile_policy(dataset, infrastructure, inventory)
         except ValueError as exc:
             parser.error(f"firewall policy: {exc}")
 

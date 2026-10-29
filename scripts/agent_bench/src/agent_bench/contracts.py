@@ -11,8 +11,8 @@ class Task:
     family: str
     prompt: str
     starter_files: dict[str, str] = field(default_factory=dict)
-    raw_network: bool = False
     version: str = "1.0"
+    parameters: dict = field(default_factory=dict)
 
     @property
     def digest(self) -> str:
@@ -24,6 +24,11 @@ class Grade:
     passed: bool
     checks: list[dict] = field(default_factory=list)
     infrastructure_error: str | None = None
+    outcome: str | None = None
+
+    def __post_init__(self):
+        if self.outcome is None:
+            self.outcome = "Full" if self.passed else "Failure"
 
     def to_dict(self) -> dict:
         return asdict(self)

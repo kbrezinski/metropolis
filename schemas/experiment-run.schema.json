@@ -46,6 +46,30 @@
     "status": {"enum": ["running", "complete", "failed", "interrupted"]},
     "timeline_path": {"type": "string"},
     "attack_events_path": {"type": "string"},
+    "mqtt_acl": {
+      "type": "object",
+      "required": ["scenario_id", "status", "source", "target", "broker", "scada", "attempts", "broker_evidence", "subscriber_evidence", "capture_links", "failures"],
+      "properties": {
+        "scenario_id": {"const": "mqtt.acl_cross_cell.v1"},
+        "status": {"enum": ["planned", "running", "pending_capture", "complete", "failed", "skipped"]},
+        "source": {"type": "string"},
+        "target": {"type": "string"},
+        "broker": {"type": "string"},
+        "scada": {"type": "string"},
+        "started_at_utc": {"type": "string", "format": "date-time"},
+        "stopped_at_utc": {"type": "string", "format": "date-time"},
+        "attempts": {"type": "array", "items": {"type": "object"}},
+        "broker_evidence": {"type": "object", "additionalProperties": {"type": "boolean"}},
+        "subscriber_evidence": {"type": "object", "additionalProperties": {"type": "boolean"}},
+        "downstream_delivery": {"enum": ["unverified", "blocked_by_broker"]},
+        "capture_links": {"type": "object", "additionalProperties": {"type": "array", "items": {"type": "string"}}},
+        "capture_selected": {"type": "boolean"},
+        "capture_started": {"type": "boolean"},
+        "capture_saved": {"type": "boolean"},
+        "failures": {"$ref": "#/$defs/metricFailures"}
+      },
+      "additionalProperties": true
+    },
     "selected_capture_links": {"type": "array", "uniqueItems": true, "items": {"type": "string"}},
     "captures": {"type": "array", "items": {"type": "string"}},
     "resource_baseline": {

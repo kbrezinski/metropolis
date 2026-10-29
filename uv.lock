@@ -569,6 +569,15 @@ wheels = [
 ]
 
 [[package]]
+name = "dnp3py"
+version = "0.6.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/6c/8d/c01badc9bb899f62f2f49444e9f11c99ab1a9f7c29b1e2f6f2e04a05fe94/dnp3py-0.6.0.tar.gz", hash = "sha256:bfdba416d24cea659efd398da7e5e6218fcd277b3ad8bbe071071e92fb02bafb", size = 652769, upload-time = "2026-09-29T21:33:48.762Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/c3/b7/adecfcc632fdd029dd7b14f793e7c2d3c5eb3e25c665f41a0954ebf1bf21/dnp3py-0.6.0-py3-none-any.whl", hash = "sha256:6721e1167d83f99e5a5a3a13bb51b05b23cf7c83f3c6d3b6873611ef64b5d6ab", size = 334046, upload-time = "2026-09-29T21:33:47.417Z" },
+]
+
+[[package]]
 name = "docker"
 version = "7.2.0"
 source = { registry = "https://pypi.org/simple" }
@@ -999,6 +1008,7 @@ dependencies = [
 [package.dev-dependencies]
 dev = [
     { name = "codespell" },
+    { name = "dnp3py" },
     { name = "docker", extra = ["ssh"] },
     { name = "jsonschema" },
     { name = "matplotlib" },
@@ -1026,6 +1036,7 @@ requires-dist = [
 [package.metadata.requires-dev]
 dev = [
     { name = "codespell", specifier = ">=2.4.2" },
+    { name = "dnp3py", specifier = "==0.6.0" },
     { name = "docker", extras = ["ssh"], specifier = ">=7.1,<8" },
     { name = "jsonschema", specifier = ">=4.23.0" },
     { name = "matplotlib", specifier = ">=3.9" },

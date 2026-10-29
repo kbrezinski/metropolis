@@ -18,10 +18,10 @@ top of them.
 
 | Node | Address | Listener | Protocol |
 |---|---|---|---|
-| `MET-MQTT-BROKER-01` | `10.20.23.10` | TCP 1883 | MQTT, authenticated |
+| `MET-MQTT-BROKER-01` | `10.20.23.10` | TCP 1883 | MQTT, authenticated with topic ACLs |
 | `MET-PLC-INTAKE-01` | `10.20.10.10` | TCP 502 | Modbus TCP |
-| `MET-RTU-RESERVOIR-01` | `10.20.14.10` | TCP 502 | Modbus TCP |
-| `MET-RTU-RAW-WATER-01` | `10.20.15.10` | TCP 502 | Modbus TCP |
+| `MET-RTU-RESERVOIR-01` | `10.20.14.10` | TCP 502, 20000 | Modbus TCP, DNP3 |
+| `MET-RTU-RAW-WATER-01` | `10.20.15.10` | TCP 502, 20000 | Modbus TCP, DNP3 |
 | `MET-SENSOR-INTAKE-01` | `10.20.10.20` | UDP 5683 | CoAP |
 | `MET-HMI-INTAKE-01` | `10.20.50.10` | TCP 8080 | HTTP, Basic auth |
 | `MET-ENGINEERING-01` | `10.20.21.10` | TCP 22 | SSH and SFTP |
@@ -41,7 +41,6 @@ These are public lab fixtures. Do not reuse them anywhere else.
 
 | Service | Account | Password |
 |---|---|---|
-| MQTT (device role) | `lab_device` | `LabOnly_Device_2026` |
 | MQTT (operator role) | `lab_operator` | `LabOnly_MQTT_2026` |
 | HMI | `operator` | `LabOnly_HMI_2026` |
 | Engineering workstation | `engineer` | `LabOnly_Engineering_2026` |
@@ -51,9 +50,11 @@ These are public lab fixtures. Do not reuse them anywhere else.
 
 **Target:** `MET-MQTT-BROKER-01`, `10.20.23.10:1883/TCP`.
 
-The broker rejects anonymous connections and builds its password file at
-startup. Both accounts have the same permissions — their names do not establish
-different roles, and there are no per-topic ACLs and no TLS listener.
+The broker rejects anonymous connections and builds its password and ACL files
+from the selected inventory. Sensor, SCADA, historian, and each HMI have
+distinct lab accounts; their credentials are in the inventory. The operator
+account can publish only under `metropolis/experiment/#`. TLS is optional and
+off by default.
 
 The historian is an MQTT *client* at `10.20.22.10`, not a second broker, and the
 sensor and HMI do not accept MQTT connections. Point MQTT tools at the broker.
@@ -64,11 +65,12 @@ Normal application topics:
 |---|---|---|
 | `metropolis/plant/intake/telemetry` | `MET-SENSOR-INTAKE-01` | Historian console |
 | `metropolis/scada/intake/status` | `MET-SCADA-01` | Historian console, HMI |
-| `metropolis/plant/intake/command` | `MET-HMI-INTAKE-01` | Historian console; nothing acts on it |
+| `metropolis/plant/intake/command` | `MET-HMI-INTAKE-01` | SCADA and historian; valid operator requests reach the PLC |
 
 Baseline telemetry is JSON. You can observe publications at the broker or
-historian. The HMI command topic is **not** wired to PLC actuation, so publishing
-there does not change the process.
+historian. An HMI account may publish its own cell's command topic, not another
+cell's. The optional `experiment_run --mqtt-acl-probe SOURCE:TARGET` sends inert
+payloads from the source HMI and records broker allow/deny evidence.
 
 ## CoAP
 
@@ -95,6 +97,17 @@ of that. The repository supplies only the normal responder.
 The implementation is small: no DTLS, Observe, blockwise transfer, discovery
 query filtering, or duplicate-request cache, though it does reject unsupported
 critical options.
+The engineering control client reads `/status` every 30 seconds without CoAP
+credentials. Network access is controlled by the routed firewall; the CoAP
+server itself has no application authentication.
+
+## DNP3
+
+**Targets:** the reservoir and raw-water RTUs on TCP 20000. SCADA performs an
+integrity poll on connection and every 60 seconds, plus class-1 alarm-event
+polls every five seconds. The existing Modbus targets and registers remain.
+This is a small solicited-poll lab model with no DNP3 secure authentication;
+capture both RTU attachments and the WAN uplinks to inspect its traffic.
 
 ## Modbus
 

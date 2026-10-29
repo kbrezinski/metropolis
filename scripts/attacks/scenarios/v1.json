@@ -5,6 +5,7 @@
     {"id": "recon.discovery.v1", "family": "scanner", "tool": "iot_discovery", "origin_kind": "invoking_host", "capture_focus": "target attachment and routed path"},
     {"id": "mqtt.authentication.v1", "family": "mqtt", "tool": "mqtt_bruteforce_attack", "origin_kind": "invoking_host", "capture_focus": "broker attachment and routed path"},
     {"id": "mqtt.publish.v1", "family": "mqtt", "tool": "mqtt_flood_attack", "origin_kind": "invoking_host", "capture_focus": "broker attachment and subscriber path"},
+    {"id": "mqtt.acl_cross_cell.v1", "family": "mqtt", "tool": "experiment_run", "origin_kind": "gns3_node", "capture_focus": "source HMI attachment, broker attachment, and subscriber path"},
     {"id": "ssh.authentication.v1", "family": "ssh", "tool": "ssh_bruteforce_attack", "origin_kind": "invoking_host", "capture_focus": "engineering host attachment and routed path"},
     {"id": "modbus.write.v1", "family": "modbus", "tool": "modbus_manipulation_attack", "origin_kind": "invoking_host", "capture_focus": "selected controller attachment and routed path"},
     {"id": "coap.response.v1", "family": "coap", "tool": "coap_response_measurement", "origin_kind": "invoking_host", "capture_focus": "sensor attachment, routed path, and receiver when spoofing"},

@@ -9,10 +9,12 @@ import threading
 from pathlib import Path
 
 from _cli import router_scripts
+from builder import protocol_environment_drift
 from capture import capture_for, coverage_report, resolve_links
 from device_logs import DeviceLogCollector, utc_now
 from lifecycle import start_all
 from metrics_report import finalize_metrics
+from mqtt_acl_run import MqttAclRun
 from profile_enforcement import ProfileSession
 from rdp_run import RdpRun
 from resource_metrics import ResourceCollector
@@ -47,6 +49,7 @@ def run_experiment(
     profile: dict | None = None,
     baseline: dict | None = None,
     rdp_udp_amplify: list[str] | None = None,
+    mqtt_acl_probe: tuple[str, str] | None = None,
     collector_factory=DeviceLogCollector,
     capture_fn=capture_for,
     resource_collector_factory=ResourceCollector,
@@ -54,6 +57,7 @@ def run_experiment(
     profile_session_factory=ProfileSession,
     baseline_check_fn=configure_baseline,
     rdp_run_factory=RdpRun,
+    mqtt_run_factory=MqttAclRun,
 ) -> dict:
     """Start telemetry before optional lab startup, and stop it after capture."""
     if not math.isfinite(metrics_interval) or metrics_interval <= 0:
@@ -75,6 +79,18 @@ def run_experiment(
         rdp_udp_amplify or [],
         routers=[item["name"] for item in infrastructure["routers"]],
         readiness_timeout=min(20, startup_timeout),
+    )
+    mqtt_run = (
+        mqtt_run_factory(
+            client,
+            project.project_id,
+            inventory,
+            docker_hosts,
+            run_id,
+            *mqtt_acl_probe,
+        )
+        if mqtt_acl_probe
+        else None
     )
     collector = collector_factory(
         client,
@@ -162,6 +178,9 @@ def run_experiment(
     if rdp_run.enabled:
         collector.manifest["rdp"] = rdp_run.snapshot()
         collector._write_manifest()
+    if mqtt_run is not None:
+        collector.manifest["mqtt_acl"] = mqtt_run.snapshot()
+        collector._write_manifest()
 
     def collect_resources() -> None:
         try:
@@ -204,6 +223,53 @@ def run_experiment(
                 "lab_start_completed", started=started.started, failures=started.failed
             )
             orchestration_failures.extend(started.failed)
+        protocol_nodes = [
+            node
+            for node in topology.nodes
+            if any(
+                key.startswith(("MQTT_", "DNP3_", "COAP_")) for key in node.environment
+            )
+        ]
+        if protocol_nodes:
+            try:
+                existing_nodes = {
+                    node["name"]: node
+                    for node in client.project_nodes(project.project_id)
+                }
+                stale = [
+                    planned.name
+                    for planned in protocol_nodes
+                    if planned.name in existing_nodes
+                    and protocol_environment_drift(
+                        planned, existing_nodes[planned.name]
+                    )
+                ]
+                if stale:
+                    orchestration_failures.append(
+                        "stale MQTT/DNP3/CoAP settings on GNS3 nodes: "
+                        + ", ".join(sorted(stale))
+                    )
+                    if mqtt_run is not None and any(
+                        node.name in stale
+                        and any(key.startswith("MQTT_") for key in node.environment)
+                        for node in protocol_nodes
+                    ):
+                        mqtt_run._failure(
+                            "preflight", "stale MQTT settings on built GNS3 nodes"
+                        )
+            except Exception as exc:  # noqa: BLE001 - retain captures while reporting uncertainty
+                orchestration_failures.append(
+                    f"protocol settings could not be checked: {type(exc).__name__}"
+                )
+        if mqtt_run is not None:
+            try:
+                mqtt_run.prepare()
+            except Exception as exc:  # noqa: BLE001 - retain the run report
+                mqtt_run._failure(
+                    "preflight", f"MQTT preflight failed: {type(exc).__name__}"
+                )
+            collector.manifest["mqtt_acl"] = mqtt_run.snapshot()
+            collector._write_manifest()
         if configure_routers:
             exception_apply_attempted = bool(exception_records)
             results = configure_project_routers(
@@ -295,6 +361,10 @@ def run_experiment(
             rdp_run.set_capture_points(link_plan, chosen, resolution.resolved)
             collector.manifest["rdp"] = rdp_run.snapshot()
             collector._write_manifest()
+        if mqtt_run is not None:
+            mqtt_run.set_capture_points(link_plan, chosen, resolution.resolved)
+            collector.manifest["mqtt_acl"] = mqtt_run.snapshot()
+            collector._write_manifest()
         preflight = [
             f"{name}: {detail['status']}"
             for name, detail in resolution.status.items()
@@ -306,16 +376,28 @@ def run_experiment(
             record("capture_started", selected_links=chosen)
 
             def on_capture_started(active_capture):
-                rdp_run.mark_capture_started(active_capture.started)
-                try:
-                    rdp_run.start()
-                except Exception as exc:  # noqa: BLE001 - do not abandon PCAP collection
-                    rdp_run._failure(
-                        "startup", f"RDP startup failed: {type(exc).__name__}"
-                    )
-                collector.manifest["rdp"] = rdp_run.snapshot()
-                collector._write_manifest()
-                record("rdp_started", status=rdp_run.result["status"])
+                if rdp_run.enabled:
+                    rdp_run.mark_capture_started(active_capture.started)
+                    try:
+                        rdp_run.start()
+                    except Exception as exc:  # noqa: BLE001 - do not abandon PCAP collection
+                        rdp_run._failure(
+                            "startup", f"RDP startup failed: {type(exc).__name__}"
+                        )
+                    collector.manifest["rdp"] = rdp_run.snapshot()
+                    collector._write_manifest()
+                    record("rdp_started", status=rdp_run.result["status"])
+                if mqtt_run is not None:
+                    mqtt_run.mark_capture_started(active_capture.started)
+                    try:
+                        mqtt_run.start()
+                    except Exception as exc:  # noqa: BLE001 - do not abandon PCAP collection
+                        mqtt_run._failure(
+                            "startup", f"MQTT probe start failed: {type(exc).__name__}"
+                        )
+                    collector.manifest["mqtt_acl"] = mqtt_run.snapshot()
+                    collector._write_manifest()
+                    record("mqtt_acl_started", status=mqtt_run.result["status"])
 
             capture_result = capture_fn(
                 client,
@@ -331,7 +413,11 @@ def run_experiment(
                 },
                 run_id=run_id,
                 preflight_failures=preflight,
-                **({"on_started": on_capture_started} if rdp_run.enabled else {}),
+                **(
+                    {"on_started": on_capture_started}
+                    if rdp_run.enabled or mqtt_run is not None
+                    else {}
+                ),
             )
             if capture_result.interrupted:
                 interrupted = True
@@ -352,6 +438,70 @@ def run_experiment(
     except Exception as exc:  # noqa: BLE001 - always stop telemetry and retain manifest
         orchestration_failures.append(f"experiment failed: {exc}")
     finally:
+        if mqtt_run is not None:
+            try:
+                mqtt_run.finish()
+                if capture_result is not None:
+                    mqtt_run.mark_capture_saved(capture_result.files)
+            except (Exception, KeyboardInterrupt) as exc:  # noqa: BLE001 - retain other cleanup
+                if isinstance(exc, KeyboardInterrupt):
+                    interrupted = True
+                mqtt_run._failure(
+                    "cleanup", f"MQTT probe cleanup failed: {type(exc).__name__}"
+                )
+            mqtt_result = mqtt_run.snapshot()
+            collector.manifest["mqtt_acl"] = mqtt_result
+            for failure in mqtt_result["failures"]:
+                collector.manifest["failures"].append(
+                    {
+                        "source": f"mqtt_acl:{failure['source']}",
+                        "reason": failure["reason"],
+                    }
+                )
+            if mqtt_result["status"] != "complete" and not mqtt_result["failures"]:
+                collector.manifest["failures"].append(
+                    {
+                        "source": "mqtt_acl",
+                        "reason": "requested MQTT ACL check was incomplete",
+                    }
+                )
+            capture_links = mqtt_result.get("capture_links", {})
+            event = {
+                "timestamp": utc_now(),
+                "tool": "experiment_run",
+                "event": "acl_probe_finished",
+                "run_id": run_id,
+                "scenario_id": mqtt_result["scenario_id"],
+                "scenario_catalog_version": "1.0",
+                "scenario_variant": {
+                    "source": mqtt_result["source"],
+                    "target": mqtt_result["target"],
+                    "broker": mqtt_result["broker"],
+                    "subscriber": mqtt_result["scada"],
+                    "own_topic": mqtt_result["own_topic"],
+                    "cross_topic": mqtt_result["cross_topic"],
+                },
+                "declared_capture_links": sorted(
+                    {link for links in capture_links.values() for link in links}
+                ),
+                "traffic_origin": {
+                    "kind": "gns3_node",
+                    "node": mqtt_result["source"],
+                    "source_verification": "check_pcap",
+                },
+                "status": mqtt_result["status"],
+                "broker_evidence": mqtt_result["broker_evidence"],
+                "subscriber_evidence": mqtt_result["subscriber_evidence"],
+                "downstream_delivery": mqtt_result["downstream_delivery"],
+                "failures": mqtt_result["failures"],
+            }
+            with (collector.run_dir / "attacks.jsonl").open(
+                "a", encoding="utf-8"
+            ) as output:
+                output.write(json.dumps(event) + "\n")
+                output.flush()
+            record("mqtt_acl_finished", status=mqtt_result["status"])
+            collector._write_manifest()
         if rdp_run.enabled:
             try:
                 rdp_run.finish()

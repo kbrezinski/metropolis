@@ -30,8 +30,8 @@ def main() -> None:
     topic = os.getenv("MQTT_TOPIC", "metropolis/#")
     client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id=name)
     client.username_pw_set(
-        os.getenv("MQTT_USERNAME", "lab_device"),
-        os.getenv("MQTT_PASSWORD", "LabOnly_Device_2026"),
+        os.environ["MQTT_USERNAME"],
+        os.environ["MQTT_PASSWORD"],
     )
     apply_to(client)
 

@@ -1,4 +1,4 @@
-"""Pinned Stirrup agent orchestration over benchmark-owned Docker tools."""
+"""Pinned Stirrup orchestration with file-only authoring tools."""
 
 import asyncio
 from importlib.metadata import version
@@ -19,7 +19,7 @@ def engine_metadata(provider) -> dict:
         "name": "stirrup",
         "version": version("stirrup"),
         "config": {
-            "tools": ["read_file", "write_file", "run_command", "finish"],
+            "tools": ["read_file", "write_file", "finish"],
             "tool_execution": "sequential",
             "default_tools": False,
             "subagents": False,
@@ -44,12 +44,6 @@ class _ReadFile(BaseModel):
 
 class _WriteFile(_ReadFile):
     content: str
-
-
-class _RunCommand(BaseModel):
-    model_config = ConfigDict(extra="forbid", strict=True)
-    command: str
-    timeout: float | None = None
 
 
 class _ProviderRefusal(Exception):
@@ -95,7 +89,7 @@ class _TraceLogger(AgentLoggerBase):
 
 
 class AgentEngine:
-    """Stirrup owns the loop; callbacks retain Docker execution and evidence limits."""
+    """Stirrup owns the loop; callbacks provide bounded file operations."""
 
     def __init__(self, provider, dispatch, result, event, clean, deadline):
         self.provider = provider
@@ -144,8 +138,9 @@ class AgentEngine:
         started = time.monotonic()
         self.result["rounds_used"] += 1
         try:
+            remaining = self.remaining()
             reply = await asyncio.wait_for(
-                self.provider.generate(messages, tools), timeout=self.remaining()
+                self.provider.generate(messages, tools), timeout=remaining
             )
         except TimeoutError:
             self.event("model_error", error="Attempt deadline exceeded")
@@ -190,11 +185,6 @@ class AgentEngine:
         tools = [
             tool("read_file", "Read a UTF-8 file relative to /workspace.", _ReadFile),
             tool("write_file", "Write a UTF-8 file relative to /workspace.", _WriteFile),
-            tool(
-                "run_command",
-                "Run a shell command in /workspace with a bounded timeout.",
-                _RunCommand,
-            ),
         ]
         agent = Agent(
             client=self,

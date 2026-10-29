@@ -12,6 +12,7 @@ writes the mapping out, so the specs can be filled in from something that ran.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import shlex
 import subprocess
 
 import yaml
@@ -39,6 +40,29 @@ def existing_link_keys(links: list[dict]) -> set[tuple]:
     return {identity for link in links if (identity := server_key(link)) is not None}
 
 
+def protocol_environment_drift(planned, existing: dict) -> bool:
+    """Detect protocol settings that an existing GNS3 node would keep stale."""
+    expected = {
+        key: str(value)
+        for key, value in planned.environment.items()
+        if key.startswith(("MQTT_", "DNP3_", "COAP_"))
+    }
+    if not expected:
+        return False
+    raw = existing.get("properties", {}).get("environment", "")
+    actual = {}
+    try:
+        for line in raw.splitlines():
+            parsed = shlex.split(line)
+            if len(parsed) != 1 or "=" not in parsed[0]:
+                return True
+            key, value = parsed[0].split("=", 1)
+            actual[key] = value
+    except ValueError:
+        return True
+    return any(actual.get(key) != value for key, value in expected.items())
+
+
 def ensure_nodes(
     client: Gns3Client,
     project_id: str,
@@ -56,6 +80,10 @@ def ensure_nodes(
         if found is not None:
             nodes[planned.name] = Node.from_api(found)
             result.reused_nodes.append(planned.name)
+            if protocol_environment_drift(planned, found):
+                result.skipped.append(
+                    f"{planned.name}: stale MQTT/DNP3/CoAP environment; refresh or recreate the GNS3 node"
+                )
             continue
         template_id = template_ids.get(planned.template_name)
         if template_id is None:

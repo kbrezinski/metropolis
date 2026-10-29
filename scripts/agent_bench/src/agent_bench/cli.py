@@ -11,15 +11,12 @@ from .contracts import InfrastructureError
 from .providers import load_models, make_provider
 from .reporting import report
 from .runner import grade_attempt, run_attempt, suite_hash
-from .runtime import build_image, check_image
 from .tasks import get_task, tasks
-
-DEFAULT_IMAGE = "industrial-agent-bench:0.1.0"
 
 
 def parser() -> argparse.ArgumentParser:
     root = argparse.ArgumentParser(
-        description="Portable industrial agent benchmark (no GNS3 required)"
+        description="Industrial command-generation benchmark (no commands are executed)"
     )
     commands = root.add_subparsers(dest="command", required=True)
     listing = commands.add_parser("list", help="List versioned task contracts")
@@ -35,14 +32,8 @@ def parser() -> argparse.ArgumentParser:
     run.add_argument("--repeats", type=int, default=3)
     run.add_argument("--rounds", type=int, default=30)
     run.add_argument("--seconds", type=float, default=600)
-    run.add_argument("--command-seconds", type=float, default=30)
-    run.add_argument("--image", default=DEFAULT_IMAGE)
-    run.add_argument(
-        "--build-image", action="store_true", help="Build the pinned fixture image before running"
-    )
-    grading = commands.add_parser("grade", help="Regrade a saved submission in a fresh container")
+    grading = commands.add_parser("grade", help="Statically regrade a saved command submission")
     grading.add_argument("attempt", type=Path)
-    grading.add_argument("--image", help="Explicit replacement image; its use is recorded")
     reporting = commands.add_parser("report", help="Export attempt and family summaries as CSV")
     reporting.add_argument("run", type=Path)
     reporting.add_argument("--output", required=True, type=Path)
@@ -71,15 +62,14 @@ def main(argv: list[str] | None = None) -> int:
             print(f"Saved attempt and summary CSVs to {args.output} ({len(summary)} groups)")
             return 0
         if args.command == "grade":
-            result = grade_attempt(args.attempt, args.image)
+            result = grade_attempt(args.attempt)
             print(json.dumps(result["grade"], indent=2))
             return 0 if result["grade"]["passed"] else 1
         if (
             args.repeats < 1
             or args.rounds < 1
-            or not all(
-                math.isfinite(value) and value > 0 for value in (args.seconds, args.command_seconds)
-            )
+            or not math.isfinite(args.seconds)
+            or args.seconds <= 0
         ):
             raise ValueError("Repetitions and attempt budgets must be positive")
         if args.output.exists():
@@ -93,9 +83,6 @@ def main(argv: list[str] | None = None) -> int:
         if len(set(aliases)) != len(aliases) or any(alias not in models for alias in aliases):
             raise ValueError("Select distinct model aliases present in the configuration")
         providers = {alias: make_provider(models[alias]) for alias in aliases}
-        if args.build_image:
-            build_image(args.image)
-        check_image(args.image)
         catalog_hash = suite_hash(catalog)
         args.output.mkdir(parents=True)
         for alias in aliases:
@@ -108,15 +95,13 @@ def main(argv: list[str] | None = None) -> int:
                         models[alias],
                         providers[alias],
                         directory,
-                        args.image,
                         repeat,
                         catalog_hash,
                         args.rounds,
                         args.seconds,
-                        args.command_seconds,
                     )
                     print(
-                        f"  {result['stop_reason']}; checks passed: {result['grade']['passed']}",
+                        f"  {result['stop_reason']}; grade: {result['grade']['outcome']}",
                         flush=True,
                     )
         report(args.output, args.output / "reports")

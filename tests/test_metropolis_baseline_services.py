@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import importlib.util
+import logging
 import socket
 import struct
 import subprocess
 import sys
+import threading
 import types
 from pathlib import Path
 
@@ -179,3 +181,81 @@ def test_snmp_poll_survives_modbus_failure_without_logging_community(
     assert calls == [("10.0.0.1", "private-lab-string")]
     assert "SNMP poll failed: router=core" in caplog.text
     assert "private-lab-string" not in caplog.text
+
+
+def test_coap_status_get_uses_a_real_udp_exchange(monkeypatch):
+    monkeypatch.setattr(control_client.secrets, "randbelow", lambda _: 0x1234)
+    received = []
+    server = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    server.bind(("127.0.0.1", 0))
+    server.settimeout(3)
+
+    def reply():
+        request, peer = server.recvfrom(1024)
+        received.append(request)
+        server.sendto(b'\x60\x45\x12\x34\xc1\x32\xff{"value":1}', peer)
+
+    thread = threading.Thread(target=reply)
+    thread.start()
+    try:
+        result = control_client.sample_coap("127.0.0.1", server.getsockname()[1])
+    finally:
+        thread.join(timeout=4)
+        server.close()
+    assert not thread.is_alive()
+    assert received == [b"\x40\x01\x12\x34\xb6status"]
+    assert result == ("2.05", 11, 18)
+
+
+def test_coap_response_must_match_the_request(monkeypatch):
+    monkeypatch.setattr(control_client.secrets, "randbelow", lambda _: 0x1234)
+    server = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    server.bind(("127.0.0.1", 0))
+    server.settimeout(3)
+
+    def reply():
+        _, peer = server.recvfrom(1024)
+        server.sendto(b"\x60\x45\x56\x78", peer)
+
+    thread = threading.Thread(target=reply)
+    thread.start()
+    try:
+        with pytest.raises(ValueError, match="Invalid CoAP"):
+            control_client.sample_coap("127.0.0.1", server.getsockname()[1])
+    finally:
+        thread.join(timeout=4)
+        server.close()
+    assert not thread.is_alive()
+
+
+def test_coap_poll_runs_even_when_modbus_fails(monkeypatch, caplog):
+    class EndCycle(Exception):
+        pass
+
+    monkeypatch.setenv("COAP_HOST", "192.0.2.4")
+    monkeypatch.setenv("COAP_TARGET_NODE", "TEST-SENSOR")
+    monkeypatch.setenv("NODE_HOSTNAME", "TEST-CLIENT")
+    monkeypatch.setenv("SNMP_TARGETS", "")
+    monkeypatch.setattr(
+        control_client,
+        "lookup_plc",
+        lambda *args: (_ for _ in ()).throw(ConnectionError("PLC unavailable")),
+    )
+    calls = []
+
+    def poll(host, port):
+        calls.append((host, port))
+        return "2.05", 11, 18
+
+    monkeypatch.setattr(control_client, "sample_coap", poll)
+    monkeypatch.setattr(
+        control_client.time, "sleep", lambda _: (_ for _ in ()).throw(EndCycle)
+    )
+    caplog.set_level(logging.INFO, logger="metropolis.control_client")
+    with pytest.raises(EndCycle):
+        control_client.main()
+    assert calls == [("192.0.2.4", 5683)]
+    assert (
+        "source=TEST-CLIENT target=TEST-SENSOR resource=/status code=2.05"
+        in caplog.text
+    )

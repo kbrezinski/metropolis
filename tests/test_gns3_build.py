@@ -988,6 +988,114 @@ def test_experiment_shares_run_id_and_reports_missing_log_sources(
     Draft202012Validator(schema, format_checker=FormatChecker()).validate(manifest)
 
 
+def test_experiment_records_hmi_origin_mqtt_check_after_capture_starts(
+    documents, built_capture, tmp_path
+):
+    _, inventory, infrastructure, link_plan = documents
+    client, topology, _ = built_capture
+    chosen = topology.links[0].link_id
+
+    class FakeMqttRun:
+        def __init__(self, *_args):
+            self.result = {
+                "scenario_id": "mqtt.acl_cross_cell.v1",
+                "status": "planned",
+                "source": "source-hmi",
+                "target": "target-hmi",
+                "broker": "broker",
+                "scada": "scada",
+                "own_topic": "lab/source/command",
+                "cross_topic": "lab/target/command",
+                "attempts": [],
+                "broker_evidence": {},
+                "subscriber_evidence": {},
+                "downstream_delivery": "unverified",
+                "capture_links": {},
+                "failures": [],
+            }
+
+        def snapshot(self):
+            return dict(self.result)
+
+        def prepare(self):
+            pass
+
+        def set_capture_points(self, *_args):
+            self.result["capture_links"] = {"source": [chosen], "broker": [chosen]}
+
+        def mark_capture_started(self, started):
+            assert chosen in started
+
+        def start(self):
+            assert client.started  # Capture starts before the simulated HMI publishes.
+            self.result["status"] = "running"
+
+        def finish(self):
+            self.result["broker_evidence"] = {
+                "own_received": True,
+                "cross_denied": True,
+            }
+            self.result["subscriber_evidence"] = {
+                "own_received": True,
+                "cross_received": False,
+            }
+            self.result["downstream_delivery"] = "blocked_by_broker"
+            self.result["status"] = "pending_capture"
+
+        def mark_capture_saved(self, files):
+            self.result["status"] = "complete" if chosen in files else "failed"
+
+        def _failure(self, source, reason):
+            self.result["failures"].append({"source": source, "reason": reason})
+            self.result["status"] = "failed"
+
+    def fast_capture(*args, **kwargs):
+        return capture_for(*args, **kwargs, sleep=lambda _: None)
+
+    manifest = run_experiment(
+        client,
+        Project("p1", "lab", "opened"),
+        topology,
+        inventory,
+        infrastructure,
+        link_plan,
+        tmp_path,
+        "mqtt_acl_run",
+        0.01,
+        {},
+        selected_links=[chosen],
+        capture_fn=fast_capture,
+        metrics_enabled=False,
+        mqtt_acl_probe=("source-hmi", "target-hmi"),
+        mqtt_run_factory=FakeMqttRun,
+    )
+    assert manifest["mqtt_acl"]["status"] == "complete"
+    event = json.loads(
+        (tmp_path / "runs/mqtt_acl_run/attacks.jsonl").read_text().splitlines()[-1]
+    )
+    assert event["scenario_id"] == "mqtt.acl_cross_cell.v1"
+    assert event["traffic_origin"]["node"] == "source-hmi"
+    assert event["declared_capture_links"] == [chosen]
+    assert event["subscriber_evidence"] == {
+        "own_received": True,
+        "cross_received": False,
+    }
+    manifest_schema = json.loads(
+        (
+            Path(__file__).resolve().parents[1] / "schemas/experiment-run.schema.json"
+        ).read_text()
+    )
+    Draft202012Validator(manifest_schema, format_checker=FormatChecker()).validate(
+        manifest
+    )
+    schema = json.loads(
+        (
+            Path(__file__).resolve().parents[1] / "schemas/attack-event.schema.json"
+        ).read_text()
+    )
+    Draft202012Validator(schema, format_checker=FormatChecker()).validate(event)
+
+
 def test_experiment_collects_router_syslog_and_pcap_under_one_run(
     documents, built_capture, tmp_path
 ):
