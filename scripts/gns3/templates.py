@@ -121,7 +121,17 @@ TEMPLATES: tuple[ImageTemplate, ...] = (
     spec(
         "Metropolis engineering workstation",
         "metropolis/engineering:dev",
-        description="OpenSSH shell and SFTP on TCP 22",
+        description="OpenSSH shell, SFTP, and RDP administration client",
+    ),
+    spec(
+        "Metropolis RDP administration server",
+        "metropolis/rdp-server:dev",
+        description="xrdp desktop on TCP 3389 with separate synthetic UDP 3389",
+    ),
+    spec(
+        "Metropolis RDP administration client",
+        "metropolis/rdp-client:dev",
+        description="Headless operations-side RDP session client",
     ),
     spec(
         "Metropolis control client",

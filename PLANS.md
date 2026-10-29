@@ -27,9 +27,7 @@ Expand one cell at a time, prioritizing credible packet timing, polling, and val
 ### Attack scripts — later
 
 - [ ] Add scenarios for newly populated cells after normal traffic is established. Use `scripts/attacks/run.py`, user-selected launch timing, and attribution to the capture run ID.
-- [ ] Cable the Mirai listener, HTTP/TFTP loaders, and example bot into the isolated attack segment; verify reachability and capture coverage.
-- [ ] Move Mirai choreography from the host runner into the declared nodes: bounded bot probing and Telnet attempts, listener-to-loader reporting, inert delivery, and observable C&C command delivery. Distinguish each simulated stage from an actual infection.
-- [ ] Extend the Merlin scenario with observable, controlled tool-transfer and attack stages from the agent node; verify their traffic and effects without arbitrary command execution.
+- [ ] If needed, add a separate Merlin agent-origin attack-traffic scenario with a selected target and packet profile. The Gotham-inspired support sequence stops after inert transfer and `chmod`.
 - [ ] Decide whether Mirai or Merlin needs real binaries for the intended research claims, and define isolation and evidence requirements before considering that work.
 
 ## 2. Data processing and model development — future
@@ -39,6 +37,13 @@ Build on existing PCAP extraction and cleaning when requested. Record feature, l
 ## 3. Experimentation, ablation, and model comparison — future
 
 Record experiment designs, ablations, and model comparisons here when discussed.
+
+### Standalone agent benchmark
+
+The independent [agent benchmark](scripts/agent_bench/README.md) contains twelve pilot tasks, Stirrup 0.2.1 as its sole agent engine, protected Docker grading, human review, and count-based reports. Engine settings and installed dependency versions remain separate in reports. It has no GNS3 or Metropolis dataset dependency.
+
+- [ ] On a Linux-container Docker host, build the supplied image and run the complete canned pilot plus opt-in Docker acceptance checks. Live Docker behavior could not be verified on the implementation host; do not treat mocked checks as isolation or packet evidence.
+- [ ] Define the proposed full/partial/failure/refusal rubric before adding differently scoped tasks. Keep requested-solution adherence separate from functional correctness; the current finite packet contract remains full success when satisfied.
 
 ## 4. Paper authoring — future
 

@@ -127,7 +127,7 @@ def test_mirai_scan_listener_records_json_reports(peers, capsys):
     listener = load_file(
         "mirai_listener_model", MIRAI / "scan_listener/start_listener.py"
     )
-    payload = {"bot_id": "bot-0001", "vulnerable": "10.77.4.100:23"}
+    payload = {"bot_id": "bot-0001", "reachable": "10.77.4.100:23"}
     listener.record(json.dumps(payload), ("127.0.0.1", 40000))
     event = json.loads(capsys.readouterr().out.strip())
     assert event["event"] == "bot_report"
@@ -167,6 +167,27 @@ def test_merlin_agent_refuses_commands_outside_the_allow_list():
     assert agent.parse_url("10.77.4.20") == ("10.77.4.20", 8443)
 
 
+def test_merlin_agent_reports_marker_permission_failure(monkeypatch):
+    agent = load_file(
+        "merlin_agent_permissions", MERLIN / "agent/start_merlin_agent.py"
+    )
+
+    class Marker:
+        def __str__(self):
+            return "/tmp/marker"
+
+        def is_file(self):
+            return True
+
+        def chmod(self, _mode):
+            raise OSError("permission denied")
+
+    monkeypatch.setattr(agent, "INERT_DESTINATION", Marker())
+    ok, detail = agent.run_command("chmod 775 /tmp/marker")
+    assert not ok
+    assert "permission denied" in detail
+
+
 def test_merlin_cnc_listener_and_upload_lifecycle():
     """The CNC model tracks listener state, agents, and uploaded artefacts."""
     cnc = load_file("merlin_cnc_model", MERLIN / "cnc/start_merlin_cnc.py")
@@ -187,5 +208,7 @@ def test_merlin_cnc_listener_and_upload_lifecycle():
 
 def test_choreography_requires_the_lab_acknowledgement():
     """Neither driver sends traffic without the explicit lab acknowledgement."""
-    assert invoke("mirai/run_mirai_choreography.py", ack=False).returncode == 2
-    assert invoke("merlin/run_merlin.py", ack=False).returncode == 2
+    for name in ("mirai/mirai_scenario.py", "merlin/merlin_scenario.py"):
+        result = invoke(name, ack=False)
+        assert result.returncode == 2
+        assert "METROPOLIS_LAB_ACK" in result.stdout

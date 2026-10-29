@@ -46,6 +46,15 @@ def scenario_inventory(tmp_path):
             "protocols": ["mirai-report"],
         },
         {
+            "name": "BOT-A",
+            "address": "10.77.4.100/24",
+            "protocols": ["mirai-bot"],
+            "environment": {
+                "MIRAI_CNC_HOST": "10.77.4.10",
+                "MIRAI_CNC_PORT": "48101",
+            },
+        },
+        {
             "name": "LOADER-A",
             "address": "10.77.4.12/24",
             "protocols": ["payload-delivery"],
@@ -84,7 +93,7 @@ def test_verified_telnet_target_drives_only_its_simulated_identity(
 
     def fake_choreography(run, **kwargs):
         played.append(kwargs)
-        run.emit("bot_checkin", address=kwargs["bot_targets"][0][0])
+        run.emit("bot_checkin_observed", address=kwargs["bot_host"])
         return 1
 
     output = tmp_path / "scenario.jsonl"
@@ -106,7 +115,13 @@ def test_verified_telnet_target_drives_only_its_simulated_identity(
     assert scenario.main() == 0
     records = events(capsys.readouterr().out)
     assert len(attempts) == 2
-    assert played[0]["bot_targets"] == [("10.77.1.30", 23)]
+    assert played[0]["verified_targets"] == [("10.77.1.30", 23)]
+    assert played[0]["bot_host"] == "10.77.4.100"
+    assert all(
+        row["source"] == "invoking_host"
+        for row in records
+        if row["event"] == "telnet_attempt"
+    )
     assert any(row["event"] == "simulation_transition" for row in records)
     assert events(output.read_text(encoding="utf-8")) == records
     assert "LabOnly_Legacy_2026" not in output.read_text(encoding="utf-8")

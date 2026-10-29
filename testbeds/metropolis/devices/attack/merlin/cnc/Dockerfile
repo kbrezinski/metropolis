@@ -1,4 +1,4 @@
-# Adapted from Gotham's Merlin C&C role: https://github.com/xsaga/gotham-iot-testbed/blob/master/Dockerfiles/malware/Merlin/Dockerfile
+# Adapted from Gotham's Merlin C&C role: https://github.com/xsaga/gotham-iot-testbed/blob/master/src/run_merlin.py
 FROM python:3.12-slim
 
 ARG MERLIN_CERT_DIR=certs/merlin

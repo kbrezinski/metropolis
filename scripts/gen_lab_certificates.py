@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Generate the lab's own certificate authority and server certificate.
+"""Generate a lab CA and server certificate for MQTT or synthetic Merlin.
 
-The Metropolis lab needs a CA and a server certificate so MQTT can run over TLS.
+The Metropolis lab needs a CA and a server certificate for TLS services.
 Generating them here means the lab does not depend on a public certificate for a
 hostname that only exists inside GNS3.
 
@@ -10,12 +10,14 @@ is ignored by Git. Regenerate them whenever you like; every device trusts the CA
 that is present, so rotating it means updating both ends.
 
 The functions are importable, because the broker image generates its own
-certificates at startup if none were supplied. That keeps a TLS lab working
-without anyone having to mount files.
+certificates at startup if none were supplied. For Merlin, provide a selected
+dataset so the certificate covers that dataset's C&C address. Generate a
+separate bundle before building the Merlin images.
 
 Usage::
 
     uv run python scripts/gen_lab_certificates.py --out-dir certs
+    uv run python scripts/gen_lab_certificates.py --service merlin --dataset DATASET
     uv run python scripts/gen_lab_certificates.py --help
 """
 

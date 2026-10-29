@@ -595,12 +595,19 @@ class Run:
         scenario = getattr(self.args, "scenario", None)
         kind = scenario["origin_kind"] if scenario else "not_applicable"
         if kind == "mixed":
+            node = self.settings.get("agent_node") or self.settings.get("bot_node")
+            node_ip = self.settings.get("agent") or self.settings.get("bot")
+            packet_source = (
+                "bot for probe, report, and loader traffic; invoking host for Telnet and operator traffic"
+                if self.settings.get("bot_node")
+                else "agent for check-in, poll, transfer, and result traffic; invoking host for operator and status queries"
+            )
             return {
                 "kind": kind,
                 **execution,
-                "gns3_node": self.settings.get("agent_node"),
-                "gns3_node_ip": self.settings.get("agent"),
-                "packet_source": "agent for agent-channel traffic; invoking host for operator traffic",
+                "gns3_node": node,
+                "gns3_node_ip": node_ip,
+                "packet_source": packet_source,
             }
         return {"kind": kind, **execution}
 

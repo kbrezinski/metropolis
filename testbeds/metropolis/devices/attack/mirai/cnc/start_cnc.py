@@ -35,6 +35,7 @@ MAX_BOTS = 512
 MAX_LINE = 4096
 MAX_PENDING = 32
 MAX_RESULTS = 16
+MAX_RESULT_BYTES = 256
 
 
 @dataclass
@@ -48,6 +49,7 @@ class Bot:
     peer_address: str | None = None
     commands: list[str] = field(default_factory=list)
     pending: list[dict] = field(default_factory=list)
+    inflight: set[str] = field(default_factory=set)
     results: list[dict] = field(default_factory=list)
     next_task: int = 0
 
@@ -82,40 +84,58 @@ class Registry:
 
     def queue(self, bot_id: str, command: str) -> str:
         with self._lock:
-            bot = next((item for item in self._bots.values() if item.bot_id == bot_id), None)
+            bot = next(
+                (item for item in self._bots.values() if item.bot_id == bot_id), None
+            )
             if bot is None:
                 raise ValueError("unknown bot")
-            if len(bot.pending) >= MAX_PENDING:
+            if len(bot.pending) + len(bot.inflight) >= MAX_PENDING:
                 raise ValueError("bot task queue is full")
             bot.next_task += 1
             task_id = f"task-{bot.next_task:04d}"
             bot.commands.append(command)
+            del bot.commands[:-64]
             bot.pending.append({"task_id": task_id, "command": command})
             return task_id
 
     def poll(self, bot_id: str, peer_address: str) -> dict | None:
         with self._lock:
-            bot = next((item for item in self._bots.values() if item.bot_id == bot_id), None)
+            bot = next(
+                (item for item in self._bots.values() if item.bot_id == bot_id), None
+            )
             if bot is None or bot.peer_address != peer_address:
                 raise ValueError("bot is not registered from this address")
-            return bot.pending.pop(0) if bot.pending else None
+            if not bot.pending:
+                return None
+            task = bot.pending.pop(0)
+            bot.inflight.add(task["task_id"])
+            return task
 
     def add_result(self, bot_id: str, peer_address: str, result: dict) -> bool:
         with self._lock:
-            bot = next((item for item in self._bots.values() if item.bot_id == bot_id), None)
+            bot = next(
+                (item for item in self._bots.values() if item.bot_id == bot_id), None
+            )
             if bot is None or bot.peer_address != peer_address:
                 return False
             if not isinstance(result.get("task_id"), str) or not isinstance(
                 result.get("outcome"), str
             ):
                 return False
+            if len(json.dumps(result)) > MAX_RESULT_BYTES:
+                return False
+            if result["task_id"] not in bot.inflight:
+                return False
+            bot.inflight.remove(result["task_id"])
             bot.results.append(result)
             del bot.results[:-MAX_RESULTS]
             return True
 
     def status(self, bot_id: str) -> dict | None:
         with self._lock:
-            bot = next((item for item in self._bots.values() if item.bot_id == bot_id), None)
+            bot = next(
+                (item for item in self._bots.values() if item.bot_id == bot_id), None
+            )
             if bot is None:
                 return None
             return {
@@ -202,6 +222,8 @@ def handle_bot(registry: Registry, connection: socket.socket, peer) -> None:
             try:
                 result = json.loads(command[2])
             except json.JSONDecodeError:
+                result = {}
+            if not isinstance(result, dict):
                 result = {}
             accepted = registry.add_result(command[1], peer[0], result)
             send_line(stream, "ACKRESULT" if accepted else "REJECT invalid result")

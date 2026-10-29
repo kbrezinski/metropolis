@@ -48,10 +48,9 @@ the required privileges so they use the installed dependencies.
 | `modbus_manipulation_attack` | Requires `--action`; writes according to the selected cell profile |
 | `coap_response_measurement` | Measured CON/NON GET mix: 5/s, 10 seconds, at most 100 requests |
 | `hping3_attack` | Scapy SYN profile: 20 packets/s for 10 seconds |
-| `mirai_scenario` | Telnet verification, then synthetic control/report/loader traffic |
-| `merlin_scenario` | Drives the running inert agent through check-in, result, and upload |
-| `mirai_infection_sim`, `run_mirai_choreography` | Individual Mirai stages |
-| `run_merlin` | One-shot synthetic agent traffic from the runner |
+| `mirai_scenario` | Host-side Telnet verification, then bot-origin probe, report, and inert loader traffic |
+| `merlin_scenario` | Drives the running inert agent through HTTPS check-in, marker transfer, and command result |
+| `mirai_infection_sim` | Standalone Telnet stage |
 | `coap_reflection_receiver`, `coap_experiment_report` | Receiver observations and offline CoAP report |
 | `gotham_mirai_setup`, `gotham_merlin_setup` | Prerequisite checks for repository or user-supplied inert agents |
 
@@ -143,7 +142,10 @@ duration/probe limits; an incomplete sweep exits nonzero.
 
 Build and start the synthetic nodes before running these scenarios. Their
 addresses and roles come from the selected inventory. They exchange inert
-commands and text markers; the repository does not ship or fetch malware.
+commands and text markers; the runnable nodes do not ship or fetch malware.
+Mirai's listener, both loaders, and bot have separate physical links on the
+attack switch. Allow the attack-lab-to-target Telnet path for the experiment;
+the baseline firewall blocks routed attack-lab traffic.
 
 ```bash
 uv run python scripts/attacks/run.py mirai_scenario --dry-run
@@ -154,17 +156,27 @@ Use the same command without `--dry-run` after setting the lab acknowledgement.
 
 | Scenario | Stages and source |
 |---|---|
-| Mirai | Try Telnet fixtures and verify a fixed `printf` challenge. Verified identities proceed to synthetic check-in, report, control command, and text-marker fetch. The runner sends those packets; targets do not execute a bot. No verified target means the control stage is skipped. |
-| Merlin | Start the labeled CNC listener, wait for the selected inert agent, queue an inert `chmod` command by default, verify its result and nonempty upload. Agent traffic comes from the agent node; the runner uses the operator console. |
+| Mirai | The invoking host verifies Telnet access. After success, the inventoried bot receives a C&C task, probes the target, reports reachability to the listener, retrieves an inert loader marker, and acknowledges the task. No bot is installed on the target. No verified target means the bot stage is skipped. |
+| Merlin | The agent checks in over certificate-verified HTTPS. The C&C transfers an inert text marker to it, then queues an allowlisted `chmod` of that marker. The scenario verifies transfer and result records; it does not launch a flood. |
+
+Merlin's C&C binds its HTTPS service when the node starts, so the agent may
+check in before `merlin_scenario` sends the console's `start` command. The
+scenario waits for that check-in and then drives the transfer. Its operator
+and status queries originate on the invoking host; check-in, polling,
+transfer, and result traffic involve the agent node.
 
 Mirai role choices use `--target-node` (repeatable), `--cnc-node`,
-`--listener-node`, and `--loader-node`. Login controls include
-`--wordlist`, `--max-attempts`, and `--attempt-interval`.
+`--bot-node`, `--listener-node`, and `--loader-node`. `--delivery http|tftp`
+selects the loader; HTTP is the default. Login controls include `--wordlist`,
+`--max-attempts`, and `--attempt-interval`. The bot is idle until the scenario
+queues work. The Telnet and operator packets originate on the invoking host;
+probe, report, and loader packets originate on the bot node.
 
 Merlin uses `--agent-node` and `--cnc-node`. Its default agent polls every
-20 seconds, with a 90-second wait per scenario stage. `--wait-seconds` and
-`--command` change the wait and inert command. A timeout or failed result
-fails the run. Both require the repository's synthetic control protocol.
+20 seconds, with a 90-second wait per scenario stage. `--ca-file` defaults to
+`certs/merlin/ca.crt`; `--wait-seconds` and `--command` change the wait and
+allowlisted command. A timeout or failed result fails the run. Both scenarios
+require the repository's synthetic control protocol.
 
 ### Gotham Mirai setup adapter
 
@@ -175,8 +187,8 @@ options cannot be combined.
 
 The external option takes no executable path and does not install a bot,
 change passwords, or execute container commands. Use repeated `--target-node`
-to choose Telnet targets. The example bot's empty `BOT_TARGETS` list keeps it
-from scanning.
+to choose Telnet targets. An empty `BOT_TARGETS` allow-list does not launch
+scanning; the scenario supplies each target in a C&C task.
 
 ### Gotham Merlin setup adapter
 
@@ -185,21 +197,30 @@ project/node state. Choose `--external-agent` or `--start-inert-agent`; they
 are mutually exclusive. The external option neither launches a binary nor
 verifies reachability/check-in.
 
-The operator console defaults to TCP 23; the agent channel is **plain HTTP**
-on port 8443. The console label `use https` does not enable TLS. A supplied
-inert agent must implement:
+The operator console defaults to TCP 23; the agent channel uses **HTTPS** on
+port 8443 and verifies the lab CA. Generate the selected dataset's Merlin
+certificate before building the two Merlin images (see the
+[GNS3 setup guide](../gns3/README.md#2-build-the-images-on-the-compute)).
+
+An existing GNS3 node keeps its old environment when the builder reuses it.
+After switching to HTTPS, update or recreate the Merlin agent node if it still
+has an `http://` URL, and restart both Merlin nodes after rebuilding their
+images. `gotham_merlin_setup --start-inert-agent` reports a stale URL when
+GNS3 exposes that setting.
+
+A supplied inert agent must implement:
 
 | Request | Body / result |
 |---|---|
 | `POST /checkin` | JSON address/architecture → JSON `agent_id` |
 | `GET /commands/<agent_id>` | JSON command queue; polling consumes entries |
 | `POST /result/<agent_id>` | JSON command outcome → `stored: true` |
-| `POST /upload/<agent_id>` | Small artifact bytes → `stored: true` |
-| `GET /status/<agent_id>` | Command results and upload metadata |
+| `GET /artifact/<agent_id>` | Inert marker bytes from the C&C |
+| `GET /status/<agent_id>` | Command results and transfer metadata |
 
-POSTs require `Content-Length`. Treat commands as inert data. Use
-`merlin_scenario` for agent-originated observations; `run_merlin` creates
-its own synthetic agent exchange from the invoking host.
+POSTs require `Content-Length`. Treat commands as inert data. The scenario
+uses the actual declared agent node; the former host-side Merlin runner is a
+shared HTTPS helper only.
 
 ## Tool-specific behavior
 
@@ -275,9 +296,12 @@ The Python runner does not build or launch these images. AMP recipes check
 source/license hashes and retain the cloned commit ID and MIT license in the
 image. Upstream changes require review before updating expected hashes.
 The imported archive has no Git metadata proving its original commit.
-The RDP recipe is UDP 3389 amplification, not ordinary TCP RDP; it has no
-bundled endpoint. A listening service is not evidence that it has the historical
-amplification behavior targeted by a recipe.
+The RDP recipe is UDP 3389 amplification, not ordinary TCP RDP. The reference
+testbed now has `xrdp` endpoints for real TCP sessions and a separate synthetic
+UDP responder. Its opt-in amplification mode is a labelled lab model, not the
+Windows RDP-UDP behavior documented by the imported recipe. The Python runner
+does not launch that Dockerfile; select a run-scoped mode and firewall exception
+separately if using it in an authorized lab.
 
 ## Adding an attack artifact
 

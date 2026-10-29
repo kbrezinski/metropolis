@@ -547,12 +547,46 @@ devices:
     subnet: 10.20.21.0/24
     address: 10.20.21.10/24
     gateway: 10.20.21.1
-    protocols: [ssh, sftp]
+    protocols: [ssh, sftp, rdp-client]
     environment:
       NODE_HOSTNAME: MET-ENGINEERING-01
       NODE_IP: 10.20.21.10/24
       NODE_GATEWAY: 10.20.21.1
       ENGINEER_PASSWORD: LabOnly_Engineering_2026
+      RDP_TARGET_NODE: MET-RDP-DMZ-01
+      RDP_USERNAME: rdpadmin
+      RDP_PASSWORD: LabOnly_RDP_2026
+
+  - name: MET-RDP-ENGINEERING-01
+    model: testbeds/metropolis/devices/operations/rdp_server
+    image: metropolis/rdp-server:dev
+    site: treatment_plant
+    subnet: 10.20.21.0/24
+    address: 10.20.21.30/24
+    gateway: 10.20.21.1
+    protocols: [rdp, rdp-udp-synthetic]
+    environment:
+      NODE_HOSTNAME: MET-RDP-ENGINEERING-01
+      NODE_IP: 10.20.21.30/24
+      NODE_GATEWAY: 10.20.21.1
+      RDP_USERNAME: rdpadmin
+      RDP_PASSWORD: LabOnly_RDP_2026
+
+  - name: MET-OPS-ADMIN-01
+    model: testbeds/metropolis/devices/operations/rdp_client
+    image: metropolis/rdp-client:dev
+    site: treatment_plant
+    subnet: 10.20.20.0/24
+    address: 10.20.20.20/24
+    gateway: 10.20.20.1
+    protocols: [rdp-client]
+    environment:
+      NODE_HOSTNAME: MET-OPS-ADMIN-01
+      NODE_IP: 10.20.20.20/24
+      NODE_GATEWAY: 10.20.20.1
+      RDP_TARGET_NODE: MET-RDP-ENGINEERING-01
+      RDP_USERNAME: rdpadmin
+      RDP_PASSWORD: LabOnly_RDP_2026
 
   - name: MET-CONTROL-CLIENT-01
     model: testbeds/metropolis/devices/operations/control_client
@@ -632,6 +666,21 @@ devices:
       NODE_HOSTNAME: MET-DEBUG-DMZ-01
       NODE_IP: 10.20.40.10/24
       NODE_GATEWAY: 10.20.40.1
+
+  - name: MET-RDP-DMZ-01
+    model: testbeds/metropolis/devices/operations/rdp_server
+    image: metropolis/rdp-server:dev
+    site: treatment_plant
+    subnet: 10.20.40.0/24
+    address: 10.20.40.20/24
+    gateway: 10.20.40.1
+    protocols: [rdp, rdp-udp-synthetic]
+    environment:
+      NODE_HOSTNAME: MET-RDP-DMZ-01
+      NODE_IP: 10.20.40.20/24
+      NODE_GATEWAY: 10.20.40.1
+      RDP_USERNAME: rdpadmin
+      RDP_PASSWORD: LabOnly_RDP_2026
 
   # ---------------------------------------------------------------------------
   # Attack-lab nodes: synthetic Mirai and Merlin control-plane models.
@@ -722,7 +771,7 @@ devices:
       MIRAI_CNC_PORT: "48101"
       MIRAI_REPORT_PORT: "48101"
       BOT_ARCH: linux-x64-synthetic
-      BOT_INTERVAL: "30"
+      BOT_INTERVAL: "5"
       BOT_TARGETS: ""
 
   - name: MET-MERLIN-CNC-01
@@ -760,4 +809,4 @@ devices:
       MERLIN_CA_FILE: /opt/metropolis/tls/ca.crt
       AGENT_ARCH: linux-x64-synthetic
       AGENT_SLEEP: "20"
-      AGENT_UPLOAD_ONCE: "true"
+      AGENT_UPLOAD_ONCE: "false"

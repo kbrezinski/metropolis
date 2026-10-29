@@ -66,7 +66,7 @@ def record(line: str, peer) -> bool:
     try:
         payload = json.loads(line)
     except json.JSONDecodeError:
-        LOG.warning("non-JSON report from %s: %s", peer[0], line[:120])
+        LOG.warning("non-JSON report from %s (%d bytes)", peer[0], len(line))
         return False
     print(
         json.dumps(

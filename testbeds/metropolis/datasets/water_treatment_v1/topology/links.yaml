@@ -526,6 +526,15 @@ links:
       - node: MET-SCADA-01
       - node: sw-operations-scada
 
+  - id: attach-ops-admin
+    kind: access
+    description: Operations administration client on the SCADA segment
+    network_id: scada
+    cidr: 10.20.20.0/24
+    endpoints:
+      - node: MET-OPS-ADMIN-01
+      - node: sw-operations-scada
+
   - id: attach-engineering
     kind: access
     description: Engineering workstation on the engineering segment
@@ -533,6 +542,15 @@ links:
     cidr: 10.20.21.0/24
     endpoints:
       - node: MET-ENGINEERING-01
+      - node: sw-operations-engineering
+
+  - id: attach-rdp-engineering
+    kind: access
+    description: RDP engineering administration endpoint
+    network_id: engineering
+    cidr: 10.20.21.0/24
+    endpoints:
+      - node: MET-RDP-ENGINEERING-01
       - node: sw-operations-engineering
 
   - id: attach-control-client
@@ -615,6 +633,16 @@ links:
     endpoints:
       - node: MET-HMI-DISINFECTION-01
       - node: sw-plant-disinfection-hmi
+
+  - id: attach-rdp-dmz
+    kind: access
+    description: RDP administration endpoint on the OT DMZ segment
+    network_id: ot-dmz
+    cidr: 10.20.40.0/24
+    endpoints:
+      - node: MET-RDP-DMZ-01
+      - node: sw-dmz
+        port_role: dmz-host-1
 
   # Attack-lab nodes share the isolated attack-test segment.
   - id: attach-attack-lab

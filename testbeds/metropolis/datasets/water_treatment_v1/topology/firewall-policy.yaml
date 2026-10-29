@@ -23,6 +23,10 @@ flows:
     destination: [plant-hmi, dosing-hmi, filtration-hmi, disinfection-hmi]
     protocol: tcp
     port: 8080
+  - {id: engineering-rdp-dmz-tcp, source: engineering, destination: ot-dmz, protocol: tcp, port: 3389}
+  - {id: engineering-rdp-dmz-udp, source: engineering, destination: ot-dmz, protocol: udp, port: 3389}
+  - {id: operations-rdp-engineering-tcp, source: scada, destination: engineering, protocol: tcp, port: 3389}
+  - {id: operations-rdp-engineering-udp, source: scada, destination: engineering, protocol: udp, port: 3389}
   - {id: engineering-dns-udp, source: engineering, destination: ot-services, protocol: udp, port: 53}
   - {id: engineering-dns-tcp, source: engineering, destination: ot-services, protocol: tcp, port: 53}
   - {id: engineering-ntp, source: engineering, destination: ot-services, protocol: udp, port: 123}

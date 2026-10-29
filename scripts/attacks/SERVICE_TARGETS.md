@@ -160,7 +160,7 @@ from a loader, while an operator lists the registry and dispatches commands.
 | `MET-MERLIN-CNC-01` | `10.99.10.20` | C2 console and agent channel |
 | `MET-MERLIN-AGENT-01` | `10.99.10.21` | Inert agent |
 
-Drive them with `run_mirai_choreography` and `run_merlin`. The
+Drive them with `mirai_scenario` and `merlin_scenario`. The
 [attack lab section](../../testbeds/metropolis/devices/README.md#attack-lab)
 documents the console vocabulary and safety properties.
 

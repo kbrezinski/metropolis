@@ -49,8 +49,24 @@ rejected. Repeat `--docker-host` for multiple computes.
 
 ## 2. Build the images on the compute
 
-Clone the repository onto every compute that will host its images. Run this
-block from the repository root **on that compute**:
+Clone the repository onto every compute that will host its images. Run the
+following commands from the repository root **on that compute**.
+
+Before building the two Merlin images, generate their lab certificate bundle
+from the selected dataset:
+
+```bash
+uv run python scripts/gen_lab_certificates.py --service merlin \
+  --dataset testbeds/metropolis/datasets/water_treatment_v1
+```
+
+The generated `certs/merlin/` files are Git ignored. The C&C image receives
+the server certificate and key; the agent image receives only the CA
+certificate. If those images are built on different computes, use the **same**
+generated bundle on both computes. Generating separate bundles makes the
+agent reject the C&C. For another dataset, substitute its directory in the
+command and rebuild both images. Do not publish images containing the lab
+server key.
 
 ```bash
 DEVICES=testbeds/metropolis/devices
@@ -65,6 +81,8 @@ docker build -f "$DEVICES/operations/scada/Dockerfile" -t metropolis/scada:dev .
 docker build -f "$DEVICES/operations/hmi/Dockerfile" -t metropolis/hmi:dev .
 docker build -f "$DEVICES/operations/historian/Dockerfile" -t metropolis/historian:dev .
 docker build -f "$DEVICES/operations/engineering_workstation/Dockerfile" -t metropolis/engineering:dev .
+docker build -f "$DEVICES/operations/rdp_server/Dockerfile" -t metropolis/rdp-server:dev .
+docker build -f "$DEVICES/operations/rdp_client/Dockerfile" -t metropolis/rdp-client:dev .
 docker build -f "$DEVICES/operations/control_client/Dockerfile" -t metropolis/control-client:dev .
 docker build -f "$DEVICES/field/legacy_gateway/Dockerfile" -t metropolis/legacy-gateway:dev .
 docker build -f "$DEVICES/services/dns/Dockerfile" -t metropolis/dns:dev .
@@ -157,6 +175,25 @@ generate a run ID if omitted. Traffic reports reuse the completed PCAPs.
 | `--metrics-interval SECONDS` | Set the CPU/RAM sampling interval; default 5, positive and finite |
 | `--no-metrics` | Disable resource sampling and traffic reports for this run |
 | `--profile PATH` | Explicitly apply a resource/link profile for this run, then restore its original settings |
+| `--rdp-udp-amplify NODE` | Repeat to temporarily enable the synthetic UDP 3389 amplification mode on a declared RDP server |
+
+When the selected dataset declares RDP clients, `experiment_run` starts one
+authenticated RDP session per routed client/server pair after captures start.
+Each session lasts up to 30 seconds and sends small synthetic UDP 3389 probes
+alongside the real TCP desktop session. The reference paths are engineering
+to the OT DMZ and operations to engineering. Capture both endpoint attachment
+links and the routed uplinks to verify their packet origins. Session and mode
+failures are recorded with the run; a missing source or capture is not evidence
+of successful RDP traffic.
+
+The UDP service is **not RDP-over-UDP**. Its default 16-byte request/reply is
+a lab marker. Opt-in amplification returns one 512-byte reply to the imported
+UDP probe while the selected run is active; the mode is restored afterward and
+expires automatically if the controller disappears. This does not launch the
+separate `scripts/attacks/rdp/` example or establish a Windows RDP
+vulnerability. A run using that example also needs a temporary
+`attack-lab:ot-dmz:udp:3389` or `attack-lab:engineering:udp:3389` firewall
+exception, selected for its target network.
 
 To collect startup logs, use `--start-lab --configure-routers` on a stopped lab.
 Nodes remain running when collection finishes. Launch any
@@ -462,6 +499,10 @@ Use `-` as the ICMP port; repeat the option for additional flows. The source
 must be inside `attack-lab` and the destination in another declared LAN.
 Exceptions are recorded and the baseline is restored on completion or failure.
 If restoration fails, check the router policy before the next experiment.
+The bundled Mirai scenario needs `attack-lab:plant-intake:tcp:23` for its
+bot-origin probe to reach the Telnet gateway; select the corresponding network
+IDs for a custom dataset. Start the capture run with that exception, then
+launch `mirai_scenario` separately with the same run ID while capture is active.
 
 ## Rebuilds and troubleshooting
 

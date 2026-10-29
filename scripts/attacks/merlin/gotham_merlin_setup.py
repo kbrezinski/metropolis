@@ -3,7 +3,7 @@
 
 Gotham's run_merlin.py starts a listener and runs a Merlin agent executable in
 a container. Metropolis provides a synthetic C2 node with an operator console
-and an HTTP agent channel. This adapter checks the inventory and GNS3 nodes;
+and an HTTPS agent channel. This adapter checks the inventory and GNS3 nodes;
 it does not install, transfer, or run an agent executable. Starting the
 repository's example inert agent is optional.
 """
@@ -52,7 +52,7 @@ def resolve_roles(
     control_port = configured_port(cnc, "MERLIN_CONTROL_PORT", control_override)
     agent_port = configured_port(cnc, "MERLIN_HTTP_PORT", http_override)
     host = ipv4(cnc["address"].split("/")[0])
-    expected_url = f"http://{host}:{agent_port}"
+    expected_url = f"https://{host}:{agent_port}"
     if agent is not None:
         configured_url = agent.get("environment", {}).get("MERLIN_CNC_URL")
         if configured_url and configured_url != expected_url:
@@ -61,6 +61,18 @@ def resolve_roles(
             raise ValueError(f"{agent_name} needs MERLIN_CNC_URL to start")
     agent_host = ipv4(agent["address"].split("/")[0]) if agent else None
     return cnc, agent, host, agent_host, control_port, agent_port
+
+
+def built_agent_url(node: dict) -> str | None:
+    """Read a GNS3 Docker node's configured URL when the API returns it."""
+    raw = node.get("properties", {}).get("environment")
+    if not isinstance(raw, str):
+        return None
+    for line in raw.splitlines():
+        key, separator, value = line.partition("=")
+        if separator and key.strip() == "MERLIN_CNC_URL":
+            return value.strip().strip('"')
+    return None
 
 
 def main() -> int:
@@ -132,11 +144,13 @@ def main() -> int:
         cnc={"name": cnc["name"], "address": host},
         operator_console={"host": host, "port": control_port, "transport": "tcp"},
         agent_channel={
-            "url": f"http://{host}:{agent_port}",
-            "transport": "http_without_tls",
+            "url": f"https://{host}:{agent_port}",
+            "transport": "verified_https",
+            "ca_file": "certs/merlin/ca.crt",
             "checkin": "POST /checkin",
             "poll": "GET /commands/{agent_id}",
-            "upload": "POST /upload/{agent_id}",
+            "transfer": "GET /artifact/{agent_id}",
+            "result": "POST /result/{agent_id}",
         },
         example_agent={"name": agent["name"], "address": agent_host} if agent else None,
         agent_source=(
@@ -175,6 +189,13 @@ def main() -> int:
         if args.start_inert_agent:
             assert agent is not None
             agent_node = nodes[agent["name"]]
+            actual_url = built_agent_url(agent_node)
+            expected_url = f"https://{host}:{agent_port}"
+            if actual_url is not None and actual_url != expected_url:
+                raise RuntimeError(
+                    f"GNS3 node {agent['name']} still uses {actual_url!r}; "
+                    f"update its environment to {expected_url!r} or recreate the node"
+                )
             if agent_node.get("status") != "started":
                 client.start_node(project.project_id, agent_node["node_id"])
                 run.emit("inert_agent_start_requested", name=agent["name"])

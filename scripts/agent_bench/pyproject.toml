@@ -1,0 +1,32 @@
+[build-system]
+requires = ["hatchling==1.27.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "industrial-agent-bench"
+version = "0.2.0"
+description = "Portable, locally graded industrial agent benchmark pilot"
+requires-python = ">=3.12"
+dependencies = ["stirrup==0.2.1"]
+
+[project.scripts]
+agent-bench = "agent_bench.cli:main"
+
+[project.optional-dependencies]
+test = ["pytest>=9.0.3,<10"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/agent_bench"]
+
+[tool.hatch.build.targets.sdist]
+include = ["src/", "tests/", "README.md", "model-config.toml", "pyproject.toml", "uv.lock"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+cache_dir = "../../.venv/.agent_bench_pytest_cache"
+markers = ["docker: requires the built fixture image and a Linux Docker daemon"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100

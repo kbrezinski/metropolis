@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Adapted from Gotham: https://github.com/xsaga/gotham-iot-testbed/blob/master/src/run_mirai.py
 """Synthetic Mirai loader.
 
 Mirrors the Gotham ``iotsim-mirai-loader`` and ``iotsim-mirai-wget-loader``

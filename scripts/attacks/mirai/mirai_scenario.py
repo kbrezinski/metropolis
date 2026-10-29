@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Run Telnet access and the inert Mirai control sequence as one experiment.
+"""Run Telnet access and the inert Mirai node sequence as one experiment.
 
-A verified Telnet command permits a synthetic bot identity to be registered.
-No bot is installed on the target, and the control command is never executed.
+The invoking host verifies Telnet access, then queues work for an inventoried
+synthetic bot. No bot is installed on the target and no payload is executed.
 """
 
 from __future__ import annotations
@@ -16,6 +16,7 @@ from _common import (
     Run,
     address_of,
     cli,
+    host_of,
     inventory,
     ipv4,
     parser,
@@ -32,8 +33,8 @@ def telnet_targets(args) -> list[tuple[dict, str, int, str, list[str]]]:
     names = args.target_node or [
         item["name"] for item in records if "telnet" in item.get("protocols", [])
     ]
-    if not names or len(names) > args.max_bots or len(names) != len(set(names)):
-        raise ValueError("Select 1..max-bots distinct Telnet target nodes")
+    if not names or len(names) > args.max_targets or len(names) != len(set(names)):
+        raise ValueError("Select 1..max-targets distinct Telnet target nodes")
     targets = []
     for name in names:
         item = by_name.get(name)
@@ -70,6 +71,7 @@ def verify_telnet(run, target, timeout: float, interval: float) -> bool:
             )
             run.emit(
                 "telnet_attempt",
+                source="invoking_host",
                 node=item["name"],
                 host=host,
                 attempt=index,
@@ -80,6 +82,7 @@ def verify_telnet(run, target, timeout: float, interval: float) -> bool:
         except Rejected:
             run.emit(
                 "telnet_attempt",
+                source="invoking_host",
                 node=item["name"],
                 host=host,
                 attempt=index,
@@ -88,6 +91,7 @@ def verify_telnet(run, target, timeout: float, interval: float) -> bool:
         except (OSError, RuntimeError) as exc:
             run.emit(
                 "telnet_attempt",
+                source="invoking_host",
                 node=item["name"],
                 host=host,
                 attempt=index,
@@ -110,14 +114,19 @@ def main() -> int:
     options.add_argument("--max-attempts", type=int, default=20)
     options.add_argument("--attempt-interval", type=positive, default=1.0)
     options.add_argument("--cnc-node", help="Mirai control node")
+    options.add_argument("--bot-node", help="Running synthetic Mirai bot node")
     options.add_argument("--listener-node", help="Mirai report listener")
-    options.add_argument("--loader-node", help="HTTP payload loader")
+    options.add_argument("--loader-node", help="Selected inert payload loader")
     options.add_argument("--listener-host", help="Override listener IPv4 address")
     options.add_argument("--loader-host", help="Override loader IPv4 address")
     options.add_argument("--listener-port", type=int)
     options.add_argument("--loader-port", type=int)
-    options.add_argument("--max-bots", type=int, default=16)
+    options.add_argument(
+        "--max-targets", "--max-bots", dest="max_targets", type=int, default=16
+    )
+    options.add_argument("--delivery", choices=("http", "tftp"), default="http")
     options.add_argument("--interval", type=positive, default=1.0)
+    options.add_argument("--wait-seconds", type=positive, default=90.0)
     options.add_argument("--payload-path", default="/mirai.synthetic")
     options.add_argument(
         "--command",
@@ -125,8 +134,12 @@ def main() -> int:
         help="Command recorded by the inert control service; never executed",
     )
     args = options.parse_args()
-    if not 1 <= args.max_bots <= 64:
-        raise ValueError("max-bots must be 1..64")
+    if not 1 <= args.max_targets <= 64:
+        raise ValueError("max-targets must be 1..64")
+    if args.wait_seconds > 600 or args.interval > 30:
+        raise ValueError("wait-seconds must be at most 600 and interval at most 30")
+    if "\n" in args.command or "\r" in args.command:
+        raise ValueError("command must be one line")
     targets = telnet_targets(args)
 
     cnc, cnc_host, cnc_port = address_of(
@@ -138,6 +151,24 @@ def main() -> int:
         23,
         use_common_overrides=True,
     )
+    bot, bot_host = host_of(
+        args,
+        args.bot_node,
+        "mirai-bot",
+        "METROPOLIS_MIRAI_BOT_HOST",
+        use_args_node=False,
+        selection_option="--bot-node",
+    )
+    bot_environment = bot.get("environment", {})
+    bot_channel = int(cnc.get("environment", {}).get("MIRAI_REPORT_PORT", 48101))
+    if (
+        bot_environment.get("MIRAI_CNC_HOST") != cnc_host
+        or int(bot_environment.get("MIRAI_CNC_PORT", 48101)) != bot_channel
+    ):
+        raise ValueError(
+            f"{bot['name']} must connect to {cnc['name']} at "
+            f"{cnc_host}:{bot_channel}; update its inventory and built GNS3 environment"
+        )
     _, listener_host, listener_port = address_of(
         args,
         args.listener_node,
@@ -157,8 +188,8 @@ def main() -> int:
         "payload-delivery",
         "METROPOLIS_MIRAI_LOADER_HOST",
         "LOADER_PORT",
-        80,
-        env_equals=("LOADER_KIND", "wget"),
+        80 if args.delivery == "http" else 69,
+        env_equals=("LOADER_KIND", "wget" if args.delivery == "http" else "tftp"),
         host_override=args.loader_host,
         port_override=args.loader_port,
         use_args_node=False,
@@ -169,10 +200,13 @@ def main() -> int:
         "mirai_scenario",
         targets=[item[0]["name"] for item in targets],
         cnc=f"{cnc_host}:{cnc_port}",
+        bot_node=bot["name"],
+        bot=bot_host,
         listener=f"{listener_host}:{listener_port}",
         loader=f"{loader_host}:{loader_port}",
         attempts_per_target=[len(item[4]) for item in targets],
-        transition="verified Telnet command permits simulated check-in; no infection",
+        delivery=args.delivery,
+        transition="host-verified Telnet permits queued work for the declared bot; no infection",
     ) as run:
         if args.dry_run:
             return 0
@@ -183,6 +217,7 @@ def main() -> int:
                 verified_targets.append((target[1], target[2]))
         run.emit(
             "telnet_stage_complete",
+            source="invoking_host",
             targets=len(targets),
             verified=len(verified_targets),
         )
@@ -192,20 +227,25 @@ def main() -> int:
 
         run.emit(
             "simulation_transition",
-            source_hosts=[host for host, _ in verified_targets],
+            source="invoking_host",
+            verified_targets=[host for host, _ in verified_targets],
+            bot_node=bot["name"],
             note="No payload was installed and no target runs a bot",
         )
         dispatched = play_choreography(
             run,
             cnc_host=cnc_host,
             cnc_port=cnc_port,
+            bot_node=bot["name"],
+            bot_host=bot_host,
             listener_host=listener_host,
             listener_port=listener_port,
             loader_host=loader_host,
             loader_port=loader_port,
-            bot_targets=verified_targets,
-            max_bots=args.max_bots,
+            verified_targets=verified_targets,
+            delivery=args.delivery,
             interval=args.interval,
+            wait_seconds=args.wait_seconds,
             command=args.command,
             payload_path=args.payload_path,
             timeout=args.timeout,
@@ -214,7 +254,8 @@ def main() -> int:
             "summary",
             outcome="simulated_sequence_complete",
             telnet_verified=len(verified_targets),
-            bots_checked_in=len(verified_targets),
+            bot_node=bot["name"],
+            bots_checked_in=1,
             commands_dispatched=dispatched,
             payload_inert=True,
         )

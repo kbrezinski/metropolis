@@ -1,20 +1,13 @@
 #!/usr/bin/env python3
+# Adapted from Gotham's Merlin agent workflow: https://github.com/xsaga/gotham-iot-testbed/blob/master/src/run_merlin.py
 """Synthetic Merlin agent.
 
-Mirrors the Gotham ``iotsim-mirai-bot`` node acting as a Merlin victim: Gotham
-starts an agent with::
-
-    /opt/merlin/merlinAgent-Linux-x64 -url https://10.99.10.10:8443 -sleep 20s
-
-It then drives the agent from the CNC console with ``upload`` and ``run``.
-This simulation reproduces that lifecycle over HTTP: check in, poll for
-commands, execute a bounded allow-list of them, and upload a synthetic
-artefact.
+Mirrors Gotham's Merlin agent role: check in over HTTPS, poll for commands,
+receive a tool stand-in from the CNC, and report an allowlisted chmod result.
 
 **This is an inert lab simulation, not malware.** No real agent binary exists
 in this repository. Commands are executed only if they match the allow-list
-below, and "execution" means recording and echoing the command, never running
-a shell.
+below. Only chmod of the inert marker changes a local file; no shell runs.
 """
 
 from __future__ import annotations
@@ -23,8 +16,10 @@ import json
 import logging
 import os
 import socket
+import ssl
 import time
 from datetime import datetime, timezone
+from pathlib import Path
 
 LOG = logging.getLogger("merlin.agent")
 
@@ -32,6 +27,11 @@ LOG = logging.getLogger("merlin.agent")
 # reported as such, mirroring a real agent that cannot run unknown commands.
 ALLOWED_VERBS = {"chmod", "echo", "id", "uname", "upload", "sleep"}
 MIN_SLEEP = 1.0
+INERT_MARKER = b"metropolis-inert-hping3-marker\n"
+INERT_SOURCE = "/opt/metropolis/inert-hping3.txt"
+INERT_DESTINATION = Path(
+    os.getenv("MERLIN_MARKER_PATH", "/tmp/metropolis-merlin/hping3.marker")
+)
 
 
 def emit(event: str, **fields) -> None:
@@ -50,7 +50,7 @@ def emit(event: str, **fields) -> None:
 
 
 def parse_url(raw: str) -> tuple[str, int]:
-    """Parse ``host:port`` or ``http://host:port`` into a (host, port) pair."""
+    """Parse a CNC address into a (host, port) pair."""
     text = raw.strip()
     for scheme in ("http://", "https://"):
         if text.startswith(scheme):
@@ -65,32 +65,75 @@ def parse_url(raw: str) -> tuple[str, int]:
 def request(
     host: str, port: int, method: str, path: str, body: bytes, timeout: float
 ) -> dict:
-    """Small HTTP client; the lab speaks HTTP, not TLS, inside the testbed."""
-    with socket.create_connection((host, port), timeout=timeout) as sock:
-        head = (
-            f"{method} {path} HTTP/1.0\r\n"
-            f"Host: {host}\r\n"
-            f"Content-Length: {len(body)}\r\n"
-            "Connection: close\r\n\r\n"
-        ).encode()
-        sock.sendall(head + body)
-        chunks = []
-        while True:
-            try:
-                chunk = sock.recv(4096)
-            except OSError:
-                break
-            if not chunk:
-                break
-            chunks.append(chunk)
-    raw = b"".join(chunks)
-    _, _, payload = raw.partition(b"\r\n\r\n")
+    """Small JSON HTTPS client for the synthetic agent channel."""
+    status, payload = exchange(host, port, method, path, body, timeout)
+    if status >= 400:
+        raise ValueError(f"CNC returned HTTP {status} for {path}")
     if not payload.strip():
         return {}
     try:
         return json.loads(payload)
     except json.JSONDecodeError:
         return {"raw": payload.decode("utf-8", errors="replace")}
+
+
+def exchange(
+    host: str, port: int, method: str, path: str, body: bytes, timeout: float
+) -> tuple[int, bytes]:
+    """Make one certificate-verified HTTPS request and return status and body."""
+    ca_file = os.getenv("MERLIN_CA_FILE", "/opt/metropolis/tls/ca.crt")
+    context = ssl.create_default_context(cafile=ca_file)
+    with socket.create_connection((host, port), timeout=timeout) as raw:
+        with context.wrap_socket(raw, server_hostname=host) as sock:
+            head = (
+                f"{method} {path} HTTP/1.0\r\n"
+                f"Host: {host}\r\n"
+                f"Content-Length: {len(body)}\r\n"
+                "Connection: close\r\n\r\n"
+            ).encode()
+            sock.sendall(head + body)
+            chunks = []
+            while True:
+                chunk = sock.recv(4096)
+                if not chunk:
+                    break
+                chunks.append(chunk)
+    raw_response = b"".join(chunks)
+    header, separator, payload = raw_response.partition(b"\r\n\r\n")
+    if not separator:
+        raise ValueError("CNC returned an incomplete HTTP response")
+    status_line = header.split(b"\r\n", 1)[0].split(b" ")
+    if len(status_line) < 2:
+        raise ValueError("CNC returned an invalid HTTP status")
+    return int(status_line[1]), payload
+
+
+def receive_artifact(
+    host: str,
+    port: int,
+    agent_id: str,
+    timeout: float,
+    destination: Path = INERT_DESTINATION,
+) -> bool:
+    """Store only the built-in inert marker transferred from the CNC."""
+    try:
+        status, body = exchange(
+            host, port, "GET", f"/artifact/{agent_id}", b"", timeout
+        )
+    except (OSError, ValueError) as exc:
+        LOG.warning("inert marker transfer failed: %s", exc)
+        return False
+    if status != 200 or body != INERT_MARKER:
+        LOG.warning("CNC did not return the expected inert marker")
+        return False
+    try:
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(body)
+    except OSError as exc:
+        LOG.warning("could not store inert marker: %s", exc)
+        return False
+    emit("tool_received", agent_id=agent_id, bytes=len(body), path=str(destination))
+    return True
 
 
 def local_address(peer: str) -> str:
@@ -113,7 +156,7 @@ def check_in(host: str, port: int, arch: str, timeout: float) -> str | None:
             json.dumps({"address": local_address(host), "arch": arch}).encode(),
             timeout,
         )
-    except OSError as exc:
+    except (OSError, ValueError) as exc:
         LOG.warning("check-in failed: %s", exc)
         return None
     agent_id = reply.get("agent_id")
@@ -122,10 +165,18 @@ def check_in(host: str, port: int, arch: str, timeout: float) -> str | None:
 
 
 def run_command(command: str) -> tuple[bool, str]:
-    """Simulate one command from the allow-list without spawning a shell."""
+    """Apply chmod only to the inert marker; simulate other allowlisted verbs."""
     verb = command.strip().split(" ", 1)[0]
     if verb not in ALLOWED_VERBS:
         return False, f"refused: {verb} is not in the simulated allow-list"
+    if command.strip() == f"chmod 775 {INERT_DESTINATION}":
+        if not INERT_DESTINATION.is_file():
+            return False, "inert marker is missing"
+        try:
+            INERT_DESTINATION.chmod(0o775)
+        except OSError as exc:
+            return False, f"inert marker permissions could not be updated: {exc}"
+        return True, "inert marker permissions updated"
     if verb == "sleep":
         return True, "sleep simulated"
     # Echo the command back as evidence it was received and accepted.
@@ -147,7 +198,7 @@ def upload(host: str, port: int, agent_id: str, timeout: float) -> bool:
         stored = reply.get("stored") is True
         emit("upload", agent_id=agent_id, bytes=len(body), stored=stored)
         return stored
-    except OSError as exc:
+    except (OSError, ValueError) as exc:
         LOG.warning("upload failed: %s", exc)
         return False
 
@@ -170,7 +221,7 @@ def report_result(
             json.dumps({"command": command, "ok": ok, "detail": detail}).encode(),
             timeout,
         )
-    except OSError as exc:
+    except (OSError, ValueError) as exc:
         LOG.warning("command result report failed: %s", exc)
         return False
     return reply.get("stored") is True
@@ -184,32 +235,41 @@ def main() -> None:
     url = os.getenv("MERLIN_CNC_URL", "").strip()
     if not url:
         raise SystemExit(
-            "MERLIN_CNC_URL is required, for example http://10.99.10.10:8443"
+            "MERLIN_CNC_URL is required, for example https://10.99.10.10:8443"
         )
+    if not url.startswith("https://"):
+        raise SystemExit("MERLIN_CNC_URL must use https://")
     host, port = parse_url(url)
     arch = os.getenv("AGENT_ARCH", "linux-x64-synthetic")
     timeout = float(os.getenv("AGENT_TIMEOUT", "3"))
     interval = max(MIN_SLEEP, float(os.getenv("AGENT_SLEEP", "20")))
-    upload_once = os.getenv("AGENT_UPLOAD_ONCE", "true").strip().lower() == "true"
+    upload_once = os.getenv("AGENT_UPLOAD_ONCE", "false").strip().lower() == "true"
 
+    deadline = time.monotonic() + float(os.getenv("AGENT_STARTUP_TIMEOUT", "90"))
     agent_id = check_in(host, port, arch, timeout)
+    while agent_id is None and time.monotonic() < deadline:
+        time.sleep(min(2, max(0, deadline - time.monotonic())))
+        agent_id = check_in(host, port, arch, timeout)
     if agent_id is None:
-        raise SystemExit("agent could not check in with the CNC")
+        raise SystemExit("agent could not check in with the CNC before startup timeout")
     emit("agent_started", agent_id=agent_id, arch=arch, interval=interval)
 
     uploaded = False
     while True:
         try:
             reply = request(host, port, "GET", f"/commands/{agent_id}", b"", timeout)
-        except OSError as exc:
+        except (OSError, ValueError) as exc:
             LOG.warning("command poll failed: %s", exc)
             time.sleep(interval)
             continue
         for command in reply.get("commands", []):
-            ok, detail = run_command(command)
-            if ok and command.strip().split(" ", 1)[0] == "upload":
-                ok = upload(host, port, agent_id, timeout)
-                detail = "synthetic artefact uploaded" if ok else "upload failed"
+            if command == f"upload {INERT_SOURCE} {INERT_DESTINATION}":
+                ok = receive_artifact(host, port, agent_id, timeout)
+                detail = (
+                    "inert marker received" if ok else "inert marker transfer failed"
+                )
+            else:
+                ok, detail = run_command(command)
             emit("command", agent_id=agent_id, command=command, ok=ok, detail=detail)
             reported = report_result(host, port, agent_id, command, ok, detail, timeout)
             emit("command_result_report", agent_id=agent_id, reported=reported)

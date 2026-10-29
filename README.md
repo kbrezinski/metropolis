@@ -134,7 +134,7 @@ These ranges belong to Metropolis. Future testbeds can use the same schema with
 different CIDRs, or reuse an allocation pattern deliberately when two
 environments need to be comparable.
 
-The reference topology declares 70 GNS3 nodes across four plant cells—intake,
+The reference topology declares 73 GNS3 nodes across four plant cells—intake,
 dosing, filtration, and disinfection—and two remote RTU sites. It covers a
 treatment plant, a raw-water lift station, and a
 reservoir/booster station, with routers and switches organised by backbone and
@@ -164,7 +164,8 @@ the [firewall run guide](scripts/gns3/README.md#routed-firewall-policy).
 ## Device models
 
 The emulated set includes Modbus TCP, cyclic EtherNet/IP, MQTT, CoAP, HTTP,
-SSH/SFTP, Telnet, DNS, NTP, SNMP, and syslog, alongside OSPF/BFD routing traffic:
+RDP over TCP, SSH/SFTP, Telnet, DNS, NTP, SNMP, and syslog, alongside OSPF/BFD
+routing traffic. A separate UDP 3389 service is synthetic lab traffic:
 
 | Role | What it does |
 |---|---|

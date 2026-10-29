@@ -39,6 +39,7 @@ SERVER_IMAGES = (
     "metropolis/mirai-loader:dev",
     "metropolis/mirai-wget-loader:dev",
     "metropolis/merlin-cnc:dev",
+    "metropolis/rdp-server:dev",
 )
 PRODUCER_IMAGES = (
     "metropolis/mqtt-sensor:dev",

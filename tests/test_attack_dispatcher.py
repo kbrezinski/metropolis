@@ -78,7 +78,7 @@ def role_inventory(tmp_path):
             "name": "MERLIN-AGENT-A",
             "address": "10.77.4.21/24",
             "protocols": ["merlin-agent"],
-            "environment": {"MERLIN_CNC_URL": "http://10.77.4.20:8444"},
+            "environment": {"MERLIN_CNC_URL": "https://10.77.4.20:8444"},
         },
     ]
     inventory = tmp_path / "initial_devices.yaml"
@@ -258,8 +258,8 @@ def test_gotham_merlin_setup_maps_http_contract_without_contacting_gns3(role_inv
         "port": 2323,
         "transport": "tcp",
     }
-    assert start["agent_channel"]["url"] == "http://10.77.4.20:8444"
-    assert start["agent_channel"]["transport"] == "http_without_tls"
+    assert start["agent_channel"]["url"] == "https://10.77.4.20:8444"
+    assert start["agent_channel"]["transport"] == "verified_https"
     assert start["agent_source"] == "user_supplied"
     assert start["starts_inert_agent"] is False
     assert start["launches_external_agent"] is False
@@ -331,6 +331,18 @@ def test_gotham_merlin_setup_starts_only_the_example_agent(
     events = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
     assert any(row["event"] == "inert_agent_start_requested" for row in events)
 
+    client.project_nodes = lambda _: [
+        {"name": "MERLIN-CNC-A", "status": "started", "node_id": "cnc"},
+        {
+            "name": "MERLIN-AGENT-A",
+            "status": "stopped",
+            "node_id": "agent",
+            "properties": {"environment": 'MERLIN_CNC_URL="http://10.77.4.20:8444"'},
+        },
+    ]
+    with pytest.raises(RuntimeError, match="still uses.*http://"):
+        adapter.main()
+
 
 def test_dispatcher_rejects_unknown_tools_with_a_suggestion():
     """An unknown tool fails with exit 2 and a close-match suggestion."""
@@ -338,6 +350,15 @@ def test_dispatcher_rejects_unknown_tools_with_a_suggestion():
     assert result.returncode == 2
     assert "unknown tool" in result.stderr
     assert "mqtt_bruteforce_attack" in result.stderr
+
+
+def test_botnet_scenarios_are_the_only_supported_choreography_commands():
+    result = invoke("--help")
+    assert result.returncode == 0
+    assert "mirai_scenario" in result.stdout
+    assert "merlin_scenario" in result.stdout
+    assert "run_mirai_choreography" not in result.stdout
+    assert "run_merlin" not in result.stdout
 
 
 def test_dispatcher_preserves_the_lab_acknowledgement_gate(role_inventory):

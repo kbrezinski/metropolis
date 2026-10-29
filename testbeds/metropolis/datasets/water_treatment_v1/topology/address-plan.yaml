@@ -64,7 +64,7 @@ networks:
     cidr: 10.20.20.0/24
     gateway: 10.20.20.1
     vlan_id: 20
-    purpose: SCADA servers and collectors.
+    purpose: SCADA servers, collectors, and operations administration.
   - id: engineering
     name: Engineering workstation network
     site: treatment_plant

@@ -25,6 +25,8 @@ Paths below are relative to this directory.
 | HMI | `operations/hmi/` | Authenticated HTTP panel using MQTT |
 | Historian | `operations/historian/` | MQTT subscription and console records |
 | Engineering workstation | `operations/engineering_workstation/` | OpenSSH shell and SFTP |
+| RDP server | `operations/rdp_server/` | Linux xrdp desktop on TCP 3389 plus a separate synthetic UDP 3389 responder |
+| RDP client | `operations/rdp_client/` | Headless FreeRDP sessions initiated by experiment runs |
 | Control client | `operations/control_client/` | Routine DNS, NTP, Modbus, and SNMP traffic |
 | Legacy gateway | `field/legacy_gateway/` | BusyBox Telnet with a lab root login |
 | DNS / NTP | `services/dns/`, `services/ntp/` | Local name/time services; NTP node also receives syslog |
@@ -159,7 +161,14 @@ uplinks to observe both paths.
 ## HMI and engineering workstation
 
 The four plant HMIs use HTTP Basic authentication on TCP 8080.
-The engineering workstation provides SSH/SFTP on TCP 22.
+The engineering workstation provides SSH/SFTP on TCP 22 and can initiate an
+RDP session during an experiment. The reference dataset also has an operations
+RDP client. Both clients connect to servers on different VLANs, so each path
+crosses a router firewall. `experiment_run` starts one session on each path
+after capture begins; no session runs merely because a client node is online.
+The server runs real `xrdp` over TCP 3389. UDP 3389 is a separate synthetic
+request/reply service, benign by default and temporarily amplifying only when
+selected for a run. It must not be interpreted as Microsoft RDP-over-UDP.
 Get addresses and lab passwords from the inventory.
 
 ### HMI command path
@@ -206,6 +215,7 @@ provides an intentionally plaintext Telnet root shell for isolated lab use.
 | Controllers, instruments, sensors, SCADA, HMI, historian, control client | Startup, operation, and errors on stdout/stderr; CoAP also emits structured request audit records |
 | Mosquitto | Startup, connection, and authentication notices |
 | OpenSSH | Startup/failure events and accepted/failed authentication on stderr; no password/key logging |
+| RDP servers and clients | Session and mode outcomes on container output; synthetic UDP is labelled separately from xrdp |
 | Telnet | Startup events; BusyBox does not reliably emit individual login outcomes |
 | DNS | dnsmasq startup and queries |
 | NTP | chronyd startup/synchronization warnings; not one line per client request |
@@ -232,12 +242,15 @@ and addresses are defined in the inventory.
 | Mirai CNC | `MIRAI_CNC_PORT=23`, `MIRAI_REPORT_PORT=48101` |
 | Mirai listener | `MIRAI_REPORT_PORT=48101` |
 | Mirai loader | `LOADER_KIND=wget\|tftp`, `LOADER_PORT` (80 or 69) |
-| Mirai bot | `MIRAI_CNC_HOST`, `MIRAI_LISTENER_HOST`, `BOT_INTERVAL=30`, `BOT_TARGETS` |
-| Merlin CNC | `MERLIN_CONTROL_PORT=23`, `MERLIN_HTTP_PORT=8443` |
-| Merlin agent | `MERLIN_CNC_URL`, `AGENT_SLEEP=20`, `AGENT_UPLOAD_ONCE=true` |
+| Mirai bot | `MIRAI_CNC_HOST`, `MIRAI_CNC_PORT` (bot channel), `BOT_INTERVAL=5`, optional `BOT_TARGETS` allow-list |
+| Merlin CNC | `MERLIN_CONTROL_PORT=23`, `MERLIN_HTTP_PORT=8443`, `MERLIN_TLS_CERT_FILE`, `MERLIN_TLS_KEY_FILE` |
+| Merlin agent | `MERLIN_CNC_URL=https://...`, `MERLIN_CA_FILE`, `AGENT_SLEEP=20` |
 
-An empty `BOT_TARGETS` keeps the example bot from scanning. Merlin accepts
-only its inert command vocabulary. Its port 8443 channel is plaintext HTTP.
+The bot remains online but only probes a private lab target after receiving a
+scenario task. An empty `BOT_TARGETS` means no additional target restriction;
+it does not enable automatic scanning. The Merlin agent verifies the C&C's
+HTTPS certificate and accepts only its inert command vocabulary. Its marker
+transfer and `chmod` are limited to a fixed text file, with no shell execution.
 Use the [attack toolkit](../../../scripts/attacks/README.md#mirai-and-merlin-scenarios)
 for scenarios and external inert-agent contracts.
 

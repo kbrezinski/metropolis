@@ -547,6 +547,17 @@ def test_attack_support_services_start_before_agents():
     )
 
 
+def test_rdp_server_starts_before_admin_clients():
+    images = {
+        "rdp-server": "metropolis/rdp-server:dev",
+        "ops-client": "metropolis/rdp-client:dev",
+        "engineer": "metropolis/engineering:dev",
+    }
+    order = startup_order([{"name": name} for name in images], {}, images)
+    assert order.index("rdp-server") < order.index("ops-client")
+    assert order.index("rdp-server") < order.index("engineer")
+
+
 def test_start_all_starts_in_order_and_reports_failures():
     class Flaky(FakeClient):
         def __init__(self):

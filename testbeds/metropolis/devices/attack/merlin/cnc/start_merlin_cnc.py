@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Adapted from Gotham's Merlin C&C workflow: https://github.com/xsaga/gotham-iot-testbed/blob/master/src/run_merlin.py
 """Synthetic Merlin command-and-control console.
 
 Mirrors the Gotham ``iotsim-merlin-cnc`` node. Gotham drives this console over
@@ -15,16 +16,14 @@ Telnet with a fixed command sequence::
     run <command>
     back
 
-This simulation implements that vocabulary so the Gotham choreography runs
-unchanged against a Metropolis node. Agents poll an HTTP command channel;
-operators drive the control channel. Nothing here is a real C2: no agent
-binary exists in this repository and delivered commands are recorded, never
-executed.
+This simulation implements that vocabulary. Agents poll a TLS-protected
+command channel; operators drive the control channel. The only transferable
+content is an inert marker. No real Merlin or hping3 binary is present.
 
 Channels:
 
 * control port (``MERLIN_CONTROL_PORT``, default 23) - operator console
-* command port (``MERLIN_HTTP_PORT``, default 8443) - agent poll, upload, report
+* command port (``MERLIN_HTTP_PORT``, default 8443) - HTTPS agent channel
 """
 
 from __future__ import annotations
@@ -33,6 +32,7 @@ import json
 import logging
 import os
 import socket
+import ssl
 import threading
 import time
 import uuid
@@ -45,6 +45,11 @@ MAX_BODY = 65536
 MAX_AGENTS = 256
 # Bound stored uploads so a runaway experiment cannot fill the node.
 MAX_UPLOADS = 64
+INERT_SOURCE = "/opt/metropolis/inert-hping3.txt"
+INERT_DESTINATION = os.getenv(
+    "MERLIN_MARKER_PATH", "/tmp/metropolis-merlin/hping3.marker"
+)
+INERT_TOOL = b"metropolis-inert-hping3-marker\n"
 
 
 @dataclass
@@ -59,6 +64,8 @@ class Agent:
     commands: list[str] = field(default_factory=list)
     results: list[dict] = field(default_factory=list)
     result_sequence: int = 0
+    transfers: list[dict] = field(default_factory=list)
+    transfer_sequence: int = 0
 
 
 class State:
@@ -167,6 +174,22 @@ class State:
             del agent.results[:-64]
             return True
 
+    def record_transfer(self, agent_id: str, peer_address: str) -> bool:
+        with self._lock:
+            agent = self._agents.get(agent_id)
+            if agent is None:
+                return False
+            agent.transfer_sequence += 1
+            agent.transfers.append(
+                {
+                    "sequence": agent.transfer_sequence,
+                    "bytes": len(INERT_TOOL),
+                    "peer_address": peer_address,
+                }
+            )
+            del agent.transfers[:-64]
+            return True
+
     def status(self, agent_id: str) -> dict | None:
         with self._lock:
             agent = self._agents.get(agent_id)
@@ -177,6 +200,7 @@ class State:
                 "address": agent.address,
                 "peer_address": agent.peer_address,
                 "results": list(agent.results),
+                "transfers": list(agent.transfers),
                 "uploads": [
                     {
                         "sequence": item["sequence"],
@@ -217,8 +241,11 @@ def handle_operator(state: State, connection: socket.socket) -> None:
         if verb == "listeners":
             send_line(stream, json.dumps(state.listener_info(), sort_keys=True))
         elif verb == "use":
-            pending_scheme = argument or "https"
-            send_line(stream, f"listener module {pending_scheme}")
+            if argument and argument != "https":
+                send_line(stream, "only https is supported")
+                continue
+            pending_scheme = "https"
+            send_line(stream, "listener module https")
         elif verb == "set":
             key, _, value = argument.partition(" ")
             send_line(
@@ -255,10 +282,14 @@ def handle_operator(state: State, connection: socket.socket) -> None:
                 state.add_command(selection, argument)
                 send_line(stream, f"queued for {selection.agent_id}: {argument}")
         elif verb == "upload":
-            send_line(
-                stream,
-                "upload is an agent-side action here; use the agent channel",
-            )
+            source, _, destination = argument.partition(" ")
+            if selection is None:
+                send_line(stream, "interact with an agent first")
+            elif (source, destination.strip()) != (INERT_SOURCE, INERT_DESTINATION):
+                send_line(stream, "only the built-in inert marker is transferable")
+            else:
+                state.add_command(selection, f"upload {source} {destination}")
+                send_line(stream, f"queued inert transfer for {selection.agent_id}")
         elif verb == "back":
             if selection is not None:
                 selection = None
@@ -291,29 +322,60 @@ def operator_console(state: State, host: str, port: int, stop: threading.Event) 
             ).start()
 
 
-def http_response(connection: socket.socket, status: str, body: bytes) -> None:
+def http_response(
+    connection: socket.socket,
+    status: str,
+    body: bytes,
+    content_type: bytes = b"application/json",
+) -> None:
     connection.sendall(
         f"HTTP/1.0 {status}\r\n".encode()
-        + b"Content-Type: application/json\r\n"
+        + b"Content-Type: "
+        + content_type
+        + b"\r\n"
         + b"Content-Length: %d\r\n" % len(body)
         + b"Connection: close\r\n\r\n"
         + body
     )
 
 
+def read_http_request(connection: socket.socket) -> tuple[bytes, bytes, dict, bytes]:
+    """Read a bounded request even when TLS splits headers and body across records."""
+    connection.settimeout(5)
+    raw = bytearray()
+    while b"\r\n\r\n" not in raw:
+        chunk = connection.recv(4096)
+        if not chunk:
+            raise ValueError("Incomplete HTTP headers")
+        raw.extend(chunk)
+        if len(raw) > MAX_BODY + 8192:
+            raise ValueError("HTTP request is too large")
+    head, _, body = bytes(raw).partition(b"\r\n\r\n")
+    if len(head) > 8192:
+        raise ValueError("HTTP headers are too large")
+    lines = head.split(b"\r\n")
+    parts = lines[0].split(b" ")
+    if len(parts) < 2:
+        raise ValueError("Malformed HTTP request line")
+    headers = {}
+    for line in lines[1:]:
+        name, _, value = line.partition(b":")
+        headers[name.strip().lower()] = value.strip()
+    length = int(headers.get(b"content-length", b"0"))
+    if not 0 <= length <= MAX_BODY:
+        raise ValueError("HTTP body is too large")
+    while len(body) < length:
+        chunk = connection.recv(min(4096, length - len(body)))
+        if not chunk:
+            raise ValueError("Incomplete HTTP body")
+        body += chunk
+    return parts[0], parts[1], headers, body[:length]
+
+
 def handle_agent(state: State, connection: socket.socket, peer) -> None:
-    """Serve one agent request: check-in, command poll, or upload."""
+    """Serve one HTTPS agent request."""
     try:
-        request = connection.recv(MAX_BODY)
-        if not request:
-            return
-        head, _, body = request.partition(b"\r\n\r\n")
-        lines = head.split(b"\r\n")
-        verb, path = (lines[0].split(b" ") + [b"/", b"/"])[:2]
-        headers = {}
-        for line in lines[1:]:
-            name, _, value = line.partition(b":")
-            headers[name.strip().lower()] = value.strip()
+        verb, path, headers, body = read_http_request(connection)
         if verb == b"POST" and path.startswith(b"/checkin"):
             payload = json.loads(body or b"{}")
             try:
@@ -339,6 +401,17 @@ def handle_agent(state: State, connection: socket.socket, peer) -> None:
                 "200 OK",
                 json.dumps({"commands": state.take_commands(agent_id)}).encode(),
             )
+        elif verb == b"GET" and path.startswith(b"/artifact/"):
+            agent_id = path.decode().rsplit("/", 1)[-1]
+            if state.record_transfer(agent_id, peer[0]):
+                LOG.info(
+                    "inert marker transferred to agent %s at %s", agent_id, peer[0]
+                )
+                http_response(
+                    connection, "200 OK", INERT_TOOL, b"application/octet-stream"
+                )
+            else:
+                http_response(connection, "404 Not Found", b'{"error":"unknown agent"}')
         elif verb == b"GET" and path.startswith(b"/status/"):
             agent_id = path.decode().rsplit("/", 1)[-1]
             status = state.status(agent_id)
@@ -381,7 +454,9 @@ def handle_agent(state: State, connection: socket.socket, peer) -> None:
         connection.close()
 
 
-def agent_channel(state: State, host: str, port: int, stop: threading.Event) -> None:
+def agent_channel(
+    state: State, host: str, port: int, stop: threading.Event, context: ssl.SSLContext
+) -> None:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server:
         server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         server.bind((host, port))
@@ -395,8 +470,15 @@ def agent_channel(state: State, host: str, port: int, stop: threading.Event) -> 
                 continue
             except OSError:
                 return
+            try:
+                connection.settimeout(5)
+                secure = context.wrap_socket(connection, server_side=True)
+            except (OSError, ssl.SSLError) as exc:
+                LOG.warning("TLS handshake failed from %s: %s", peer[0], exc)
+                connection.close()
+                continue
             threading.Thread(
-                target=handle_agent, args=(state, connection, peer), daemon=True
+                target=handle_agent, args=(state, secure, peer), daemon=True
             ).start()
 
 
@@ -408,10 +490,14 @@ def main() -> None:
     host = os.getenv("MERLIN_BIND", "0.0.0.0")
     control_port = int(os.getenv("MERLIN_CONTROL_PORT", "23"))
     http_port = int(os.getenv("MERLIN_HTTP_PORT", "8443"))
+    cert_file = os.getenv("MERLIN_TLS_CERT_FILE", "/opt/metropolis/tls/server.crt")
+    key_file = os.getenv("MERLIN_TLS_KEY_FILE", "/opt/metropolis/tls/server.key")
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    context.load_cert_chain(certfile=cert_file, keyfile=key_file)
     stop = threading.Event()
     state = State()
     threading.Thread(
-        target=agent_channel, args=(state, host, http_port, stop), daemon=True
+        target=agent_channel, args=(state, host, http_port, stop, context), daemon=True
     ).start()
     try:
         operator_console(state, host, control_port, stop)

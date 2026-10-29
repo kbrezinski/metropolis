@@ -266,6 +266,7 @@ def capture_for(
     run_id: str | None = None,
     preflight_failures: list[str] | None = None,
     sleep=time.sleep,
+    on_started=None,
 ) -> CaptureResult:
     """Stop every acknowledged start, retrieve files, and write a manifest."""
     if duration <= 0:
@@ -325,6 +326,8 @@ def capture_for(
             entries[name]["server_capture_file_path"] = record.get("capture_file_path")
         if len(started) == len(eligible):
             if started:
+                if on_started is not None:
+                    on_started(result)
                 sleep(duration)
     except (
         BaseException

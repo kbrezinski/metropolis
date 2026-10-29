@@ -1,0 +1,13 @@
+# Replace the endpoint and model ID before running a hosted model.
+# Keep credentials in the named environment variable, never in this file.
+[models.example]
+provider = "openai-compatible"
+endpoint = "https://api.example.invalid/v1"
+id = "replace-with-exact-model-version"
+api_key_env = "AGENT_BENCH_API_KEY"
+# Replace these example limits with the exact model's documented values.
+# max_tokens bounds each response; context_window_tokens describes its context capacity.
+context_window_tokens = 128000
+max_tokens = 8192
+# Optional API reasoning_effort value; only use values supported by the provider.
+# reasoning = "high"

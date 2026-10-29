@@ -54,7 +54,13 @@ def custom_dataset(tmp_path):
             ["payload-delivery"],
             LOADER_KIND="wget",
         ),
-        device("MIRAI-BOT-A", "10.77.4.13", ["mirai-bot"]),
+        device(
+            "MIRAI-BOT-A",
+            "10.77.4.13",
+            ["mirai-bot"],
+            MIRAI_CNC_HOST="10.77.4.10",
+            MIRAI_CNC_PORT="48101",
+        ),
         device(
             "MERLIN-CNC-A",
             "10.77.4.20",
@@ -67,7 +73,7 @@ def custom_dataset(tmp_path):
             "MERLIN-AGENT-A",
             "10.77.4.21",
             ["merlin-agent"],
-            MERLIN_CNC_URL="http://10.77.4.20:8443",
+            MERLIN_CNC_URL="https://10.77.4.20:8443",
         ),
     ]
     target.write_text(
@@ -112,8 +118,8 @@ def started(result):
     [
         ("modbus_manipulation_attack", ["--action", "set-level"], "host", "10.77.1.10"),
         ("mqtt_bruteforce_attack", [], "host", "10.77.2.10"),
-        ("run_mirai_choreography", [], "cnc", "10.77.4.10:23"),
-        ("run_merlin", [], "cnc", "10.77.4.20:23"),
+        ("mirai_scenario", [], "cnc", "10.77.4.10:23"),
+        ("merlin_scenario", [], "cnc", "10.77.4.20:23"),
         ("gotham_mirai_setup", [], "project", "custom_custom_v2"),
     ],
 )
@@ -121,7 +127,7 @@ def test_renamed_dataset_targets(tool, arguments, field, expected, custom_datase
     root, _, _ = custom_dataset
     record = started(invoke(tool, "--dataset", root, *arguments))
     assert record[field] == expected
-    if tool == "run_mirai_choreography":
+    if tool == "mirai_scenario":
         assert record["listener"] == "10.77.4.11:48101"
         assert record["loader"] == "10.77.4.12:80"
 
@@ -233,12 +239,12 @@ def test_multi_node_role_requires_the_matching_selector(custom_dataset):
     target.write_text(
         yaml.safe_dump({"testbed_id": "custom", "devices": records}), encoding="utf-8"
     )
-    result = invoke("run_mirai_choreography", "--dataset", root)
+    result = invoke("mirai_scenario", "--dataset", root)
     assert result.returncode == 2
     assert "--listener-node" in result.stdout
     selected = started(
         invoke(
-            "run_mirai_choreography",
+            "mirai_scenario",
             "--dataset",
             root,
             "--listener-node",
@@ -274,18 +280,18 @@ def test_custom_role_ports_come_from_inventory(custom_dataset):
     by_name["MERLIN-CNC-A"]["environment"]["MERLIN_CONTROL_PORT"] = "2223"
     by_name["MERLIN-CNC-A"]["environment"]["MERLIN_HTTP_PORT"] = "8444"
     by_name["MERLIN-AGENT-A"]["environment"]["MERLIN_CNC_URL"] = (
-        "http://10.77.4.20:8444"
+        "https://10.77.4.20:8444"
     )
     target.write_text(
         yaml.safe_dump({"testbed_id": "custom", "devices": records}), encoding="utf-8"
     )
-    mirai = started(invoke("run_mirai_choreography", "--dataset", root))
+    mirai = started(invoke("mirai_scenario", "--dataset", root))
     assert mirai["cnc"] == "10.77.4.10:1234"
     assert mirai["listener"] == "10.77.4.11:4321"
     assert mirai["loader"] == "10.77.4.12:8081"
-    merlin = started(invoke("run_merlin", "--dataset", root))
+    merlin = started(invoke("merlin_scenario", "--dataset", root))
     assert merlin["cnc"] == "10.77.4.20:2223"
-    assert merlin["http"] == "10.77.4.20:8444"
+    assert merlin["https"] == "10.77.4.20:8444"
     assert merlin["agent"] == "10.77.4.21"
 
 
@@ -296,9 +302,21 @@ def test_http_choreography_rejects_tftp_only_loader(custom_dataset):
     target.write_text(
         yaml.safe_dump({"testbed_id": "custom", "devices": records}), encoding="utf-8"
     )
-    result = invoke("run_mirai_choreography", "--dataset", root)
+    result = invoke("mirai_scenario", "--dataset", root)
     assert result.returncode == 2
     assert "LOADER_KIND=wget" in result.stdout
+
+
+def test_mirai_scenario_reports_bot_cnc_mismatch(custom_dataset):
+    root, target, records = custom_dataset
+    bot = next(item for item in records if item["name"] == "MIRAI-BOT-A")
+    bot["environment"]["MIRAI_CNC_HOST"] = "10.77.4.99"
+    target.write_text(
+        yaml.safe_dump({"testbed_id": "custom", "devices": records}), encoding="utf-8"
+    )
+    result = invoke("mirai_scenario", "--dataset", root)
+    assert result.returncode == 2
+    assert "update its inventory and built GNS3 environment" in result.stdout
 
 
 def test_changed_address_must_match_container_node_ip(custom_dataset):

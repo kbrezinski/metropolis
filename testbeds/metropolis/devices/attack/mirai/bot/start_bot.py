@@ -52,14 +52,19 @@ def emit(event: str, **fields) -> None:
 
 
 def parse_targets(value: str) -> list[tuple[str, int]]:
-    """Parse ``ip``, ``ip:port`` or ``ip-port`` entries into (host, port) pairs."""
+    """Parse ``ip`` or ``ip:port`` entries into (host, port) pairs."""
     targets: list[tuple[str, int]] = []
     for entry in (item.strip() for item in value.split(",")):
         if not entry:
             continue
         host, _, port_text = entry.partition(":")
         address = ipaddress.IPv4Address(host)
-        if not (address.is_private or address.is_loopback):
+        if (
+            not (address.is_private or address.is_loopback)
+            or address.is_multicast
+            or address.is_unspecified
+            or address.is_reserved
+        ):
             raise ValueError(f"{host} is outside the private lab network")
         port = int(port_text) if port_text else 23
         if not 1 <= port <= 65535:
@@ -153,7 +158,13 @@ def report(
         ) as sock:
             sock.settimeout(timeout)
             sock.sendall((json.dumps(payload) + "\n").encode("utf-8"))
-            return sock.recv(32).strip() == b"ACK"
+            answer = bytearray()
+            while b"\n" not in answer and len(answer) < 32:
+                chunk = sock.recv(32 - len(answer))
+                if not chunk:
+                    break
+                answer.extend(chunk)
+            return bytes(answer).strip() == b"ACK"
     except OSError as exc:
         LOG.warning("report failed: %s", exc)
         return False
@@ -179,7 +190,9 @@ def fetch_stub(host: str, port: int, path: str, kind: str, timeout: float) -> bo
         filename = path.lstrip("/")
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
             sock.settimeout(timeout)
-            sock.sendto(b"\x00\x01" + filename.encode() + b"\x00octet\x00", (host, port))
+            sock.sendto(
+                b"\x00\x01" + filename.encode() + b"\x00octet\x00", (host, port)
+            )
             packet, peer = sock.recvfrom(1024)
             if packet[:4] == b"\x00\x03\x00\x01":
                 sock.sendto(b"\x00\x04\x00\x01", peer)
@@ -188,7 +201,9 @@ def fetch_stub(host: str, port: int, path: str, kind: str, timeout: float) -> bo
     raise ValueError("unknown delivery kind")
 
 
-def execute_task(task: dict, bot_id: str, allowed: list[tuple[str, int]], timeout: float) -> dict:
+def execute_task(
+    task: dict, bot_id: str, allowed: list[tuple[str, int]], timeout: float
+) -> dict:
     """Run one selected, bounded lab action; never execute a shell command."""
     task_id = task.get("task_id")
     command = task.get("command")
@@ -199,21 +214,39 @@ def execute_task(task: dict, bot_id: str, allowed: list[tuple[str, int]], timeou
     except json.JSONDecodeError:
         emit("command_recorded", bot_id=bot_id, task_id=task_id)
         return {"task_id": task_id, "outcome": "recorded"}
+    if isinstance(action, dict) and action.get("op") == "record":
+        emit("command_recorded", bot_id=bot_id, task_id=task_id)
+        return {"task_id": task_id, "outcome": "recorded"}
     if not isinstance(action, dict) or action.get("op") != "probe":
         return {"task_id": task_id, "outcome": "refused"}
     try:
         target, target_port = parse_targets(
             f"{action['target']}:{int(action['target_port'])}"
         )[0]
-        listener = str(ipaddress.IPv4Address(action["listener_host"]))
-        loader = str(ipaddress.IPv4Address(action["loader_host"]))
+        listener_address = ipaddress.IPv4Address(action["listener_host"])
+        loader_address = ipaddress.IPv4Address(action["loader_host"])
+        if not all(
+            (address.is_private or address.is_loopback)
+            and not (
+                address.is_multicast or address.is_unspecified or address.is_reserved
+            )
+            for address in (listener_address, loader_address)
+        ):
+            raise ValueError("support endpoint is outside the private lab network")
+        listener = str(listener_address)
+        loader = str(loader_address)
         listener_port = int(action["listener_port"])
         loader_port = int(action["loader_port"])
         delivery = action["delivery"]
         path = action["payload_path"]
         if any(not 1 <= value <= 65535 for value in (listener_port, loader_port)):
             raise ValueError("invalid port")
-        if not isinstance(path, str) or not path.startswith("/") or len(path) > 128:
+        if (
+            not isinstance(path, str)
+            or not path.startswith("/")
+            or len(path) > 128
+            or any(character in path for character in "\r\n\x00")
+        ):
             raise ValueError("invalid payload path")
         if delivery not in {"http", "tftp"}:
             raise ValueError("invalid delivery kind")
@@ -224,7 +257,13 @@ def execute_task(task: dict, bot_id: str, allowed: list[tuple[str, int]], timeou
         return {"task_id": task_id, "outcome": "invalid_task"}
 
     reachable = probe(target, target_port, timeout)
-    emit("probe", bot_id=bot_id, task_id=task_id, target=f"{target}:{target_port}", reachable=reachable)
+    emit(
+        "probe",
+        bot_id=bot_id,
+        task_id=task_id,
+        target=f"{target}:{target_port}",
+        reachable=reachable,
+    )
     reported = report(
         listener,
         listener_port,
@@ -243,7 +282,13 @@ def execute_task(task: dict, bot_id: str, allowed: list[tuple[str, int]], timeou
             delivered = fetch_stub(loader, loader_port, path, delivery, timeout)
         except OSError as exc:
             LOG.warning("inert loader fetch failed: %s", exc)
-    emit("inert_delivery", bot_id=bot_id, task_id=task_id, delivery=delivery, verified=delivered)
+    emit(
+        "inert_delivery",
+        bot_id=bot_id,
+        task_id=task_id,
+        delivery=delivery,
+        verified=delivered,
+    )
     return {
         "task_id": task_id,
         "target": f"{target}:{target_port}",
@@ -264,8 +309,6 @@ def main() -> None:
     if not cnc_host:
         raise SystemExit("MIRAI_CNC_HOST is required")
     cnc_port = int(os.getenv("MIRAI_CNC_PORT", "48101"))
-    listener_host = os.getenv("MIRAI_LISTENER_HOST", cnc_host).strip()
-    listener_port = int(os.getenv("MIRAI_REPORT_PORT", "48101"))
     timeout = float(os.getenv("BOT_TIMEOUT", "3"))
     interval = max(MIN_INTERVAL, float(os.getenv("BOT_INTERVAL", DEFAULT_INTERVAL)))
     allowed = parse_targets(os.getenv("BOT_TARGETS", ""))
@@ -290,7 +333,13 @@ def main() -> None:
                 submitted = submit_result(cnc_host, cnc_port, bot_id, result, timeout)
             except OSError:
                 submitted = False
-            emit("task_result", bot_id=bot_id, task_id=result["task_id"], outcome=result["outcome"], submitted=submitted)
+            emit(
+                "task_result",
+                bot_id=bot_id,
+                task_id=result["task_id"],
+                outcome=result["outcome"],
+                submitted=submitted,
+            )
         time.sleep(interval)
 
 
