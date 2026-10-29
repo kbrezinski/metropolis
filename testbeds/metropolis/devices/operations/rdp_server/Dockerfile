@@ -5,7 +5,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-        python3 iproute2 hostname xrdp xorgxrdp openbox xauth xterm openssl \
+        python3 iproute2 hostname passwd xrdp xorgxrdp openbox xauth xterm openssl \
     && usermod -a -G ssl-cert xrdp \
     && rm -rf /var/lib/apt/lists/* \
     && mkdir -p /opt/metropolis

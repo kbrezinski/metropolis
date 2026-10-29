@@ -1,10 +1,10 @@
-FROM python:3.12-slim
+FROM python:3.12-slim-trixie
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends iproute2 hostname openssh-server openssh-client \
+    && apt-get install -y --no-install-recommends iproute2 hostname openssh-server openssh-client freerdp3-x11 xvfb xauth \
     && rm -rf /var/lib/apt/lists/* \
     && rm -f /etc/ssh/ssh_host_* \
     && useradd --create-home --shell /bin/bash engineer \
@@ -13,6 +13,7 @@ RUN apt-get update \
 COPY testbeds/metropolis/devices/runtime/network-entrypoint.sh /usr/local/bin/metropolis-entrypoint
 COPY testbeds/metropolis/devices/operations/engineering_workstation/sshd_config /etc/ssh/sshd_config_metropolis
 COPY testbeds/metropolis/devices/operations/engineering_workstation/start_ssh.py /opt/metropolis/start_ssh.py
+COPY testbeds/metropolis/devices/operations/rdp_client/rdp_client.py /opt/metropolis/rdp_client.py
 RUN chmod +x /usr/local/bin/metropolis-entrypoint
 WORKDIR /opt/metropolis
 ENTRYPOINT ["/usr/local/bin/metropolis-entrypoint"]

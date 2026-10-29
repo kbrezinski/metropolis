@@ -14,6 +14,7 @@ from device_logs import DeviceLogCollector, utc_now
 from lifecycle import start_all
 from metrics_report import finalize_metrics
 from profile_enforcement import ProfileSession
+from rdp_run import RdpRun
 from resource_metrics import ResourceCollector
 from router_config import DEFAULT_PASSWORD, DEFAULT_USERNAME, configure_project_routers
 from resource_baseline import configure_baseline
@@ -45,12 +46,14 @@ def run_experiment(
     metrics_interval: float = 5.0,
     profile: dict | None = None,
     baseline: dict | None = None,
+    rdp_udp_amplify: list[str] | None = None,
     collector_factory=DeviceLogCollector,
     capture_fn=capture_for,
     resource_collector_factory=ResourceCollector,
     metrics_report_fn=finalize_metrics,
     profile_session_factory=ProfileSession,
     baseline_check_fn=configure_baseline,
+    rdp_run_factory=RdpRun,
 ) -> dict:
     """Start telemetry before optional lab startup, and stop it after capture."""
     if not math.isfinite(metrics_interval) or metrics_interval <= 0:
@@ -63,6 +66,16 @@ def run_experiment(
         raise ValueError(
             "attack exceptions require router configuration and a baseline policy"
         )
+    rdp_run = rdp_run_factory(
+        client,
+        project.project_id,
+        inventory,
+        docker_hosts,
+        duration,
+        rdp_udp_amplify or [],
+        routers=[item["name"] for item in infrastructure["routers"]],
+        readiness_timeout=min(20, startup_timeout),
+    )
     collector = collector_factory(
         client,
         project.project_id,
@@ -146,6 +159,9 @@ def run_experiment(
     resource_thread = None
     resource_failures: list[dict] = []
     profile_session = None
+    if rdp_run.enabled:
+        collector.manifest["rdp"] = rdp_run.snapshot()
+        collector._write_manifest()
 
     def collect_resources() -> None:
         try:
@@ -258,6 +274,15 @@ def run_experiment(
             collector.manifest["profiles"] = copy.deepcopy(profile_session.result)
             collector._write_manifest()
             record("profile_applied", name=profile["name"], configuration_verified=True)
+        if rdp_run.enabled:
+            try:
+                rdp_run.prepare()
+            except Exception as exc:  # noqa: BLE001 - keep capture available
+                rdp_run._failure(
+                    "preflight", f"RDP preflight failed: {type(exc).__name__}"
+                )
+            collector.manifest["rdp"] = rdp_run.snapshot()
+            collector._write_manifest()
         declared = [link["id"] for link in link_plan["links"]]
         resolution = resolve_links(client, project.project_id, topology, declared)
         chosen = selected_links if selected_links is not None else resolution.capturable
@@ -266,6 +291,10 @@ def run_experiment(
         coverage = coverage_report(
             resolution, chosen, link_plan, inventory, infrastructure
         )
+        if rdp_run.enabled:
+            rdp_run.set_capture_points(link_plan, chosen, resolution.resolved)
+            collector.manifest["rdp"] = rdp_run.snapshot()
+            collector._write_manifest()
         preflight = [
             f"{name}: {detail['status']}"
             for name, detail in resolution.status.items()
@@ -275,6 +304,19 @@ def run_experiment(
             orchestration_failures.append("no built, capturable PCAP links")
         else:
             record("capture_started", selected_links=chosen)
+
+            def on_capture_started(active_capture):
+                rdp_run.mark_capture_started(active_capture.started)
+                try:
+                    rdp_run.start()
+                except Exception as exc:  # noqa: BLE001 - do not abandon PCAP collection
+                    rdp_run._failure(
+                        "startup", f"RDP startup failed: {type(exc).__name__}"
+                    )
+                collector.manifest["rdp"] = rdp_run.snapshot()
+                collector._write_manifest()
+                record("rdp_started", status=rdp_run.result["status"])
+
             capture_result = capture_fn(
                 client,
                 project.project_id,
@@ -289,7 +331,14 @@ def run_experiment(
                 },
                 run_id=run_id,
                 preflight_failures=preflight,
+                **({"on_started": on_capture_started} if rdp_run.enabled else {}),
             )
+            if capture_result.interrupted:
+                interrupted = True
+            if rdp_run.enabled:
+                rdp_run.mark_capture_saved(capture_result.files)
+                collector.manifest["rdp"] = rdp_run.snapshot()
+                collector._write_manifest()
             capture_manifest = json.loads(capture_result.manifest_path.read_text())
             record(
                 "capture_finished",
@@ -303,6 +352,20 @@ def run_experiment(
     except Exception as exc:  # noqa: BLE001 - always stop telemetry and retain manifest
         orchestration_failures.append(f"experiment failed: {exc}")
     finally:
+        if rdp_run.enabled:
+            try:
+                rdp_run.finish()
+            except (Exception, KeyboardInterrupt) as exc:  # noqa: BLE001 - retain other cleanup
+                if isinstance(exc, KeyboardInterrupt):
+                    interrupted = True
+                rdp_run._failure("cleanup", f"RDP cleanup failed: {type(exc).__name__}")
+            collector.manifest["rdp"] = rdp_run.snapshot()
+            for failure in rdp_run.result["failures"]:
+                collector.manifest["failures"].append(
+                    {"source": f"rdp:{failure['source']}", "reason": failure["reason"]}
+                )
+            record("rdp_finished", status=rdp_run.result["status"])
+            collector._write_manifest()
         if profile_session is not None:
             try:
                 profile_session.restore()

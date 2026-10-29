@@ -82,6 +82,81 @@
       },
       "additionalProperties": false
     },
+    "rdp": {
+      "type": "object",
+      "required": ["status", "sessions", "udp_modes", "failures"],
+      "properties": {
+        "status": {"enum": ["planned", "running", "complete", "failed", "skipped"]},
+        "started_at_utc": {"type": "string", "format": "date-time"},
+        "stopped_at_utc": {"type": "string", "format": "date-time"},
+        "sessions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["source", "source_address", "destination", "destination_address", "status"],
+            "properties": {
+              "source": {"type": "string"},
+              "source_address": {"type": "string"},
+              "destination": {"type": "string"},
+              "destination_address": {"type": "string"},
+              "status": {"enum": ["planned", "running", "complete", "failed", "skipped"]},
+              "capture_links": {
+                "type": "object",
+                "required": ["source", "routed", "destination"],
+                "properties": {
+                  "source": {"type": "array", "items": {"type": "string"}},
+                  "routed": {"type": "array", "items": {"type": "string"}},
+                  "destination": {"type": "array", "items": {"type": "string"}}
+                },
+                "additionalProperties": false
+              },
+              "capture_path_status": {"enum": ["resolved", "missing", "ambiguous"]},
+              "capture_selected": {"type": "boolean"},
+              "capture_started": {"type": "boolean"},
+              "capture_saved": {"type": "boolean"},
+              "started_at_utc": {"type": "string", "format": "date-time"},
+              "stopped_at_utc": {"type": "string", "format": "date-time"},
+              "tcp_success": {"type": "boolean"},
+              "udp_sent": {"type": "integer", "minimum": 0},
+              "udp_received": {"type": "integer", "minimum": 0},
+              "udp_response_bytes": {"type": "integer", "minimum": 0},
+              "reason": {"type": "string"}
+            },
+            "additionalProperties": false
+          }
+        },
+        "udp_modes": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "required": ["status"],
+            "properties": {
+              "status": {"enum": ["planned", "applied", "benign_verified", "restored", "failed", "skipped"]},
+              "requested_mode": {"enum": ["benign", "amplify"]},
+              "started_at_utc": {"type": "string", "format": "date-time"},
+              "stopped_at_utc": {"type": "string", "format": "date-time"},
+              "lease_seconds": {"type": "integer", "minimum": 1}
+            },
+            "additionalProperties": false
+          }
+        },
+        "readiness": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "required": ["tcp_ready", "udp_ready", "checked_at_utc"],
+            "properties": {
+              "tcp_ready": {"type": "boolean"},
+              "udp_ready": {"type": "boolean"},
+              "checked_at_utc": {"type": "string", "format": "date-time"}
+            },
+            "additionalProperties": false
+          }
+        },
+        "failures": {"$ref": "#/$defs/metricFailures"}
+      },
+      "additionalProperties": false
+    },
     "metrics": {
       "type": "object",
       "required": ["enabled", "status", "sample_interval_seconds"],

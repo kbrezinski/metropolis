@@ -185,6 +185,15 @@ to the OT DMZ and operations to engineering. Capture both endpoint attachment
 links and the routed uplinks to verify their packet origins. Session and mode
 failures are recorded with the run; a missing source or capture is not evidence
 of successful RDP traffic.
+The run report derives these paths from the unique shortest declared cabling
+path; inspect the PCAPs to confirm the live routed path.
+The headless client accepts the server's self-signed TLS certificate without
+verifying its identity, so these sessions do not establish server authenticity.
+Use a capture duration of at least 30 seconds to observe a full session.
+For the bundled dataset, the endpoint links are `attach-engineering`,
+`attach-rdp-dmz`, `attach-ops-admin`, and `attach-rdp-engineering`; the related
+uplinks include `link-ops-switch`, `link-core-dmz`, `link-dmz-switch`,
+`link-ops-scada-uplink`, and `link-ops-engineering-uplink`.
 
 The UDP service is **not RDP-over-UDP**. Its default 16-byte request/reply is
 a lab marker. Opt-in amplification returns one 512-byte reply to the imported
@@ -194,6 +203,8 @@ separate `scripts/attacks/rdp/` example or establish a Windows RDP
 vulnerability. A run using that example also needs a temporary
 `attack-lab:ot-dmz:udp:3389` or `attack-lab:engineering:udp:3389` firewall
 exception, selected for its target network.
+Run only one experiment at a time in a GNS3 project: concurrent runs could
+change each other's temporary UDP mode.
 
 To collect startup logs, use `--start-lab --configure-routers` on a stopped lab.
 Nodes remain running when collection finishes. Launch any

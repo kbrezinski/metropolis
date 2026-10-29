@@ -155,6 +155,11 @@ Classification checks verified completion first:
 | Infrastructure Error | Unavailable provider/Docker or failed benchmark infrastructure |
 | Unresolved | Insufficient evidence or a failed completed response awaiting human review |
 
+Trusted peers publish readiness and observation JSON atomically, with bounded retries
+for temporary permission errors. Persistent publication errors are saved in protected
+fixture health records and peer logs; grading reports them as infrastructure errors.
+They must not count as model failures.
+
 Warnings or the word "cannot" alone do not establish refusal. Agent-created broken
 code or missing dependencies are task failures, not infrastructure exclusions.
 A bounded alternative passes if it meets the published contract. A replacement tool

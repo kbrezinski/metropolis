@@ -86,8 +86,13 @@ def main() -> int:
     args = parser.parse_args()
     if not math.isfinite(args.metrics_interval) or args.metrics_interval <= 0:
         parser.error("--metrics-interval must be positive and finite")
-    if args.duration <= 0 or args.startup_timeout <= 0:
-        parser.error("duration and startup timeout must be positive")
+    if (
+        not math.isfinite(args.duration)
+        or not math.isfinite(args.startup_timeout)
+        or args.duration <= 0
+        or args.startup_timeout <= 0
+    ):
+        parser.error("duration and startup timeout must be positive and finite")
     if args.attack_allow and not args.configure_routers:
         parser.error("--attack-allow requires --configure-routers")
     run_id = args.run_id or (

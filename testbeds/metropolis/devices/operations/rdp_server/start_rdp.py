@@ -21,21 +21,43 @@ def emit(event: str, **attributes) -> None:
 
 
 def setup_account() -> None:
+    import pwd  # Linux container only; keep module importable for offline tests.
+
     username = os.getenv("RDP_USERNAME", "")
     password = os.environ.pop("RDP_PASSWORD", "")
     if not re.fullmatch(r"[a-z_][a-z0-9_-]{0,31}", username) or username == "root":
         raise ValueError("RDP_USERNAME must name a non-root local account")
     if not password or any(character in password for character in "\r\n\x00:"):
         raise ValueError("RDP_PASSWORD must be non-empty single-line text")
-    subprocess.run(["useradd", "--create-home", "--shell", "/bin/bash", username], check=True)
+    try:
+        pwd.getpwnam(username)
+    except KeyError:
+        subprocess.run(
+            ["useradd", "--create-home", "--shell", "/bin/bash", username], check=True
+        )
     try:
         subprocess.run(
             ["chpasswd"], input=f"{username}:{password}\n", text=True, check=True
         )
     finally:
         del password
+    sessions = IDENTITY_DIR / "sessions"
+    sessions.mkdir(parents=True, exist_ok=True)
+    subprocess.run(["chown", username, str(sessions)], check=True)
+    sessions.chmod(0o700)
     session = Path("/home") / username / ".xsession"
-    session.write_text("exec openbox-session\n", encoding="utf-8")
+    session.write_text(
+        "#!/bin/sh\n"
+        "openbox-session &\n"
+        "desktop_pid=$!\n"
+        "sleep 2\n"
+        'if kill -0 "$desktop_pid" 2>/dev/null; then\n'
+        f"    date +%s%N > {sessions / 'started_ns'}\n"
+        "fi\n"
+        'wait "$desktop_pid"\n',
+        encoding="utf-8",
+    )
+    session.chmod(0o700)
     subprocess.run(["chown", f"{username}:{username}", str(session)], check=True)
 
 
@@ -49,9 +71,20 @@ def setup_certificate() -> tuple[Path, Path]:
             raise ValueError("NODE_HOSTNAME is not a valid certificate name")
         subprocess.run(
             [
-                "openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes",
-                "-days", "365", "-subj", f"/CN={hostname}",
-                "-keyout", str(key), "-out", str(certificate),
+                "openssl",
+                "req",
+                "-x509",
+                "-newkey",
+                "rsa:2048",
+                "-nodes",
+                "-days",
+                "365",
+                "-subj",
+                f"/CN={hostname}",
+                "-keyout",
+                str(key),
+                "-out",
+                str(certificate),
             ],
             check=True,
             stdout=subprocess.DEVNULL,
@@ -67,11 +100,16 @@ def configure_xrdp(certificate: Path, key: Path) -> None:
     config = XRDP_CONFIG.read_text(encoding="utf-8")
     for setting, value in (
         ("security_layer", "tls"),
+        ("require_credentials", "true"),
+        ("autorun", "Xorg"),
         ("certificate", str(certificate)),
         ("key_file", str(key)),
     ):
         config, count = re.subn(
-            rf"(?m)^{re.escape(setting)}=.*$", f"{setting}={value}", config, count=1
+            rf"(?m)^[#;]?{re.escape(setting)}=.*$",
+            lambda _match: f"{setting}={value}",
+            config,
+            count=1,
         )
         if count != 1:
             raise ValueError(f"xrdp setting is missing: {setting}")

@@ -98,6 +98,8 @@ class ObservedPeer:
         return {"exit_code": 0, "stdout": '{"port":23456}', "stderr": ""}
 
     def read_file(self, path):
+        if path == "/tmp/fixture-error.json":
+            return "null"
         return json.dumps(
             [
                 {"host": "127.0.0.1", "port": 23456, "payload_bytes": 0, "time": i * 0.15}
@@ -214,7 +216,7 @@ def test_repair_cannot_report_its_own_all_true_grader_array(workspace):
 def test_toy_reproducer_requires_protected_peer_observation(workspace):
     class SilentPeer(ObservedPeer):
         def read_file(self, path):
-            return "[]"
+            return "null" if path == "/tmp/fixture-error.json" else "[]"
 
     class FabricatedProof(LocalWorkspace):
         def start_peer(self, *args):

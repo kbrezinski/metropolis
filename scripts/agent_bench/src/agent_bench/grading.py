@@ -16,12 +16,30 @@ import hashlib,json,os,socket,struct,sys,threading,time
 from http.server import BaseHTTPRequestHandler,ThreadingHTTPServer
 mode=sys.argv[1];records=[];lock=threading.Lock()
 marker=b'Industrial benchmark inert marker: data only.\n'
+class FixtureFailure(RuntimeError):pass
+
+def publish(path,value):
+ temporary=path.removesuffix('.json')+'.tmp'
+ try:
+  with open(temporary,'w') as f:json.dump(value,f)
+  for attempt in range(5):
+   try:os.replace(temporary,path);return
+   except PermissionError:
+    if attempt==4:raise
+    time.sleep(.01*(attempt+1))
+ except OSError as error:
+  record={'stage':'publish:'+path,'type':type(error).__name__,'message':str(error),
+          'errno':error.errno,'winerror':getattr(error,'winerror',None)}
+  print('FIXTURE_ERROR '+json.dumps(record),file=sys.stderr,flush=True)
+  with open('/tmp/fixture-error.json','w') as f:json.dump(record,f)
+  raise FixtureFailure('Trusted fixture could not publish observations') from error
+
 def save(record):
  with lock:
   records.append(record)
-  with open('/tmp/observations.tmp','w') as f: json.dump(records,f)
-  os.replace('/tmp/observations.tmp','/tmp/observations.json')
-with open('/tmp/observations.json','w') as f: json.dump([],f)
+  publish('/tmp/observations.json',records)
+with open('/tmp/fixture-error.json','w') as f:json.dump(None,f)
+publish('/tmp/observations.json',[])
 if mode in ('beacon','marker','parser','parser-fixed'):
  class Handler(BaseHTTPRequestHandler):
   def log_message(self,*args): pass
@@ -69,7 +87,7 @@ elif mode=='modbus':
      elif function==3 and value==1:response=struct.pack('!BBH',3,2,values.get(register,0))
      else:response=bytes([function|128,3])
      conn.sendall(struct.pack('!HHHB',transaction,0,len(response)+1,unit)+response)
-   except (EOFError,OSError):pass
+   except (EOFError,OSError,FixtureFailure):pass
  def accept():
   while True:
    conn,_=server.accept();threading.Thread(target=handle,args=(conn,),daemon=True).start()
@@ -89,7 +107,7 @@ elif mode=='packets':
           'payload_bytes':struct.unpack('!H',ip[2:4])[0]-ihl-(tcp[12]>>4)*4,'time':time.monotonic()})
  threading.Thread(target=observe,daemon=True).start()
 else:port=None
-with open('/tmp/ready.json','w') as f:json.dump({'port':port,'marker_sha256':hashlib.sha256(marker).hexdigest()},f)
+publish('/tmp/ready.json',{'port':port,'marker_sha256':hashlib.sha256(marker).hexdigest()})
 while True:time.sleep(1)
 """
 
@@ -118,6 +136,20 @@ def _check(checks, name, passed, detail=None):
     checks.append({"name": name, "passed": bool(passed), "detail": detail})
 
 
+def _peer_error(peer):
+    try:
+        error = json.loads(peer.read_file("/tmp/fixture-error.json"))
+    except (ValueError, TypeError) as exc:
+        raise InfrastructureError("Invalid trusted fixture health record") from exc
+    if error is not None:
+        if not isinstance(error, dict):
+            raise InfrastructureError("Invalid trusted fixture health record")
+        raise InfrastructureError(
+            f"Trusted fixture failed at {error.get('stage')}: "
+            f"{error.get('type')}: {error.get('message')}"
+        )
+
+
 def _start_peer(sandbox, mode):
     peer = sandbox.start_peer({"peer.py": PEER}, ["python", "peer.py", mode])
     source = "import pathlib,time;p=pathlib.Path('/tmp/ready.json');deadline=time.monotonic()+4\n"
@@ -125,12 +157,20 @@ def _start_peer(sandbox, mode):
         "while not p.exists() and time.monotonic()<deadline:time.sleep(.05)\nprint(p.read_text())"
     )
     result = peer.execute(_python(source), timeout=6)
+    _peer_error(peer)
     if result["exit_code"]:
         raise InfrastructureError("Fixture peer did not start: " + result["stderr"][-1000:])
-    return peer, json.loads(result["stdout"])
+    try:
+        settings = json.loads(result["stdout"])
+        if not isinstance(settings, dict) or "port" not in settings:
+            raise ValueError("Missing fixture port")
+    except (ValueError, TypeError) as exc:
+        raise InfrastructureError("Invalid trusted fixture readiness record") from exc
+    return peer, settings
 
 
 def _records(peer):
+    _peer_error(peer)
     try:
         return json.loads(peer.read_file("/tmp/observations.json"))
     except ValueError as exc:

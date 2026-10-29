@@ -24,7 +24,7 @@ Paths below are relative to this directory.
 | SCADA | `operations/scada/` | Controller polling and HMI command/readback |
 | HMI | `operations/hmi/` | Authenticated HTTP panel using MQTT |
 | Historian | `operations/historian/` | MQTT subscription and console records |
-| Engineering workstation | `operations/engineering_workstation/` | OpenSSH shell and SFTP |
+| Engineering workstation | `operations/engineering_workstation/` | OpenSSH shell and SFTP; routed FreeRDP client during captures |
 | RDP server | `operations/rdp_server/` | Linux xrdp desktop on TCP 3389 plus a separate synthetic UDP 3389 responder |
 | RDP client | `operations/rdp_client/` | Headless FreeRDP sessions initiated by experiment runs |
 | Control client | `operations/control_client/` | Routine DNS, NTP, Modbus, and SNMP traffic |

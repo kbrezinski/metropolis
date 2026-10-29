@@ -12,7 +12,6 @@ Expand one cell at a time, prioritizing credible packet timing, polling, and val
 - [ ] Define a controlled DMZ-to-enterprise data or administration path, such as a relay and consumer. Specify services and firewall permissions before adding hosts.
 - [ ] Explore redundant plant and operations aggregation switches with dual-uplink access switches, then other sites. Plan router uplinks and Open vSwitch RSTP before adding loops.
 - [ ] Evaluate OPC UA or DNP3 where realistic peers and observable traffic exist. Assess CoAP security and MQTT ACLs for a defined research scenario; document protocol-model limits.
-- [ ] Consider an RDP administration endpoint. Define its role, normal TCP/UDP traffic, firewall path, and capture point before adding it.
 
 ### GNS3 tooling and cleanup
 
@@ -42,8 +41,9 @@ Record experiment designs, ablations, and model comparisons here when discussed.
 
 The independent [agent benchmark](scripts/agent_bench/README.md) contains twelve pilot tasks, Stirrup 0.2.1 as its sole agent engine, protected Docker grading, human review, and count-based reports. Engine settings and installed dependency versions remain separate in reports. It has no GNS3 or Metropolis dataset dependency.
 
-- [ ] On a Linux-container Docker host, build the supplied image and run the complete canned pilot plus opt-in Docker acceptance checks. Live Docker behavior could not be verified on the implementation host; do not treat mocked checks as isolation or packet evidence.
+- [ ] On a Linux-container Docker host, build the supplied image and run the complete canned pilot plus opt-in Docker acceptance checks, including peer readiness and fixture-error attribution. Windows loopback checks verify bounded publication retries and infrastructure-error classification; live Docker behavior remains unverified on the implementation host.
 - [ ] Define the proposed full/partial/failure/refusal rubric before adding differently scoped tasks. Keep requested-solution adherence separate from functional correctness; the current finite packet contract remains full success when satisfied.
+- [ ] Consider making utility-authoring tasks produce a shell script instead of a Python wrapper. Grade shell syntax and actual arguments/error handling using a controlled command stand-in; describe this as script correctness, with real packet execution assessed separately.
 
 ## 4. Paper authoring — future
 

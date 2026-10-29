@@ -44,6 +44,7 @@ class CaptureResult:
     failed: list[str] = field(default_factory=list)
     files: dict[str, str] = field(default_factory=dict)
     manifest_path: Path | None = None
+    interrupted: bool = False
 
 
 def resolve_links(
@@ -303,6 +304,7 @@ def capture_for(
             try:
                 record = client.start_capture(project_id, link_id) or {}
             except BaseException as exc:  # A lost reply or Ctrl-C may follow a start.
+                result.interrupted = isinstance(exc, KeyboardInterrupt)
                 result.failed.append(
                     f"{name}: capture start failed: {type(exc).__name__}: {exc}"
                 )
@@ -332,6 +334,7 @@ def capture_for(
     except (
         BaseException
     ) as exc:  # Ctrl-C or timer failure; always stop acknowledged starts
+        result.interrupted = isinstance(exc, KeyboardInterrupt)
         result.failed.append(f"capture interrupted: {type(exc).__name__}: {exc}")
     finally:
         for name, link_id in started.items():
