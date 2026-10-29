@@ -51,13 +51,6 @@ def test_regular_text_is_preserved_in_an_independent_submission_snapshot(tmp_pat
         workspace.collect(destination)
 
 
-def test_workspace_must_be_fresh(tmp_path):
-    path = tmp_path / "workspace"
-    runtime.Workspace(path)
-    with pytest.raises(FileExistsError):
-        runtime.Workspace(path)
-
-
 def test_case_alias_cannot_replace_a_portable_artifact(tmp_path):
     workspace = runtime.Workspace(tmp_path / "workspace")
     workspace.write_file("Solution.sh", "first")

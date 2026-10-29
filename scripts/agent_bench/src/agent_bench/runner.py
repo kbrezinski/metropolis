@@ -2,6 +2,7 @@
 
 from dataclasses import asdict
 from datetime import datetime, timezone
+from collections.abc import Callable
 import hashlib
 import json
 import math
@@ -82,6 +83,22 @@ def _apply_budget(grade: dict, stop_reason: str) -> dict:
     return grade
 
 
+def _submission_manifest(directory: Path) -> dict[str, str]:
+    if not directory.is_dir() or directory.resolve() != directory.absolute():
+        raise InfrastructureError("Frozen submission directory is missing or linked")
+    manifest = {}
+    for path in sorted(directory.rglob("*")):
+        if path.is_symlink() or path.resolve() != path.absolute():
+            raise InfrastructureError("Frozen submission contains a link")
+        if path.is_file():
+            manifest[path.relative_to(directory).as_posix()] = hashlib.sha256(
+                path.read_bytes()
+            ).hexdigest()
+        elif not path.is_dir():
+            raise InfrastructureError("Frozen submission contains a nonregular file")
+    return manifest
+
+
 def run_attempt(
     task: Task,
     model: dict,
@@ -91,6 +108,7 @@ def run_attempt(
     catalog_hash: str,
     rounds: int = 30,
     seconds: float = 600,
+    after_freeze: Callable[[Path], None] | None = None,
 ) -> dict:
     from .grading import grade
 
@@ -171,6 +189,17 @@ def run_attempt(
                 result["stop_reason"] = "time_limit"
             workspace.collect(output / "submission")
         result["generation_stop_reason"] = result["stop_reason"]
+        if after_freeze is not None:
+            engine.active_boundary = "runtime"
+            submission = output / "submission"
+            manifest = _submission_manifest(submission)
+            event("submission_frozen", submission_sha256=manifest)
+            after_freeze(submission)
+            if _submission_manifest(submission) != manifest:
+                raise InfrastructureError(
+                    "Frozen submission changed during post-submission collection"
+                )
+            event("post_submission_collection_finished", submission_sha256=manifest)
         grading_started = True
         result["grade"] = _apply_budget(
             grade(task, output / "submission").to_dict(), result["stop_reason"]

@@ -236,11 +236,15 @@ def test_coap_poll_runs_even_when_modbus_fails(monkeypatch, caplog):
     monkeypatch.setenv("COAP_TARGET_NODE", "TEST-SENSOR")
     monkeypatch.setenv("NODE_HOSTNAME", "TEST-CLIENT")
     monkeypatch.setenv("SNMP_TARGETS", "")
-    monkeypatch.setattr(
-        control_client,
-        "lookup_plc",
-        lambda *args: (_ for _ in ()).throw(ConnectionError("PLC unavailable")),
-    )
+    monkeypatch.setattr(control_client, "lookup_plc", lambda *args: "192.0.2.10")
+    monkeypatch.setattr(control_client, "sample_ntp", lambda *args: 100.0)
+    modbus_calls = []
+
+    def failed_modbus(*args):
+        modbus_calls.append(args)
+        raise ConnectionError("PLC unavailable")
+
+    monkeypatch.setattr(control_client, "control_cycle", failed_modbus)
     calls = []
 
     def poll(host, port):
@@ -254,6 +258,7 @@ def test_coap_poll_runs_even_when_modbus_fails(monkeypatch, caplog):
     caplog.set_level(logging.INFO, logger="metropolis.control_client")
     with pytest.raises(EndCycle):
         control_client.main()
+    assert len(modbus_calls) == 1
     assert calls == [("192.0.2.4", 5683)]
     assert (
         "source=TEST-CLIENT target=TEST-SENSOR resource=/status code=2.05"

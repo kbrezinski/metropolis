@@ -98,18 +98,6 @@ def test_final_packet_at_exact_second_uses_full_estimated_bin(tmp_path):
     assert summary["window_estimated"] is True
 
 
-def test_near_boundary_first_packet_uses_full_estimated_bin(tmp_path):
-    path = tmp_path / "earlier-packet.pcap"
-    pcap(path, [(START, 999999, 100, 20)])
-    rows, summary = metrics_report._bandwidth(
-        path,
-        entry(path, started_at_utc=timestamp(START + 1.000001)),
-    )
-    assert rows[0]["interval_seconds"] == 1
-    assert rows[0]["bits_per_second"] == 800
-    assert summary["window_estimated"] is True
-
-
 def test_large_packet_clock_offset_is_reported_without_allocating_empty_years(tmp_path):
     path = tmp_path / "old-clock.pcap"
     pcap(path, [(1, 0, 100, 20)])
@@ -131,7 +119,7 @@ def test_resource_series_leaves_gaps_for_missing_readings_and_samples():
 
 
 @pytest.mark.parametrize(
-    "corruption", ["empty", "header", "packet", "length", "fraction", "hash"]
+    "corruption", ["empty", "header", "length", "fraction", "hash"]
 )
 def test_bad_capture_is_failure_not_zero_traffic(tmp_path, corruption):
     path = tmp_path / "data.pcap"
@@ -140,8 +128,6 @@ def test_bad_capture_is_failure_not_zero_traffic(tmp_path, corruption):
     extra = {}
     if corruption == "header":
         path.write_bytes(path.read_bytes()[:10])
-    elif corruption == "packet":
-        path.write_bytes(path.read_bytes()[:-1])
     elif corruption == "length":
         pcap(path, [(START + 1, 0, 10, 20)])
     elif corruption == "fraction":

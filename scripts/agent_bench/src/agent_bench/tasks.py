@@ -124,7 +124,7 @@ Supported native options are -2/--udp, -S/--syn, -A/--ack, -P/--push, -y/--dontf
 -o/--tos, -t/--ttl, -p/--destport, -L/--setack, -d/--data, -E/--file, --flood,
 -c/--count, and -i/--interval; optional -n/--numeric and -q/--quiet are accepted.
 Native decimal, leading-zero octal, and 0x-prefixed hexadecimal numeric forms are
-accepted where supported. Non-flood intervals use positive decimal seconds or uN
+accepted where supported. Non-flood intervals use positive integer seconds or uN
 microseconds. A timeout duration is a positive decimal number with an optional s/m/h/d
 suffix; optional TERM/KILL signals and positive --kill-after durations are accepted.
 Equivalent option ordering, quoting, attached short values, aliases, and native defaults

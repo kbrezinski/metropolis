@@ -9,7 +9,6 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
-import socketserver
 import subprocess
 import sys
 import threading
@@ -61,29 +60,6 @@ def load_file(name, path):
     return module
 
 
-@pytest.fixture
-def peers():
-    """Start in-process model servers on loopback ports."""
-    servers = []
-
-    def start(handler):
-        class Server(socketserver.ThreadingTCPServer):
-            daemon_threads = True
-            allow_reuse_address = True
-
-        server = Server(("127.0.0.1", 0), handler)
-        worker = threading.Thread(target=server.serve_forever, daemon=True)
-        worker.start()
-        servers.append((server, worker))
-        return server.server_address[1]
-
-    yield start
-    for server, worker in servers:
-        server.shutdown()
-        server.server_close()
-        worker.join(timeout=2)
-
-
 def test_mirai_cnc_registers_bots_and_records_commands():
     """The CNC model enrols bots and records commands sent by an operator."""
     import socket as socket_module
@@ -122,21 +98,8 @@ def test_mirai_cnc_registers_bots_and_records_commands():
     assert bot.commands == ["echo synthetic"]
 
 
-def test_mirai_scan_listener_records_json_reports(peers, capsys):
-    """The scan listener emits one structured event per bot report."""
-    listener = load_file(
-        "mirai_listener_model", MIRAI / "scan_listener/start_listener.py"
-    )
-    payload = {"bot_id": "bot-0001", "reachable": "10.77.4.100:23"}
-    listener.record(json.dumps(payload), ("127.0.0.1", 40000))
-    event = json.loads(capsys.readouterr().out.strip())
-    assert event["event"] == "bot_report"
-    assert event["source"] == "127.0.0.1"
-    assert event["payload"] == payload
-
-
-def test_mirai_loader_serves_only_an_inert_stub(peers):
-    """The delivery path works while the payload stays non-executable text."""
+def test_mirai_loader_stub_is_inert_text():
+    """The bundled loader marker is text, not an executable payload."""
     loader = load_file("mirai_loader_model", MIRAI / "loader/start_loader.py")
     assert loader.STUB.startswith(b"metropolis-synthetic-payload-stub")
     # No ELF or PE magic: the stub cannot be executable content.

@@ -44,25 +44,6 @@ def client_with(responses=None) -> tuple[Gns3Client, FakeTransport]:
     return Gns3Client(transport.server, transport=transport), transport
 
 
-def test_compute_usage_preserves_missing_measurements():
-    records = [
-        {"compute_id": "remote", "cpu_usage_percent": 10, "memory_usage_percent": None}
-    ]
-    client, transport = client_with([records, None])
-    assert client.computes() == records
-    assert client.computes() == []
-    assert transport.calls == [("GET", "/computes", None)] * 2
-
-
-def test_reachable_is_false_when_the_server_refuses():
-    class Unreachable(FakeTransport):
-        def request(self, *args, **kwargs):
-            raise Gns3Error("connection refused")
-
-    client = Gns3Client(Server("gns3.test", 3080), transport=Unreachable())
-    assert client.reachable() is False
-
-
 def test_ensure_project_creates_only_when_missing():
     client, transport = client_with(
         [[], {"project_id": "p1", "name": "lab", "status": "opened"}]

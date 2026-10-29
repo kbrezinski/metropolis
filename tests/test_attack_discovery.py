@@ -157,50 +157,30 @@ def test_bounded_probe_resolves_ot_nodes(discovery_inventory):
     assert udp["port"] == 5683
 
 
-def test_bounded_probe_refuses_unbounded_settings(discovery_inventory):
-    """Every ceiling is enforced before any traffic is sent."""
-    assert invoke("hping3/hping3_attack.py", "--rate", "99999").returncode == 2
-    assert invoke("hping3/hping3_attack.py", "--duration", "99999").returncode == 2
-    assert (
-        invoke("hping3/hping3_attack.py", "--max-packets", "99999999").returncode == 2
-    )
-    assert invoke("hping3/hping3_attack.py", "--payload-size", "0").returncode == 2
-    assert invoke("hping3/hping3_attack.py", "--max-packets", "0").returncode == 2
-    assert (
-        invoke(
-            "hping3/hping3_attack.py", "--flood", "--max-packets", "99999999"
-        ).returncode
-        == 2
-    )
-    assert (
-        invoke(
-            "hping3/hping3_attack.py", "--mode", "connect", "--flood", "--dry-run"
-        ).returncode
-        == 2
-    )
-    assert (
-        invoke(
-            "hping3/hping3_attack.py", "--mode", "udp-vse", "--port", "53", "--dry-run"
-        ).returncode
-        == 2
-    )
-    assert (
-        invoke(
-            "hping3/hping3_attack.py",
-            "--inventory",
-            discovery_inventory,
-            "--host",
-            "10.77.1.11",
-            "--dry-run",
-        ).returncode
-        == 2
-    )
-    # A public target is refused by the private-address check.
-    assert (
-        invoke("hping3/hping3_attack.py", "--host", "8.8.8.8", "--dry-run").returncode
-        == 2
-    )
-    assert invoke("hping3/hping3_attack.py", ack=False).returncode == 2
+def test_bounded_probe_rejects_unsafe_or_invalid_settings(discovery_inventory):
+    """Each invalid request fails at its intended guard before sending traffic."""
+    cases = [
+        (("--rate", "99999"), "rate must not exceed"),
+        (("--duration", "99999"), "duration must not exceed"),
+        (("--max-packets", "99999999"), "max-packets must be"),
+        (("--payload-size", "0"), "payload-size must be"),
+        (("--max-packets", "0"), "max-packets must be"),
+        (("--flood", "--max-packets", "99999999"), "max-packets must be"),
+        (("--mode", "connect", "--flood"), "--flood is only available"),
+        (("--mode", "udp-vse", "--port", "53"), "uses UDP port 27015"),
+        (
+            ("--inventory", discovery_inventory, "--host", "10.77.1.11"),
+            "inventoried --host or an explicit --port",
+        ),
+        (("--host", "8.8.8.8"), "private lab network"),
+    ]
+    for arguments, diagnostic in cases:
+        result = invoke("hping3/hping3_attack.py", *arguments, "--dry-run")
+        assert result.returncode == 2
+        assert diagnostic in result.stdout + result.stderr
+    blocked = invoke("hping3/hping3_attack.py", ack=False)
+    assert blocked.returncode == 2
+    assert "METROPOLIS_LAB_ACK" in blocked.stdout
 
 
 def test_bounded_probe_reaches_a_live_listener(tcp_listener):
@@ -316,14 +296,6 @@ def test_discovery_defaults_to_inventory_and_documented_ports(discovery_inventor
     assert "udp/69" in start["ports"]
     assert "udp/5683" in start["ports"]
     assert start["planned"] == len(start["hosts"]) * len(start["ports"])
-
-
-def test_discovery_probe_helpers_observe_a_live_listener(tcp_listener):
-    """TCP opens are reported; a closed reserved port is not."""
-    port, _ = tcp_listener
-    discovery = load_driver("discovery_driver", "scanner/iot_discovery.py")
-    assert discovery.tcp_probe("127.0.0.1", port, 2.0) == "open"
-    assert discovery.tcp_probe("127.0.0.1", 1, 0.5) in {"closed", "no-response"}
 
 
 def test_discovery_reports_complete_and_partial_coverage(tcp_listener):
@@ -444,31 +416,21 @@ def test_discovery_recognizes_dns_and_ntp_replies(kind):
         worker.join(timeout=2)
 
 
-def test_discovery_refuses_public_and_oversized_ranges():
-    """Explicit ranges must stay private and no larger than 256 addresses."""
-    assert (
-        invoke(
-            "scanner/iot_discovery.py", "--cidr", "8.8.8.0/24", "--dry-run"
-        ).returncode
-        == 2
-    )
-    assert (
-        invoke(
-            "scanner/iot_discovery.py", "--cidr", "10.77.0.0/16", "--dry-run"
-        ).returncode
-        == 2
-    )
-    assert (
-        invoke(
-            "scanner/iot_discovery.py", "--max-probes", "99999999", "--dry-run"
-        ).returncode
-        == 2
-    )
-    assert (
-        invoke("scanner/iot_discovery.py", "--max-probes", "0", "--dry-run").returncode
-        == 2
-    )
-    assert invoke("scanner/iot_discovery.py", ack=False).returncode == 2
+def test_discovery_rejects_unsafe_or_invalid_requests():
+    """Address, size, probe-count, and lab gates report their own failures."""
+    cases = [
+        (("--cidr", "8.8.8.0/24"), "ranges must be private"),
+        (("--cidr", "10.77.0.0/16"), "at most 256 addresses"),
+        (("--max-probes", "99999999"), "max-probes must be"),
+        (("--max-probes", "0"), "max-probes must be"),
+    ]
+    for arguments, diagnostic in cases:
+        result = invoke("scanner/iot_discovery.py", *arguments, "--dry-run")
+        assert result.returncode == 2
+        assert diagnostic in result.stdout + result.stderr
+    blocked = invoke("scanner/iot_discovery.py", ack=False)
+    assert blocked.returncode == 2
+    assert "METROPOLIS_LAB_ACK" in blocked.stdout
 
 
 def test_discovery_node_selection_narrows_the_sweep(discovery_inventory):

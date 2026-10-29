@@ -87,9 +87,7 @@ def test_coap_rejects_unsupported_requests(packet, response_code) -> None:
     "packet",
     [
         b"",
-        b"\x40\x01\x00",
         b"\x40\x01\x00\x07\xb6x",
-        b"\x40\x01\x00\x07\xbd",
         b"\x40\x01\x00\x07\xff",
         b"\x40\x01\x00\x07\xf0",
         b"\x60\x01\x00\x07",

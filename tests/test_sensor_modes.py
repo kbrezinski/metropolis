@@ -38,8 +38,8 @@ def build(module, mode: str):
         port=1883,
         topic="lab/telemetry",
         client_id="SENSOR-A",
-        username="lab_device",
-        password="LabOnly_Device_2026",
+        username="sensor-test",
+        password="synthetic-password",
         mode=mode,
     )
 
@@ -67,7 +67,7 @@ def test_per_message_mode_publishes_with_one_shot_connections(monkeypatch):
     assert len(sent) == 1
     assert sent[0]["hostname"] == "127.0.0.1"
     assert sent[0]["topic"] == "lab/telemetry"
-    assert sent[0]["auth"]["username"] == "lab_device"
+    assert sent[0]["auth"]["username"] == "sensor-test"
     # No session is held, so there is nothing to close.
     assert publisher.client is None
 

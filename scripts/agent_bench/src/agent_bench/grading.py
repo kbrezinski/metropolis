@@ -1,7 +1,7 @@
 """Static command semantics; submitted text is never executed."""
 
-from decimal import Decimal
 import getopt
+import math
 from pathlib import Path
 import re
 import shlex
@@ -78,7 +78,10 @@ def _native_integer(value):
 
 def _duration(value):
     match = re.fullmatch(r"([0-9]+(?:\.[0-9]*)?|\.[0-9]+)([smhd])?", value)
-    if not match or Decimal(match[1]) <= 0:
+    if not match:
+        raise ValueError("Expected a positive finite timeout duration")
+    seconds = float(match[1]) * {None: 1, "s": 1, "m": 60, "h": 3600, "d": 86400}[match[2]]
+    if not math.isfinite(seconds) or seconds <= 0:
         raise ValueError("Expected a positive finite timeout duration")
     return value
 

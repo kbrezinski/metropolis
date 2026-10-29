@@ -623,6 +623,7 @@ def test_experiment_runs_session_only_after_captures_start_and_restores_on_inter
     def rdp_factory(*args, **kwargs):
         return rdp_run.RdpRun(*args, **kwargs, executor=executor)
 
+    monkeypatch.setattr(experiment, "RdpRun", rdp_factory)
     expected_links = [link["id"] for link in _links()["links"]]
     resolution = LinkResolution(
         resolved={name: f"gns3-{index}" for index, name in enumerate(expected_links)},
@@ -668,7 +669,6 @@ def test_experiment_runs_session_only_after_captures_start_and_restores_on_inter
         metrics_enabled=False,
         collector_factory=Logs,
         capture_fn=capture,
-        rdp_run_factory=rdp_factory,
         rdp_udp_amplify=["DESKTOP-SERVER"],
     )
     kinds = [event if isinstance(event, str) else event[0] for event in events]

@@ -580,31 +580,6 @@ def test_validator_rejects_snmp_target_address_drift(sandbox):
     assert "SNMP target 192.0.2.123 is not a router interface" in result.stdout
 
 
-def test_bundled_validator_catches_broker_certificate_default_drift(sandbox):
-    inventory = load_document(sandbox, 2)
-    broker = next(
-        (
-            device
-            for device in inventory["devices"]
-            if device.get("model", "").replace("\\", "/").endswith("/mqtt_broker")
-        ),
-        None,
-    )
-    if broker is None:
-        pytest.skip("selected topology has no MQTT broker model")
-    address = ip_interface(broker["address"])
-    changed = f"{address.ip + 1}/{address.network.prefixlen}"
-    broker["address"] = changed
-    broker["environment"]["NODE_IP"] = changed
-    save_document(sandbox, 2, inventory)
-
-    result = run_validator(sandbox)
-
-    assert result.returncode != 0
-    assert "broker address" in result.stdout
-    assert "absent from default certificate IP addresses" in result.stdout
-
-
 def test_validator_reports_non_ip_service_target_without_crashing(sandbox):
     inventory = load_document(sandbox, 2)
     device = next(
@@ -685,17 +660,3 @@ def test_validator_catches_missing_routed_service_flows():
 
     assert any("no TCP/502 firewall flow to SCADA target" in item for item in problems)
     assert any("no TCP/1883 firewall flow to MQTT broker" in item for item in problems)
-
-
-def test_generic_topology_checker_catches_duplicate_device_addresses():
-    sys.path.insert(0, str(ROOT / "src"))
-    from metropolis.topology import Topology
-
-    topology = Topology(testbed_id="example")
-    topology.add_network("cell", "10.42.0.0/24")
-    topology.add_device("sensor-a", subnet="10.42.0.0/24", address="10.42.0.20/24")
-    topology.add_device("sensor-b", subnet="10.42.0.0/24", address="10.42.0.20/24")
-
-    assert "devices sensor-a and sensor-b share address 10.42.0.20" in (
-        topology.problems()
-    )

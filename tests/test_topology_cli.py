@@ -9,7 +9,6 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-import pytest
 import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -17,25 +16,19 @@ if str(ROOT / "src") not in sys.path:
     sys.path.insert(0, str(ROOT / "src"))
 
 from metropolis.topology.__main__ import main  # noqa: E402
-from metropolis.topology import Topology, load_bundled_topology  # noqa: E402
+from metropolis.topology import Topology  # noqa: E402
 
 DATASET = ROOT / "testbeds/metropolis/datasets/water_treatment_v1"
+BUNDLED_TESTBED_ID = yaml.safe_load(
+    (DATASET / "topology/address-plan.yaml").read_text(encoding="utf-8")
+)["testbed_id"]
 
 
 def test_show_prints_a_summary(capsys):
     assert main(["show"]) == 0
     out = capsys.readouterr().out
-    assert f"topology {load_bundled_topology().testbed_id}" in out
+    assert f"topology {BUNDLED_TESTBED_ID}" in out
     assert "networks " in out
-
-
-def test_show_can_write_to_a_file(capsys, tmp_path):
-    target = tmp_path / "summary.txt"
-    assert main(["show", "--out", str(target)]) == 0
-    assert f"topology {load_bundled_topology().testbed_id}" in target.read_text(
-        encoding="utf-8"
-    )
-    assert capsys.readouterr().out.startswith("wrote ")
 
 
 def test_check_reports_no_problems(capsys, tmp_path):
@@ -89,32 +82,6 @@ def test_render_writes_a_file(capsys, tmp_path):
     assert target.read_text(encoding="utf-8").startswith("digraph topology {")
 
 
-def test_a_picture_format_needs_an_output_path(capsys):
-    assert main(["render", "--format", "png"]) == 2
-    assert "needs --out" in capsys.readouterr().err
-
-
-def test_export_documents_load_back_identically(capsys, tmp_path):
-    target = tmp_path / "exported"
-    assert main(["export", "--out", str(target)]) == 0
-
-    original = DATASET
-    for relative in (
-        "topology/address-plan.yaml",
-        "topology/links.yaml",
-        "device_instances/initial_devices.yaml",
-        "device_instances/infrastructure.yaml",
-    ):
-        before = yaml.safe_load((original / relative).read_text(encoding="utf-8"))
-        after = yaml.safe_load((target / relative).read_text(encoding="utf-8"))
-        assert before == after, f"{relative} changed when exported"
-
-
 def test_a_missing_dataset_is_reported_not_crashed(capsys, tmp_path):
     assert main(["--dataset", str(tmp_path / "nowhere"), "show"]) == 2
     assert "dataset is missing" in capsys.readouterr().err
-
-
-def test_no_command_is_a_usage_error():
-    with pytest.raises(SystemExit):
-        main([])

@@ -140,6 +140,31 @@ def _run(executor):
     )
 
 
+def _sent_probe(client_id):
+    """Independent response from the HMI helper for state-machine tests."""
+    return {
+        "status": "sent",
+        "client_id": client_id,
+        "source": "HMI-ALPHA",
+        "run_id": "run123",
+        "connected": True,
+        "attempts": [
+            {
+                "kind": "own",
+                "topic": "lab/alpha/command",
+                "timestamp": "2026-10-29T01:00:00Z",
+                "acknowledged": True,
+            },
+            {
+                "kind": "cross",
+                "topic": "lab/beta/command",
+                "timestamp": "2026-10-29T01:00:01Z",
+                "acknowledged": True,
+            },
+        ],
+    }
+
+
 def test_declared_probe_rejects_shared_identity_and_wrong_broker():
     inventory = _inventory()
     selected = mqtt_acl_run.declared_probe(inventory, "HMI-ALPHA", "HMI-BETA")
@@ -239,27 +264,7 @@ def test_hmi_origin_and_broker_evidence_are_required_before_completion():
     def executor(node, hosts, image, kind, args):
         operations.append((node["name"], hosts[node["compute_id"]], kind, args))
         if kind == "probe":
-            return {
-                "status": "sent",
-                "client_id": args["client_id"],
-                "source": "HMI-ALPHA",
-                "run_id": "run123",
-                "connected": True,
-                "attempts": [
-                    {
-                        "kind": "own",
-                        "topic": "lab/alpha/command",
-                        "timestamp": "2026-10-29T01:00:00Z",
-                        "acknowledged": True,
-                    },
-                    {
-                        "kind": "cross",
-                        "topic": "lab/beta/command",
-                        "timestamp": "2026-10-29T01:00:01Z",
-                        "acknowledged": True,
-                    },
-                ],
-            }
+            return _sent_probe(args["client_id"])
         if kind == "scada_evidence":
             return {"own_received": True, "cross_received": False}
         return {
@@ -305,27 +310,7 @@ def test_hmi_origin_and_broker_evidence_are_required_before_completion():
 def test_publish_ack_without_broker_denial_is_not_success():
     def executor(node, _hosts, _image, kind, args):
         if kind == "probe":
-            return {
-                "status": "sent",
-                "client_id": args["client_id"],
-                "source": "HMI-ALPHA",
-                "run_id": "run123",
-                "connected": True,
-                "attempts": [
-                    {
-                        "kind": "own",
-                        "topic": "lab/alpha/command",
-                        "timestamp": "2026-10-29T01:00:00Z",
-                        "acknowledged": True,
-                    },
-                    {
-                        "kind": "cross",
-                        "topic": "lab/beta/command",
-                        "timestamp": "2026-10-29T01:00:01Z",
-                        "acknowledged": True,
-                    },
-                ],
-            }
+            return _sent_probe(args["client_id"])
         return {"own_received": True, "cross_denied": False}
 
     run = _run(executor)
@@ -355,24 +340,7 @@ def test_publish_ack_without_broker_denial_is_not_success():
 def test_missing_or_cross_cell_scada_delivery_prevents_completion(scada_observed):
     def executor(_node, _hosts, _image, kind, args):
         if kind == "probe":
-            return {
-                "status": "sent",
-                "client_id": args["client_id"],
-                "source": "HMI-ALPHA",
-                "run_id": "run123",
-                "connected": True,
-                "attempts": [
-                    {
-                        "kind": label,
-                        "topic": args[f"{label}_topic"]
-                        if label == "own"
-                        else args["cross_topic"],
-                        "timestamp": "2026-10-29T01:00:00Z",
-                        "acknowledged": True,
-                    }
-                    for label in ("own", "cross")
-                ],
-            }
+            return _sent_probe(args["client_id"])
         if kind == "evidence":
             return {
                 "own_received": True,

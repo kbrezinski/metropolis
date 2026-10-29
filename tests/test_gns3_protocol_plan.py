@@ -14,7 +14,7 @@ if str(GNS3) not in sys.path:
     sys.path.insert(0, str(GNS3))
 
 from builder import ensure_nodes  # noqa: E402
-from topology import PlannedNode, Topology, build_plan, environment_string  # noqa: E402
+from topology import PlannedNode, Topology, build_plan  # noqa: E402
 
 
 def _inventory() -> dict:
@@ -81,7 +81,11 @@ def test_reused_node_protocol_drift_is_detected_without_disclosing_values():
         "template",
         environment={"MQTT_USERNAME": "new-user", "MQTT_PASSWORD": "private-lab-value"},
     )
-    current = {"properties": {"environment": environment_string(planned.environment)}}
+    current = {
+        "properties": {
+            "environment": 'MQTT_USERNAME="new-user"\nMQTT_PASSWORD="private-lab-value"'
+        }
+    }
     current.update({"name": "sensor", "node_id": "gns3-1", "status": "started"})
 
     class Client:

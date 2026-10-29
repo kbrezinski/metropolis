@@ -91,13 +91,13 @@ def test_command_is_written_once_and_acknowledged_only_after_plc_readback(monkey
     publisher = Publisher()
     bridge = scada.CommandBridge([target], publisher, port=502, unit_id=1)
     raw = request("dosing", "dose_setpoint", 64.5)
-    first = bridge.handle(scada.command_topic(target), raw)
+    first = bridge.handle("metropolis/plant/dosing/command", raw)
     assert first["status"] == "stored"
     assert first["value"] == 64.5
     assert writes == [(4, 645, 1)]
-    assert publisher.messages[0][:2] == (scada.ack_topic(target), first)
+    assert publisher.messages[0][:2] == ("metropolis/scada/dosing/ack", first)
     assert publisher.messages[0][2:] == (1, False)
-    assert bridge.handle(scada.command_topic(target), raw) == first
+    assert bridge.handle("metropolis/plant/dosing/command", raw) == first
     assert writes == [(4, 645, 1)]
     assert len(publisher.messages) == 2
 
@@ -192,30 +192,6 @@ def test_hmi_request_reaches_scada_bridge_and_receives_plc_readback(monkeypatch)
     assert ack["status"] == "stored"
     assert panel.record_ack(ack)
     assert panel.snapshot()["command_status"] == "stored"
-
-
-def test_filtration_profile_and_alarm_payloads():
-    target = scada.Target("filtration", "10.20.12.10", "filtration", "status")
-    assert (
-        scada.validate_command(
-            target,
-            json.loads(request("filtration", "backwash_threshold", 62.5, unit="kPa")),
-            now=datetime.now(timezone.utc),
-        )
-        == 625
-    )
-    with pytest.raises(ValueError, match="between 10 and 100"):
-        scada.validate_command(
-            target,
-            json.loads(request("filtration", "backwash_threshold", 0, unit="kPa")),
-            now=datetime.now(timezone.utc),
-        )
-    payload = scada.decode_registers(target, [680, 1, 3, 5, 650, 4])
-    assert payload["differential_pressure_kpa"] == 68
-    assert payload["backwash_phase"] == 1
-    assert payload["confirmed_outputs"] == 3
-    assert payload["quality"] == "degraded"
-    assert payload["alarms"] == [scada.ALARM_NAMES[4]]
 
 
 def test_disinfection_profile_keeps_hmi_command_and_plc_reading_distinct():

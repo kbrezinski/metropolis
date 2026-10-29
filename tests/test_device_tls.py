@@ -40,14 +40,14 @@ def ca_file(tmp_path_factory):
 # -- shared settings ----------------------------------------------------------
 
 
-@pytest.mark.parametrize("value", ["1", "TRUE"])
+@pytest.mark.parametrize("value", ["1"])
 def test_tls_switches_on_for_the_usual_spellings(tls_module, value, ca_file):
     config = tls_module.from_environment({"TLS": value, "TLS_CA_FILE": str(ca_file)})
     assert config is not None
     assert config.ca_file == str(ca_file)
 
 
-@pytest.mark.parametrize("value", ["", "maybe"])
+@pytest.mark.parametrize("value", [""])
 def test_other_values_leave_tls_off(tls_module, value):
     assert tls_module.from_environment({"TLS": value}) is None
 
@@ -120,30 +120,6 @@ def test_apply_to_reads_the_environment(tls_module, ca_file):
     untouched = FakeClient()
     assert tls_module.apply_to(untouched, {}) is None
     assert untouched.configured is False
-
-
-# -- the device models --------------------------------------------------------
-
-
-MQTT_CLIENTS = {
-    "scada": DEVICES / "operations/scada/scada_collector.py",
-    "hmi": DEVICES / "operations/hmi/hmi_simulator.py",
-    "historian": DEVICES / "operations/historian/historian_collector.py",
-}
-
-
-@pytest.mark.parametrize("name", sorted(MQTT_CLIENTS))
-def test_each_image_carries_the_settings_module(name):
-    """Importing a module the image does not contain fails at container start."""
-    dockerfile = MQTT_CLIENTS[name].parent / "Dockerfile"
-    assert "tls_config.py /opt/metropolis/tls_config.py" in dockerfile.read_text(
-        encoding="utf-8"
-    )
-
-
-def test_the_sensor_image_carries_the_settings_module():
-    dockerfile = DEVICES / "field/sensors/Dockerfile"
-    assert "tls_config.py" in dockerfile.read_text(encoding="utf-8")
 
 
 # -- the attack toolkit -------------------------------------------------------

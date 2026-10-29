@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import re
 import subprocess
+import sys
 import threading
 import time
 from datetime import datetime, timezone
@@ -200,7 +201,20 @@ class DeviceLogCollector:
                 json.dumps(self.manifest, indent=2, sort_keys=True) + "\n",
                 encoding="utf-8",
             )
-            temporary.replace(path)
+            deadline = time.monotonic() + 0.4
+            while True:
+                try:
+                    temporary.replace(path)
+                    return
+                except PermissionError as exc:
+                    if sys.platform != "win32" or getattr(
+                        exc, "winerror", None
+                    ) not in (5, 32):
+                        raise
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        raise
+                    time.sleep(min(0.02, remaining))
 
     def _failure(self, source: str, reason: str) -> None:
         with self.lock:

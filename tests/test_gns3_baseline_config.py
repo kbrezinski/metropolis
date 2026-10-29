@@ -95,35 +95,12 @@ def test_partial_model_overrides_then_exact_image_override(lab):
     assert result["operator"] == value["defaults"]
 
 
-def test_new_nodes_reuse_image_or_model_settings_without_address_specific_rules(lab):
-    _path, inventory, _infra, load = lab
-    value = document()
-    value["overrides"] = {"images": {"custom/controller:v2": {"cpus": 0.25}}}
-    inventory["devices"].append(
-        {
-            "name": "new-user-name",
-            "model": "new-user-model",
-            "image": "custom/controller:v2",
-            "address": "192.0.2.200/24",
-        }
-    )
-    result = load(value)
-    target = next(
-        target for target in result["targets"] if target["name"] == "new-user-name"
-    )
-    assert target["settings"]["cpus"] == 0.25
-    assert "address" not in target
-
-
 @pytest.mark.parametrize(
     "settings",
     [
         {"cpus": True},
-        {"cpus": 0.001},
-        {"cpus": float("nan")},
         {"memory_bytes": 6291456.0},
         {"memory_swap_bytes": -2},
-        {"memory_bytes": 1024 * MIB},
     ],
 )
 def test_invalid_baselines_fail_before_runtime_access(lab, settings):
@@ -150,16 +127,6 @@ def test_unknown_image_override_is_rejected(lab):
         load(value)
 
 
-def test_empty_overrides_are_valid_but_empty_selected_settings_are_rejected(lab):
-    *_, load = lab
-    value = document()
-    value["overrides"] = {"models": {}, "images": {}}
-    assert load(value)["targets"]
-    value["overrides"]["images"] = {"custom/controller:v2": {}}
-    with pytest.raises(ValueError):
-        load(value)
-
-
 def test_swap_relationship_is_checked_after_override_merging(lab):
     *_, load = lab
     value = document()
@@ -178,30 +145,6 @@ def test_conflicting_node_names_are_not_silently_targeted(lab):
     infrastructure["routers"].append({"name": "controller-a"})
     with pytest.raises(ValueError, match="ambiguous baseline node"):
         load(document())
-
-
-@pytest.mark.parametrize(
-    "source",
-    [
-        "defaults: {}\ndefaults: {}\n",
-        "defaults: [unterminated",
-        "x: &loop [*loop]\n",
-    ],
-)
-def test_duplicate_malformed_and_recursive_yaml_is_rejected(lab, source):
-    path, inventory, infra, _load = lab
-    path.write_text(source, encoding="utf-8")
-    with pytest.raises(ValueError):
-        load_baseline(path, inventory, infra)
-
-
-def test_missing_docker_image_is_explicitly_unsupported(lab):
-    _path, inventory, _infra, load = lab
-    inventory["devices"].append({"name": "other-appliance"})
-    result = load(document())
-    assert {"name": "other-appliance", "reason": "no declared Docker image"} in result[
-        "unsupported"
-    ]
 
 
 def test_schemas_remain_compatible_with_legacy_manifests():

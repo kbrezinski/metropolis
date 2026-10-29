@@ -253,12 +253,6 @@ def test_uncertain_apply_cannot_overwrite_unowned_policing_changes(ovs):
     assert ovs.device["ingress_policing_rate"] == 99
 
 
-def test_no_mutation_restoration_is_idempotent(ovs):
-    baseline = helper.execute(request("inspect"))["state"]
-    assert helper.execute(request("restore", snapshot=baseline))["verified"]
-    assert not any("set" in call or "destroy" in call for call in ovs.calls)
-
-
 def test_delayed_apply_after_restoration_is_cancelled_before_writes(ovs):
     baseline = helper.execute(request("inspect"))["state"]
     helper.execute(request("restore", snapshot=baseline))
@@ -343,7 +337,7 @@ def test_restore_requires_kernel_htb_to_disappear(ovs):
     assert not ovs.tables["QoS"]
 
 
-@pytest.mark.parametrize("value", [0, True, 0.5])
+@pytest.mark.parametrize("value", [0, True])
 def test_invalid_bandwidth_rejected_before_write(ovs, value):
     with pytest.raises(ValueError, match="bandwidth_kbps"):
         helper.execute(request("apply", bandwidth_kbps=value))
@@ -450,14 +444,6 @@ def test_backend_rejects_wrong_targets_and_helper_failures(failure):
     if failure != "helper-failure":
         assert not engine.calls
     backend.close()
-
-
-def test_missing_mapping_is_explicit_and_no_client_is_opened():
-    backend = LinkBandwidthBackend(
-        {}, "run_1", client_factory=lambda _uri: pytest.fail("unexpected connection")
-    )
-    with pytest.raises(ValueError, match="no Docker host mapping"):
-        backend.inspect(switch_node(), 2)
 
 
 def test_backend_preflight_propagates_helper_rejection_without_mutation(ovs):

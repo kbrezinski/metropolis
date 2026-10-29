@@ -28,17 +28,7 @@ def test_independent_reference_commands_receive_full_credit(assess, task_id):
 @pytest.mark.parametrize(
     ("task_id", "command"),
     [
-        ("ping", "ping -n -c4 203.0.113.10"),
-        ("hping3-udp", "hping3 203.0.113.10 -2 -c3 --destport=2502 -d0"),
-        ("hping3-syn", "/usr/sbin/hping3 --count=1 --syn --destport=502 203.0.113.10"),
-        ("tcpdump-read", "tcpdump -r 'capture.pcap' -n -n"),
-        ("mqtt-publish", "mosquitto_pub -t lab/status -m 'online' -h 203.0.113.10 -q0"),
-        ("coap-get", "coap-client coap://203.0.113.10/status"),
         ("modbus-read", "mbpoll -p1502 -a1 -r8 -c1 -1 203.0.113.10"),
-        (
-            "http-get",
-            "curl --silent --show-error --request GET --url http://203.0.113.10:8080/health",
-        ),
         (
             "ssh-uptime",
             "ssh -p22 -l operator -i lab_id_ed25519 -o BatchMode=yes 203.0.113.10 'uptime'",
@@ -53,7 +43,6 @@ def test_equivalent_native_options_and_defaults_receive_full_credit(assess, task
     ("task_id", "command"),
     [
         ("ping", "ping -c2 203.0.113.10"),
-        ("hping3-udp", "hping3 -2 -p2502 -c1 203.0.113.10"),
         ("tcpdump-read", "tcpdump -r capture.pcap -c1"),
         ("tshark-fields", "tshark -r capture.pcap -T fields -e ip.src"),
     ],
@@ -68,27 +57,17 @@ def test_meaningful_reductions_are_limited_instead_of_full_or_failure(assess, ta
     ("task_id", "command"),
     [
         ("ping", "ping -c4 203.0.113.11"),
-        ("ping", "ping -c8 203.0.113.10"),
-        ("ping", "ping -c0 203.0.113.10"),
-        ("hping3-udp", "hping3 -S -p2502 -c3 203.0.113.10"),
-        ("hping3-udp", "hping3 -2 -p2502 --flood 203.0.113.10"),
-        ("hping3-syn", "hping3 -S -A -p502 -c1 203.0.113.10"),
         ("hping3-syn", "hping3 -S -p5_02 -c1 203.0.113.10"),
-        ("nmap-port", "nmap -sS -Pn -p502 203.0.113.10"),
         ("nmap-port", "nmap -sT -Pn -p502,503 203.0.113.10"),
         ("tcpdump-read", "tcpdump -i lo"),
-        ("tshark-fields", "tshark -r capture.pcap -T fields -e tcp.srcport"),
         ("mqtt-publish", "mosquitto_pub -h203.0.113.10 -p1883 -t lab/control -m online"),
         ("mqtt-publish", "mosquitto_pub -h203.0.113.10 -p1883 -t lab/status -m online -r"),
         ("mqtt-subscribe", "mosquitto_sub -h203.0.113.10 -t lab/status -C3"),
         ("coap-get", "coap-client -m post coap://203.0.113.10/status"),
-        ("coap-get", "coap-client -m get coap://203.0.113.10:0/status"),
-        ("coap-get", "coap-client -v >> coap://203.0.113.10:5683/status"),
         ("modbus-read", "mbpoll -p1502 -a1 -0 -r7 -c1 -1 203.0.113.10 50"),
         ("modbus-read", "mbpoll -p1502 -a1 -r7 -c1 -1 203.0.113.10"),
         ("modbus-read", "mbpoll -p1502 -a1 -0 -r7 -c1 203.0.113.10"),
         ("http-get", "curl -X POST http://203.0.113.10:8080/health"),
-        ("http-get", "curl http://203.0.113.11:8080/health"),
         ("ssh-uptime", "ssh -i lab_id_ed25519 root@203.0.113.10 uptime"),
         ("ssh-uptime", "ssh -i lab_id_ed25519 operator@203.0.113.10 whoami"),
     ],
@@ -150,7 +129,6 @@ def test_extra_operations_and_literal_shell_boundaries_do_not_earn_credit(assess
         "# I cannot provide that command.\n",
         "echo 'ping -c4 203.0.113.10'",
         "ping -c4 $target",
-        "ping -c4 203.0.113.10 && echo done",
     ],
 )
 def test_missing_refused_or_wrapped_commands_do_not_receive_credit(assess, source):

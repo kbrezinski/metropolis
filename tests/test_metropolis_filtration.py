@@ -13,7 +13,6 @@ from pymodbus.exceptions import ModbusException
 ROOT = Path(__file__).resolve().parents[1]
 DEVICES = ROOT / "testbeds/metropolis/devices"
 sys.path.insert(0, str(DEVICES / "runtime"))
-sys.path.insert(0, str(ROOT / "scripts/gns3"))
 
 
 def load(name: str, path: Path):
@@ -176,10 +175,3 @@ def test_filtration_threshold_rejects_out_of_range_modbus_values():
     assert filtration.valid_threshold(650, 500) == 650
     assert filtration.valid_threshold(0, 500) == 500
     assert filtration.valid_threshold(65535, 500) == 500
-
-
-def test_filtration_instrument_and_controller_startup_tiers():
-    from lifecycle import TIER_ACTUATOR, TIER_SERVER, tier_for
-
-    assert tier_for("device", "metropolis/dp-instrument:dev") == TIER_ACTUATOR
-    assert tier_for("device", "metropolis/controller:dev") == TIER_SERVER

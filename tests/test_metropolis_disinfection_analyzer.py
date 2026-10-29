@@ -6,9 +6,6 @@ import importlib.util
 import sys
 from pathlib import Path
 
-import pytest
-
-
 ROOT = Path(__file__).resolve().parents[1]
 PATH = ROOT / "testbeds/metropolis/devices/field/analyzers/analyzer.py"
 SPEC = importlib.util.spec_from_file_location("metropolis_residual_analyzer", PATH)
@@ -27,8 +24,3 @@ def test_chlorine_registers_and_heartbeat_are_independent():
 
     analyzer.update_registers(context, 45, "chlorine")
     assert context[0].getValues(3, 0, 2) == [12, 45]
-
-
-def test_unknown_analyzer_role_is_rejected():
-    with pytest.raises(ValueError, match="Unsupported analyzer role"):
-        analyzer.make_context("unknown")

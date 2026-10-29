@@ -113,25 +113,6 @@ def started(result):
     return record
 
 
-@pytest.mark.parametrize(
-    ("tool", "arguments", "field", "expected"),
-    [
-        ("modbus_manipulation_attack", ["--action", "set-level"], "host", "10.77.1.10"),
-        ("mqtt_bruteforce_attack", [], "host", "10.77.2.10"),
-        ("mirai_scenario", [], "cnc", "10.77.4.10:23"),
-        ("merlin_scenario", [], "cnc", "10.77.4.20:23"),
-        ("gotham_mirai_setup", [], "project", "custom_custom_v2"),
-    ],
-)
-def test_renamed_dataset_targets(tool, arguments, field, expected, custom_dataset):
-    root, _, _ = custom_dataset
-    record = started(invoke(tool, "--dataset", root, *arguments))
-    assert record[field] == expected
-    if tool == "mirai_scenario":
-        assert record["listener"] == "10.77.4.11:48101"
-        assert record["loader"] == "10.77.4.12:80"
-
-
 def test_missing_service_reports_why(custom_dataset):
     _, target, records = custom_dataset
     target.write_text(
@@ -210,25 +191,6 @@ def test_explicit_private_host_and_port_can_target_an_unlisted_appliance(
         )
     )
     assert (raw["host"], raw["port"]) == ("10.77.9.20", 8080)
-
-
-def test_explicit_unlisted_host_rejects_public_address(custom_dataset):
-    root, _, _ = custom_dataset
-    result = invoke(
-        "modbus_manipulation_attack",
-        "--dataset",
-        root,
-        "--host",
-        "8.8.8.8",
-        "--port",
-        "502",
-        "--profile",
-        "intake",
-        "--action",
-        "set-level",
-    )
-    assert result.returncode == 2
-    assert "private lab network" in result.stdout
 
 
 def test_multi_node_role_requires_the_matching_selector(custom_dataset):

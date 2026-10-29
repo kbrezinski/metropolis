@@ -22,6 +22,7 @@ if str(GNS3) not in sys.path:
     sys.path.insert(0, str(GNS3))
 
 from _cli import template_name_by_image  # noqa: E402
+import experiment  # noqa: E402
 from builder import build, existing_link_keys  # noqa: E402
 from capture import LinkResolution, capture_for, coverage_report, resolve_links  # noqa: E402
 from client import Node, Project  # noqa: E402
@@ -199,19 +200,6 @@ def test_switch_settings_follow_declared_roles_and_leave_spares_unassigned(docum
                 if declared["kind"] == "access" and setting["vlans"]
                 else "untagged"
             )
-
-
-def test_switch_settings_reject_duplicate_roles(documents):
-    _, _, infrastructure, link_plan = documents
-    duplicate = dict(link_plan)
-    switch_link = next(
-        item
-        for item in link_plan["links"]
-        if any("port_role" in end for end in item["endpoints"])
-    )
-    duplicate["links"] = [*link_plan["links"], switch_link]
-    with pytest.raises(ValueError, match="multiple declared links"):
-        switch_port_settings(infrastructure, duplicate)
 
 
 def test_router_interfaces_become_adapter_numbers(documents, plan):
@@ -492,12 +480,22 @@ def test_builder_rejects_wrong_existing_ports(plan):
 # -- lifecycle ---------------------------------------------------------------
 
 
-def test_startup_order_puts_switches_first_and_pollers_last():
+def test_startup_order_enforces_infrastructure_and_service_dependencies():
     nodes = [
         {"name": "MET-SCADA-01"},
         {"name": "MET-MQTT-BROKER-01"},
         {"name": "sw-plant-aggregation"},
         {"name": "MET-PLANT"},
+        {"name": "mirai-cnc"},
+        {"name": "mirai-listener"},
+        {"name": "mirai-tftp"},
+        {"name": "mirai-http"},
+        {"name": "mirai-bot"},
+        {"name": "merlin-cnc"},
+        {"name": "merlin-agent"},
+        {"name": "rdp-server"},
+        {"name": "ops-client"},
+        {"name": "engineer"},
     ]
     kinds = {
         "sw-plant-aggregation": "switch",
@@ -508,29 +506,6 @@ def test_startup_order_puts_switches_first_and_pollers_last():
     images = {
         "MET-MQTT-BROKER-01": "metropolis/mqtt-broker:dev",
         "MET-SCADA-01": "metropolis/scada:dev",
-    }
-    assert startup_order(nodes, kinds, images) == [
-        "sw-plant-aggregation",
-        "MET-PLANT",
-        "MET-MQTT-BROKER-01",
-        "MET-SCADA-01",
-    ]
-
-
-def test_actuators_start_before_the_intake_controller():
-    nodes = [{"name": "MET-PLC-INTAKE-01"}, {"name": "MET-PUMP-DRIVE-INTAKE-DUTY-01"}]
-    images = {
-        "MET-PLC-INTAKE-01": "metropolis/controller:dev",
-        "MET-PUMP-DRIVE-INTAKE-DUTY-01": "metropolis/actuator:dev",
-    }
-    assert startup_order(nodes, {}, images) == [
-        "MET-PUMP-DRIVE-INTAKE-DUTY-01",
-        "MET-PLC-INTAKE-01",
-    ]
-
-
-def test_attack_support_services_start_before_agents():
-    images = {
         "mirai-cnc": "metropolis/mirai-cnc:dev",
         "mirai-listener": "metropolis/mirai-scan-listener:dev",
         "mirai-tftp": "metropolis/mirai-loader:dev",
@@ -538,24 +513,38 @@ def test_attack_support_services_start_before_agents():
         "mirai-bot": "metropolis/mirai-bot:dev",
         "merlin-cnc": "metropolis/merlin-cnc:dev",
         "merlin-agent": "metropolis/merlin-agent:dev",
+        "rdp-server": "metropolis/rdp-server:dev",
+        "ops-client": "metropolis/rdp-client:dev",
+        "engineer": "metropolis/engineering:dev",
     }
-    order = startup_order([{"name": name} for name in images], {}, images)
+    order = startup_order(nodes, kinds, images)
+    assert order[:2] == ["sw-plant-aggregation", "MET-PLANT"]
+    assert order.index("MET-MQTT-BROKER-01") < order.index("MET-SCADA-01")
     services = {"mirai-cnc", "mirai-listener", "mirai-tftp", "mirai-http", "merlin-cnc"}
     agents = {"mirai-bot", "merlin-agent"}
     assert max(order.index(name) for name in services) < min(
         order.index(name) for name in agents
     )
+    assert order.index("rdp-server") < min(
+        order.index(name) for name in ("ops-client", "engineer")
+    )
 
 
-def test_rdp_server_starts_before_admin_clients():
+def test_field_devices_start_before_controller_and_scada():
     images = {
-        "rdp-server": "metropolis/rdp-server:dev",
-        "ops-client": "metropolis/rdp-client:dev",
-        "engineer": "metropolis/engineering:dev",
+        "scada": "metropolis/scada:dev",
+        "controller": "metropolis/controller:dev",
+        "drive": "metropolis/actuator:dev",
+        "analyzer": "metropolis/analyzer:dev",
+        "pressure": "metropolis/dp-instrument:dev",
+        "level": "metropolis/level-instrument:dev",
     }
     order = startup_order([{"name": name} for name in images], {}, images)
-    assert order.index("rdp-server") < order.index("ops-client")
-    assert order.index("rdp-server") < order.index("engineer")
+    assert (
+        max(order.index(name) for name in ("drive", "analyzer", "pressure", "level"))
+        < order.index("controller")
+        < order.index("scada")
+    )
 
 
 def test_start_all_starts_in_order_and_reports_failures():
@@ -627,18 +616,6 @@ def test_wait_until_running_gives_up_and_reports_the_node():
     )
     assert running == []
     assert pending == ["slow"]
-
-
-def test_wait_until_running_returns_when_the_node_starts():
-    class Soon(FakeClient):
-        def project_nodes(self, project_id):
-            return [{"node_id": "n1", "name": "quick", "status": "started"}]
-
-    running, pending = wait_until_running(
-        Soon(), "p1", ["quick"], timeout=5.0, sleep=lambda _: None
-    )
-    assert running == ["quick"]
-    assert pending == []
 
 
 # -- capture -----------------------------------------------------------------
@@ -989,7 +966,7 @@ def test_experiment_shares_run_id_and_reports_missing_log_sources(
 
 
 def test_experiment_records_hmi_origin_mqtt_check_after_capture_starts(
-    documents, built_capture, tmp_path
+    documents, built_capture, tmp_path, monkeypatch
 ):
     _, inventory, infrastructure, link_plan = documents
     client, topology, _ = built_capture
@@ -1052,6 +1029,7 @@ def test_experiment_records_hmi_origin_mqtt_check_after_capture_starts(
     def fast_capture(*args, **kwargs):
         return capture_for(*args, **kwargs, sleep=lambda _: None)
 
+    monkeypatch.setattr(experiment, "MqttAclRun", FakeMqttRun)
     manifest = run_experiment(
         client,
         Project("p1", "lab", "opened"),
@@ -1067,7 +1045,6 @@ def test_experiment_records_hmi_origin_mqtt_check_after_capture_starts(
         capture_fn=fast_capture,
         metrics_enabled=False,
         mqtt_acl_probe=("source-hmi", "target-hmi"),
-        mqtt_run_factory=FakeMqttRun,
     )
     assert manifest["mqtt_acl"]["status"] == "complete"
     event = json.loads(

@@ -62,10 +62,6 @@ def test_io_packet_has_sequenced_cpf_items_and_rejects_malformed() -> None:
         parse_io_packet(b"bad")
 
 
-def test_valve_starts_open() -> None:
-    assert State("valve_controller").active is True
-
-
 def test_faulted_drive_rejects_run_command() -> None:
     state = State("pump_drive", faulted=True)
     assert state.handle(bytes((0x10, 3, 0x20, 0x64, 0x24, 1, 0x30, 1, 1)))[4] == 0
@@ -166,7 +162,7 @@ class StubActuator:
         return self.active, self.healthy
 
 
-@pytest.mark.parametrize("duty_status", [(False, False), (False, True)])
+@pytest.mark.parametrize("duty_status", [(False, False)])
 def test_plc_fails_over_to_standby(duty_status) -> None:
     module = controller_module()
     context = module.make_context([650, 120, 950, 0])

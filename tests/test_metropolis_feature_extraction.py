@@ -121,7 +121,7 @@ def test_tshark_failure_does_not_publish_partial_csv(tmp_path, monkeypatch):
     assert not list(raw.glob("*.csv*"))
 
 
-def test_rejects_malformed_or_empty_output(tmp_path, monkeypatch):
+def test_rejects_malformed_packet_rows(tmp_path, monkeypatch):
     manifest, fields = setup_capture(tmp_path)
 
     def fake_run(command, **kwargs):

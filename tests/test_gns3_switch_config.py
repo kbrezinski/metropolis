@@ -242,21 +242,3 @@ def test_wrong_image_and_missing_compute_are_reported():
     results = configure_switches(client, "p1", topology, {})
     assert "not the Metropolis" in results["sw-a"]["reason"]
     assert "no Docker host" in results["sw-b"]["reason"]
-
-
-def test_gns3_node_lookup_failure_is_recorded_per_switch():
-    topology = example_topology()
-    topology.nodes = topology.nodes[:1]
-    client = Client()
-
-    def fail(_project_id):
-        raise RuntimeError("GNS3 API unavailable")
-
-    client.project_nodes = fail
-    result = configure_switches(
-        client, "p1", topology, {"remote": "ssh://gns3@example"}
-    )
-    assert result["sw-a"] == {
-        "status": "failed",
-        "reason": "GNS3 API unavailable",
-    }

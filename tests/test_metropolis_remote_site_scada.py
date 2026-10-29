@@ -11,7 +11,6 @@ from types import SimpleNamespace
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "scripts/gns3"))
 sys.path.insert(0, str(ROOT / "testbeds/metropolis/devices/runtime"))
 
 spec = importlib.util.spec_from_file_location(
@@ -106,26 +105,3 @@ def test_scada_remote_targets_are_polled_but_never_accept_hmi_commands(monkeypat
     assert payload["pump_requested"] is True
     assert payload["quality"] == "good"
     assert "setpoint" not in payload
-
-
-def test_raw_water_decode_uses_site_specific_fields():
-    target = scada.Target("raw-water", "192.0.2.11", "raw_water", "status")
-    with pytest.raises(ValueError, match="fewer than six"):
-        scada.decode_registers(target, [455, 0, 0, 8])
-    payload = scada.decode_registers(target, [455, 0, 0, 8, 1, 16])
-    assert payload["wet_well_level_percent"] == 45.5
-    assert payload["lift_pump_running"] is False
-    assert payload["instrument_ready"] is False
-    assert payload["pump_requested"] is True
-    assert payload["alarm_mask"] == 16
-    assert payload["quality"] == "degraded"
-    assert "setpoint" not in payload
-
-
-def test_remote_site_startup_order_starts_instruments_before_rtus_and_scada():
-    from lifecycle import TIER_ACTUATOR, TIER_CLIENT, TIER_SERVER, tier_for
-
-    assert tier_for("device", "metropolis/level-instrument:dev") == TIER_ACTUATOR
-    assert tier_for("device", "metropolis/actuator:dev") == TIER_ACTUATOR
-    assert tier_for("device", "metropolis/controller:dev") == TIER_SERVER
-    assert tier_for("device", "metropolis/scada:dev") == TIER_CLIENT

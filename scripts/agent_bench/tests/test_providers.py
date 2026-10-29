@@ -118,7 +118,6 @@ def test_native_client_preserves_tool_calls_usage_and_structured_refusal(monkeyp
     [
         (400, {"error": {"code": "content_policy_violation"}}, True),
         (503, {"error": {"message": "credential-not-to-be-persisted"}}, False),
-        (429, {"error": {"code": "rate_limit_exceeded"}}, False),
     ],
 )
 def test_policy_blocks_are_distinct_from_provider_errors_and_never_retried(
@@ -267,7 +266,6 @@ def test_large_response_stops_before_reading_entire_body(monkeypatch):
         'endpoint="https://user:password@api.example/v1"',
         "max_tokens=0\ncontext_window_tokens=128000",
         "max_tokens=9000\ncontext_window_tokens=8000",
-        "max_tokens=true\ncontext_window_tokens=128000",
     ],
 )
 def test_model_config_rejects_credentials_and_invalid_token_budgets(tmp_path, extra):

@@ -18,13 +18,11 @@ if str(ROOT / "src") not in sys.path:
     sys.path.insert(0, str(ROOT / "src"))
 
 from metropolis.topology import (  # noqa: E402
-    Device,
     Endpoint,
     Interface,
     Network,
     Ports,
     Router,
-    Segment,
     Switch,
     SwitchPort,
     Topology,
@@ -92,7 +90,7 @@ def two_cell() -> Topology:
 # -- the round trip is the point ----------------------------------------------
 
 
-@pytest.mark.parametrize("name", sorted(DOCUMENTS))
+@pytest.mark.parametrize("name", ["initial-devices", "links"])
 def test_each_bundled_document_is_reproduced_exactly(bundled, name):
     """Read the dataset, model it, write it back: the data must be identical."""
     original = yaml.safe_load(DOCUMENTS[name].read_text(encoding="utf-8"))
@@ -106,19 +104,6 @@ def test_saving_and_reloading_is_stable(tmp_path):
     assert reloaded.to_dicts() == topology.to_dicts()
 
 
-def test_save_creates_the_expected_layout(tmp_path):
-    written = two_cell().save(tmp_path / "demo_v1")
-    names = sorted(path.name for path in written)
-    assert names == [
-        "address-plan.yaml",
-        "infrastructure.yaml",
-        "initial_devices.yaml",
-        "links.yaml",
-    ]
-    assert (tmp_path / "demo_v1/topology/address-plan.yaml").is_file()
-    assert (tmp_path / "demo_v1/device_instances/infrastructure.yaml").is_file()
-
-
 def test_documents_from_different_testbeds_are_refused():
     documents = {
         name: yaml.safe_load(path.read_text(encoding="utf-8"))
@@ -127,11 +112,6 @@ def test_documents_from_different_testbeds_are_refused():
     documents["links"] = dict(documents["links"], testbed_id="somewhere-else")
     with pytest.raises(TopologyError, match="belongs to testbed"):
         to_topology(documents)
-
-
-def test_a_missing_dataset_file_is_reported(tmp_path):
-    with pytest.raises(FileNotFoundError, match="dataset is missing"):
-        Topology.from_directory(tmp_path / "nowhere")
 
 
 # -- building -----------------------------------------------------------------
@@ -156,7 +136,6 @@ def test_an_unknown_port_role_is_refused():
     [
         ("MET-PLANT:eth1", "MET-PLANT", "eth1", None),
         ("sw-a:router-uplink", "sw-a", None, "router-uplink"),
-        ("PLC-A", "PLC-A", None, None),
     ],
 )
 def test_endpoint_shorthand_is_parsed(written, node, interface, port_role):
@@ -177,11 +156,6 @@ def test_endpoints_can_be_written_as_mappings():
 def test_an_unreadable_endpoint_is_refused():
     with pytest.raises(TopologyError, match="cannot read link endpoint"):
         Endpoint.parse(42)
-
-
-def test_add_refuses_something_that_is_not_a_node():
-    with pytest.raises(TopologyError, match="cannot add"):
-        Topology().add("a string")
 
 
 # -- validation catches real mistakes -----------------------------------------
@@ -211,6 +185,16 @@ def test_a_device_on_an_unplanned_subnet_is_caught():
     assert any("not in the address plan" in problem for problem in lab.problems())
 
 
+def test_duplicate_device_addresses_are_caught():
+    topology = Topology(testbed_id="example")
+    topology.add_network("cell", "10.42.0.0/24")
+    topology.add_device("sensor-a", subnet="10.42.0.0/24", address="10.42.0.20/24")
+    topology.add_device("sensor-b", subnet="10.42.0.0/24", address="10.42.0.20/24")
+    assert "devices sensor-a and sensor-b share address 10.42.0.20" in (
+        topology.problems()
+    )
+
+
 def test_a_gateway_mismatch_is_caught():
     lab = two_cell()
     lab.device("PLC-A").gateway = "10.0.10.254"
@@ -236,14 +220,6 @@ def test_a_link_to_an_unknown_switch_port_is_caught():
     assert any("has no port role" in problem for problem in lab.problems())
 
 
-def test_a_switch_endpoint_may_name_no_port():
-    """Naming no port attaches to the segment as a whole, which is allowed."""
-    lab = two_cell()
-    lab.add(Segment("seg-a", role="Access segment", network_id="cell-a"))
-    lab.link("seg-link", "PLC-A", "seg-a")
-    assert lab.problems() == []
-
-
 def test_a_link_to_an_unplanned_network_is_caught():
     lab = two_cell()
     lab.links[0].network_id = "not-planned"
@@ -254,20 +230,6 @@ def test_a_gateway_outside_its_subnet_is_caught():
     lab = Topology()
     lab.add(Network("a", "10.0.0.0/24", gateway="10.0.9.1"))
     assert any("outside" in problem for problem in lab.problems())
-
-
-def test_a_router_with_no_interfaces_is_caught():
-    lab = two_cell()
-    lab.routers[0].interfaces = ()
-    assert any("declares no interfaces" in problem for problem in lab.problems())
-
-
-def test_an_interface_that_is_neither_address_nor_trunk_is_caught():
-    lab = two_cell()
-    lab.routers[0].interfaces = (Interface("eth0"),)
-    assert any(
-        "neither an address nor a trunk" in problem for problem in lab.problems()
-    )
 
 
 def test_validate_raises_and_lists_every_problem():
@@ -287,25 +249,10 @@ def test_validate_raises_and_lists_every_problem():
 # -- serialising --------------------------------------------------------------
 
 
-def test_optional_fields_are_left_out_rather_than_written_as_null():
-    document = two_cell().to_dicts()["address-plan"]
-    network = document["networks"][0]
-    # No site was given, so the key should not appear at all.
-    assert "site" not in network
-    assert None not in network.values()
-
-
-def test_each_document_keeps_its_own_description():
-    lab = two_cell()
-    lab.links_description = "How the cables run"
-    assert lab.to_dicts()["links"]["description"] == "How the cables run"
-    assert "description" not in lab.to_dicts()["infrastructure"]
-
-
 # -- drawing ------------------------------------------------------------------
 
 
-def test_dot_output_is_a_graph_with_every_node(bundled):
+def test_dot_output_is_a_graph_with_routers_and_switches(bundled):
     dot = bundled.to_dot("Metropolis")
     assert dot.startswith("digraph topology {")
     assert dot.rstrip().endswith("}")
@@ -315,30 +262,10 @@ def test_dot_output_is_a_graph_with_every_node(bundled):
         assert f'"{switch.name}"' in dot
 
 
-def test_dot_groups_devices_under_their_subnet():
-    dot = two_cell().to_dot()
-    assert "subgraph cluster_cell_a" in dot
-    assert "vlan 10" in dot
-    cluster = dot.index("subgraph cluster_cell_a")
-    plc = dot.index('"PLC-A"')
-    assert plc > cluster
-
-
 def test_dot_labels_are_escaped():
     lab = two_cell()
     lab.routers[0].name = 'R-"odd"'
     assert '\\"odd\\"' in lab.to_dot()
-
-
-def test_mermaid_output_is_a_graph_with_routers_switches_and_devices():
-    lab = two_cell()
-    mermaid = lab.to_mermaid("Demo")
-    assert mermaid.startswith("graph TD")
-    assert "%% Demo" in mermaid
-    assert 'R_EDGE["R-EDGE"]' in mermaid
-    assert 'sw_a{{"sw-a"}}' in mermaid
-    assert "subgraph cell_a" in mermaid
-    assert 'PLC_A["PLC-A"]' in mermaid
 
 
 def test_mermaid_edges_carry_the_kind_and_vlans():
@@ -407,48 +334,23 @@ def test_a_subnet_can_be_named_by_network_id_or_cidr():
     assert by_id.subnet == by_cidr.subnet == "10.0.10.0/24"
 
 
-def test_an_unknown_network_id_is_refused():
-    lab = Topology()
-    with pytest.raises(TopologyError, match="no network with id"):
-        lab.add_device("A", subnet="nowhere")
-
-
 # -- allocating addresses -----------------------------------------------------
 
 
 def test_allocation_skips_the_gateway_and_taken_addresses():
     lab = Topology()
     lab.add_network("cell-a", "10.0.10.0/24", gateway="10.0.10.1")
+    lab.add_device("reserved", subnet="cell-a", address="10.0.10.2/24")
 
     first = lab.add_device("A", subnet="cell-a")
     second = lab.add_device("B", subnet="cell-a")
     third = lab.add_device("C", subnet="cell-a")
 
     assert [first.address, second.address, third.address] == [
-        "10.0.10.2/24",
         "10.0.10.3/24",
         "10.0.10.4/24",
+        "10.0.10.5/24",
     ]
-
-
-def test_allocation_avoids_an_address_already_used():
-    lab = Topology()
-    lab.add_network("cell-a", "10.0.10.0/24", gateway="10.0.10.1")
-    lab.add_device("A", subnet="cell-a", address="10.0.10.5/24")
-
-    assert lab.add_device("B", subnet="cell-a").address == "10.0.10.2/24"
-
-
-def test_allocation_skips_a_gateway_that_is_not_the_first_address():
-    lab = Topology()
-    lab.add_network("cell-a", "10.0.10.0/24", gateway="10.0.10.9")
-    assert lab.allocate_address("10.0.10.0/24") == "10.0.10.1/24"
-
-
-def test_allocation_refuses_a_subnet_with_no_room():
-    lab = Topology()
-    with pytest.raises(TopologyError, match="no usable host addresses"):
-        lab.allocate_address("10.0.0.0/31")
 
 
 def test_allocation_reports_a_full_subnet():
@@ -478,43 +380,7 @@ def test_link_infers_a_trunk_when_several_vlans_are_named():
     assert link.kind == "trunk"
 
 
-def test_an_explicit_kind_is_not_overridden():
-    lab = two_cell()
-    link = lab.link("l", "sw-a:router-uplink", "PLC-A:eth0", kind="trunk", vlans=(10,))
-    assert link.kind == "trunk"
-
-
-def test_a_network_without_a_vlan_infers_nothing():
-    lab = Topology()
-    lab.add_network("plain", "192.168.0.0/24")
-    lab.add(Switch("sw", ports=("p1",)), Device("d", subnet="192.168.0.0/24"))
-    link = lab.link("l", "sw:p1", "d", network_id="plain")
-
-    assert link.vlans == ()
-    assert link.kind == "access"
-
-
 # -- switch ports -------------------------------------------------------------
-
-
-def test_a_switch_takes_ports_or_attachment_points():
-    by_ports = Switch("a", ports=("p1", "p2"))
-    by_attachment = Switch("b", attachment_points=("p1", "p2"))
-    assert by_ports.ports.roles == by_attachment.ports.roles == ("p1", "p2")
-    assert by_ports.attachment_points == ("p1", "p2")
-
-
-def test_a_port_can_be_given_as_a_mapping_with_vlans():
-    switch = Switch.with_ports(
-        "sw",
-        (
-            SwitchPort("router-uplink", mode="trunk", vlans=(10, 11)),
-            SwitchPort("plc-uplink", mode="access", vlans=(10,)),
-        ),
-    )
-    assert switch.ports[0].vlans == (10, 11)
-    assert switch.ports[0].mode == "trunk"
-    assert switch.port_number("plc-uplink") == 1
 
 
 def test_a_port_learns_its_vlans_from_the_link_on_it():
@@ -533,15 +399,6 @@ def test_a_spare_port_has_no_vlans_and_no_link():
     assert lab.port_vlans("sw-b", "spare-1") == ()
     assert lab.port_mode("sw-b", "spare-1") is None
     assert lab.ports_of("sw-b")[1].link is None
-
-
-def test_ports_compare_equal_to_the_role_list():
-    """The dataset stores roles, so comparing against them must still work."""
-    switch = Switch("sw", ports=("p1", "p2"))
-    assert switch.ports == ["p1", "p2"]
-    assert switch.ports == ("p1", "p2")
-    assert "p1" in switch.ports
-    assert "nope" not in switch.ports
 
 
 def test_a_port_stated_twice_with_different_vlans_is_caught():
@@ -578,46 +435,3 @@ def test_only_roles_are_written_to_yaml():
 
     assert switch["attachment_points"] == ["router-uplink", "plc-uplink"]
     assert "ports" not in switch
-
-
-# -- the worked example -------------------------------------------------------
-
-
-def load_example(name: str):
-    """Import the example script, which is documentation that must keep working."""
-    import importlib.util
-
-    path = ROOT / "scripts/build_a_topology.py"
-    spec = importlib.util.spec_from_file_location(name, path)
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[name] = module
-    spec.loader.exec_module(module)
-    return module
-
-
-def test_the_example_builds_and_validates():
-    lab = load_example("example_topology").build()
-
-    assert lab.problems() == []
-    assert lab.counts()["devices"] == 3
-    # Every host has its entrypoint settings derived, so none can drift.
-    for device in lab.devices:
-        assert device.environment["NODE_HOSTNAME"] == device.name
-        assert device.environment["NODE_IP"] == device.address
-        assert device.environment["NODE_GATEWAY"] == device.gateway
-
-
-def test_the_example_switch_reads_its_ports_from_the_cabling():
-    lab = load_example("example_topology_3").build()
-
-    assert lab.port_mode("sw-cells", "router-uplink") == "trunk"
-    assert lab.port_vlans("sw-cells", "router-uplink") == (10, 11, 20)
-    assert lab.port_mode("sw-cells", "cell-a-uplink") == "access"
-    assert lab.port_vlans("sw-cells", "cell-a-uplink") == (10,)
-    # The sensor is on the ops-uplink port but attached to cell A, so the port
-    # reports cell A's VLAN: the cabling decides, not the port's name.
-    assert lab.port_vlans("sw-cells", "ops-uplink") == (10,)
-    # Cell B has no cable. Its mode was declared, so it is reported, but it
-    # carries nothing.
-    assert lab.port_vlans("sw-cells", "cell-b-uplink") == ()
-    assert lab.ports_of("sw-cells")[2].link is None

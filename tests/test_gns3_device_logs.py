@@ -5,6 +5,8 @@ from __future__ import annotations
 import io
 import json
 import sys
+import threading
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -267,6 +269,56 @@ def test_existing_run_is_never_reused(tmp_path):
     run.mkdir()
     with pytest.raises(FileExistsError):
         DeviceLogCollector(FakeClient([node()]), "project-1", run, "run", {})
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows file sharing semantics")
+def test_manifest_replace_recovers_from_transient_reader_lock(tmp_path, monkeypatch):
+    collector = DeviceLogCollector(
+        FakeClient([]), "project-1", tmp_path / "run", "run", {}
+    )
+    manifest_path = collector.run_dir / "manifest.json"
+    temporary = collector.run_dir / "manifest.json.tmp"
+    original_replace = Path.replace
+    denied = threading.Event()
+    errors = []
+
+    def observe_replace(source, target):
+        try:
+            return original_replace(source, target)
+        except PermissionError as exc:
+            if source == temporary and exc.winerror in (5, 32):
+                denied.set()
+            raise
+
+    monkeypatch.setattr(Path, "replace", observe_replace)
+    collector.manifest["status"] = "complete"
+
+    def write_manifest():
+        try:
+            collector._write_manifest()
+        except Exception as exc:  # noqa: BLE001 - capture worker failure for assertion
+            errors.append(exc)
+
+    with manifest_path.open("rb"):
+        worker = threading.Thread(target=write_manifest, daemon=True)
+        worker.start()
+        observed = denied.wait(timeout=1)
+    worker.join(timeout=2)
+    assert observed and not worker.is_alive()
+    assert not errors
+    assert json.loads(manifest_path.read_text())["status"] == "complete"
+
+    collector.manifest["status"] = "failed"
+    previous = manifest_path.read_bytes()
+    with manifest_path.open("rb"):
+        started = time.monotonic()
+        with pytest.raises(PermissionError) as failure:
+            collector._write_manifest()
+        assert time.monotonic() - started < 1
+        assert failure.value.winerror in (5, 32)
+        assert manifest_path.read_bytes() == previous
+    collector._write_manifest()
+    assert json.loads(manifest_path.read_text())["status"] == "failed"
 
 
 def test_gns3_discovery_failure_is_preserved_in_manifest(tmp_path):

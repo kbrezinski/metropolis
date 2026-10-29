@@ -27,7 +27,7 @@ def load(name: str, path: Path):
 def test_synthetic_udp_replies_and_expired_amplification_lease(tmp_path):
     udp = load("rdp_udp_test", DEVICES / "rdp_server/rdp_udp.py")
     state = tmp_path / "udp-mode.json"
-    assert len(udp.NORMAL_REPLY) == 16
+    assert udp.NORMAL_REPLY == b"MRDP-ACK" + bytes(8)
     assert udp.current_mode(state) == "benign"
     assert udp.response(bytes(16), "10.8.1.2", "benign") == udp.NORMAL_REPLY
     assert udp.response(bytes(16), "10.8.1.2", "benign", 123)[8:] == (123).to_bytes(
@@ -150,7 +150,7 @@ def test_client_keeps_password_private_and_checks_desktop_session(
         nonlocal sample_count
         sample_count += 1
         marker = 0 if sample_count == 1 else final_marker
-        return client.UDP_REPLY_PREFIX + marker.to_bytes(8, "big")
+        return b"MRDP-ACK" + marker.to_bytes(8, "big")
 
     monkeypatch.setattr(client, "sample_udp", sample)
     monkeypatch.setattr(
@@ -195,9 +195,7 @@ def test_client_interrupt_stops_freerdp_and_reports_failure(monkeypatch):
             return None
 
     monkeypatch.setattr(client.subprocess, "Popen", lambda *_args, **_kwargs: Process())
-    monkeypatch.setattr(
-        client, "sample_udp", lambda _host: client.UDP_REPLY_PREFIX + bytes(8)
-    )
+    monkeypatch.setattr(client, "sample_udp", lambda _host: b"MRDP-ACK" + bytes(8))
     monkeypatch.setattr(
         client, "_stop_process", lambda process: stopped.append(process)
     )

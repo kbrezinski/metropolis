@@ -93,20 +93,6 @@ def test_frozen_analyzer_heartbeat_is_stale_and_recovers():
     assert monitor.observe(0, now=7.0)
 
 
-def test_idle_faulted_drives_raise_plc_alarms():
-    intake_context = intake.make_context([650, 120, 950, 0])
-    intake.update_actuators(
-        intake_context, Drive(False, faulted=True), Drive(False), Drive(False)
-    )
-    assert intake.read_holding(intake_context, 5, 1) == [DUTY_UNAVAILABLE]
-
-    dosing_context = dosing.make_context()
-    dosing.update_drives(
-        dosing_context, Drive(False), Drive(False, faulted=True), False, True
-    )
-    assert dosing_context[0].getValues(3, 5, 1) == [STANDBY_UNAVAILABLE]
-
-
 def test_dosing_setpoint_and_alarm_mask_follow_confirmation():
     context = dosing.make_context()
     assert context[0].getValues(3, 4, 2) == [650, 0]

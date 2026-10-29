@@ -9,6 +9,7 @@ import json
 import os
 import shutil
 import socket
+import stat
 import subprocess
 import threading
 import time
@@ -186,18 +187,20 @@ def test_mqtt_access_allows_non_mqtt_synthetic_topologies():
     )
 
 
-def test_broker_runtime_writes_private_acl_and_hashed_password_file(
-    tmp_path, monkeypatch
-):
+def test_broker_runtime_writes_acl_and_calls_password_hasher(tmp_path, monkeypatch):
     environment = compiler.compile_mqtt_access(_inventory())
     accounts = broker_runtime.decode_access(
         environment["MQTT_ACCESS_B64"], environment["MQTT_ACCESS_SHA256"]
     )
 
+    hash_calls = []
+
     def fake_hash(command, *, check, capture_output):
         assert command[:2] == ["mosquitto_passwd", "-U"]
+        assert check and capture_output
         path = Path(command[2])
         assert "LabOnly" in path.read_text(encoding="utf-8")
+        hash_calls.append(command)
         path.write_text("hashed-placeholder\n", encoding="utf-8")
         return subprocess.CompletedProcess(command, 0)
 
@@ -208,7 +211,13 @@ def test_broker_runtime_writes_private_acl_and_hashed_password_file(
     assert "topic write metropolis/plant/alpha/command" in acl
     assert "topic read metropolis/#" in acl
     assert "LabOnly" not in acl
-    assert "LabOnly" not in (tmp_path / "passwordfile").read_text(encoding="utf-8")
+    assert len(hash_calls) == 1
+    assert {path.name for path in tmp_path.iterdir()} == {"passwordfile", "aclfile"}
+    if os.name != "nt":
+        assert all(
+            stat.S_IMODE((tmp_path / name).stat().st_mode) == 0o600
+            for name in ("passwordfile", "aclfile")
+        )
 
 
 def test_broker_runtime_rejects_corrupt_or_duplicate_accounts():

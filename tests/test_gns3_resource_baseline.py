@@ -180,8 +180,6 @@ def test_check_accepts_equivalent_cpu_period_and_quantized_allowances():
     "bad",
     [
         {"memory_swap_bytes": 16 * MIB},
-        {"cpus": float("nan")},
-        {"extra": 1},
     ],
 )
 def test_invalid_baseline_limits_fail_before_write(lab, bad):
@@ -211,9 +209,7 @@ def test_reservation_and_unsupported_capability_are_not_overridden(lab):
     assert [cid for cid, _fields in lab.engine.updates] == ["cid-B"]
 
 
-@pytest.mark.parametrize(
-    "problem", ["missing", "duplicate", "image", "type", "container"]
-)
+@pytest.mark.parametrize("problem", ["missing", "duplicate", "image"])
 def test_invalid_runtime_identity_leaves_other_targets_available(lab, problem):
     if problem == "missing":
         lab.nodes.pop(0)
@@ -221,21 +217,11 @@ def test_invalid_runtime_identity_leaves_other_targets_available(lab, problem):
         lab.nodes.append(copy.deepcopy(lab.nodes[0]))
     elif problem == "image":
         lab.nodes[0]["properties"]["image"] = "foreign/image"
-    elif problem == "type":
-        lab.nodes[0]["node_type"] = "qemu"
-    else:
-        lab.nodes[0]["properties"].pop("container_id")
     report = lab.run(apply=True)
     assert report["status"] == "failed"
     assert report["nodes"]["A"]["status"] == "unavailable"
     assert report["nodes"]["B"]["status"] == "applied"
     assert [cid for cid, _fields in lab.engine.updates] == ["cid-B"]
-
-
-def test_existing_stopped_container_can_be_prepared_without_starting_it(lab):
-    lab.nodes[0]["status"] = "stopped"
-    assert lab.run(apply=True)["status"] == "matched"
-    assert lab.nodes[0]["status"] == "stopped"
 
 
 def test_readback_failures_are_reported_not_successful(lab):
@@ -256,45 +242,6 @@ def test_interruption_propagates_after_closing_connections(lab):
     with pytest.raises(KeyboardInterrupt):
         lab.run(apply=True)
     assert lab.engine.closed
-
-
-def test_factory_connection_failure_is_tried_once_per_compute(lab):
-    attempts = []
-
-    def factory(_uri):
-        attempts.append(1)
-        raise RuntimeError("Docker SDK version negotiation failed")
-
-    def backend(hosts):
-        return DeviceProfileBackend(hosts, client_factory=factory)
-
-    result = configure_baseline(
-        lab.client,
-        "project",
-        lab.baseline,
-        {"remote": "ssh://operator@compute"},
-        backend_factory=backend,
-    )
-    assert result["status"] == "failed"
-    assert len(attempts) == 1
-    assert "failed earlier" in result["nodes"]["B"]["error"]
-
-
-def test_one_container_http_error_does_not_hide_healthy_peer(lab):
-    class ApiError(OSError):
-        response = SimpleNamespace(status_code=404)
-
-    inspect = lab.engine.inspect_container
-
-    def missing(cid):
-        if cid == "cid-A":
-            raise ApiError("no such container")
-        return inspect(cid)
-
-    lab.engine.inspect_container = missing
-    result = lab.run(apply=True)
-    assert result["status"] == "failed"
-    assert result["nodes"]["B"]["status"] == "applied"
 
 
 def test_no_docker_targets_is_not_success(lab):

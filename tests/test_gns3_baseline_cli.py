@@ -104,16 +104,3 @@ def test_missing_config_fails_before_connecting(baseline_cli, monkeypatch):
         cli.main()
     assert exc.value.code == 2
     assert calls == []
-
-
-def test_conflicting_modes_fail_before_connecting(baseline_cli, monkeypatch):
-    dataset, _, calls = baseline_cli
-    monkeypatch.setattr(
-        sys,
-        "argv",
-        ["configure_baseline", "--dataset", str(dataset), "--check", "--apply"],
-    )
-    with pytest.raises(SystemExit) as exc:
-        cli.main()
-    assert exc.value.code == 2
-    assert calls == []

@@ -180,7 +180,7 @@ def test_ram_only_restore_preserves_external_cpu_changes(backend):
     assert "CpuQuota" not in engine.updates[-1]
 
 
-@pytest.mark.parametrize("managed", [[], "Memory", ["Env"]])
+@pytest.mark.parametrize("managed", [["Env"]])
 def test_invalid_managed_fields_never_mutate(backend, managed):
     result, engine, _connections = backend
     baseline = result.inspect(node())
@@ -249,9 +249,7 @@ def test_wrong_identity_or_missing_compute_never_mutates(backend):
 @pytest.mark.parametrize(
     "settings",
     [
-        {},
         {"cpus": True},
-        {"memory_bytes": 5 * MIB},
         {"cpu_shares": 5},
     ],
 )

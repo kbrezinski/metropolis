@@ -44,7 +44,9 @@ def test_default_candidates_are_distinct_and_success_is_last(tmp_path):
     assert len(candidates) == len(set(candidates)) == 25
     assert candidates[-1] == good
     assert good not in candidates[:-1]
-    assert attack.password_candidates(None, good, 5) == candidates[:4] + [good]
+    short = attack.password_candidates(None, good, 5)
+    assert len(short) == len(set(short)) == 5
+    assert short[-1] == good
 
     wordlist = tmp_path / "passwords.txt"
     wordlist.write_text("first\nsecond\n", encoding="utf-8")

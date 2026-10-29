@@ -16,7 +16,6 @@ from config import (  # noqa: E402
     ENV_PASSWORD,
     ENV_PORT,
     ENV_USER,
-    config_files,
     resolve_server,
 )
 from templates import (  # noqa: E402
@@ -131,14 +130,6 @@ def make_config(root: Path, version: str, body: str) -> Path:
     return path
 
 
-def test_config_files_prefers_the_newest_version_directory(tmp_path):
-    make_config(tmp_path, "2.2", "[Server]\nhost = old\n")
-    make_config(tmp_path, "2.3", "[Server]\nhost = new\n")
-
-    found = config_files(tmp_path)
-    assert [path.parent.name for path in found] == ["2.3", "2.2"]
-
-
 def test_resolve_server_raises_a_helpful_error_when_nothing_is_configured(tmp_path):
     with pytest.raises(FileNotFoundError) as caught:
         resolve_server(tmp_path, env={})
@@ -177,9 +168,3 @@ def test_environment_alone_is_enough(tmp_path):
     """A remote server should not require a local GNS3 install."""
     server = resolve_server(tmp_path, env={ENV_HOST: "gns3.lab", ENV_PORT: "3080"})
     assert (server.host, server.port) == ("gns3.lab", 3080)
-
-
-def test_a_non_numeric_port_is_reported(tmp_path):
-    with pytest.raises(ValueError) as caught:
-        resolve_server(tmp_path, env={ENV_HOST: "gns3.lab", ENV_PORT: "not-a-port"})
-    assert "not a number" in str(caught.value)

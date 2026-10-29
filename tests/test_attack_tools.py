@@ -108,32 +108,27 @@ def test_reconnaissance_defaults_without_ack(attack_inventory):
     assert "LabOnly_" not in result.stdout
 
 
-def test_missing_ack_and_invalid_settings_fail_before_network():
-    assert invoke("mqtt/mqtt_bruteforce_attack.py", ack=False).returncode == 2
-    assert (
-        invoke(
-            "coap/coap_response_measurement.py", "--host", "8.8.8.8", "--dry-run"
-        ).returncode
-        == 2
-    )
-    assert (
-        invoke(
-            "coap/coap_response_measurement.py", "--rate", "nan", "--dry-run"
-        ).returncode
-        == 2
-    )
-    assert (
-        invoke(
-            "coap/coap_response_measurement.py", "--mode", "spoof", "--dry-run"
-        ).returncode
-        == 2
-    )
-    assert (
-        invoke(
-            "scanner/network_recon_scan.py", "--cidr", "10.77.0.0/16", "--dry-run"
-        ).returncode
-        == 2
-    )
+@pytest.mark.parametrize(
+    ("tool", "arguments", "diagnostic"),
+    [
+        (
+            "coap_response_measurement",
+            ("--host", "8.8.8.8"),
+            "private lab network",
+        ),
+        ("coap_response_measurement", ("--rate", "nan"), "finite positive number"),
+        (
+            "coap_response_measurement",
+            ("--mode", "spoof"),
+            "needs --experiment-id",
+        ),
+        ("network_recon_scan", ("--cidr", "10.77.0.0/16"), "at most 256"),
+    ],
+)
+def test_invalid_settings_fail_at_their_guard(tool, arguments, diagnostic):
+    result = invoke(tool, *arguments, "--dry-run")
+    assert result.returncode == 2
+    assert diagnostic in result.stdout + result.stderr
 
 
 def test_future_inventory_supplies_addresses_and_ports(tmp_path, attack_inventory):

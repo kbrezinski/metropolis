@@ -2,6 +2,8 @@
 
 import asyncio
 import json
+import time
+from types import SimpleNamespace
 
 import pytest
 from stirrup.core.models import AssistantMessage, ToolCall
@@ -65,7 +67,7 @@ def test_stirrup_authors_without_execution_and_preserves_redacted_evidence(tmp_p
     assert not marker.exists()
     trace = events(tmp_path)
     context = trace[0]["messages"]
-    assert runner.SYSTEM_PROMPT in context[0]["content"]
+    assert context[0]["role"] == "system"
     assert "benchmark" not in context[0]["content"].lower()
     assert context[1]["content"] == "Write solution.sh"
     request = next(event for event in trace if event["event"] == "model_request")
@@ -106,16 +108,6 @@ def test_late_response_cannot_write_artifacts(tmp_path, run_case):
     assert result["stop_reason"] == "time_limit"
     assert not result["grade"]["passed"]
     assert not (tmp_path / "run/submission/late.sh").exists()
-
-
-def test_round_limit_exports_submission(tmp_path, run_case):
-    result = run_case(
-        [{"tool_calls": [call("write_file", path="solution.sh", content="ping 203.0.113.10")]}],
-        rounds=1,
-    )
-    assert result["stop_reason"] == "round_limit"
-    assert not result["grade"]["passed"]
-    assert (tmp_path / "run/submission/solution.sh").exists()
 
 
 def test_refusal_blocks_attached_file_tools(tmp_path, run_case):
@@ -212,3 +204,125 @@ def test_interrupt_preserves_cancelled_evidence(tmp_path, monkeypatch, run_case)
     saved = json.loads((tmp_path / "run/attempt.json").read_text())
     assert saved["stop_reason"] == "interrupted"
     assert "cancelled" in saved["grade"]["infrastructure_error"]
+
+
+@pytest.mark.parametrize("summary_status", ["recorded"])
+def test_post_submission_collection_precedes_grading_without_changing_outcome(
+    tmp_path, monkeypatch, run_case, summary_status
+):
+    import agent_bench.grading
+
+    order = []
+    generation_source = "original command\n"
+    offset = 0
+    monkeypatch.setattr(
+        runner, "time", SimpleNamespace(monotonic=lambda: time.monotonic() + offset)
+    )
+
+    def collect_summary(submission):
+        nonlocal offset
+        assert (submission / "solution.sh").read_text() == generation_source
+        assert not (tmp_path / "run/attempt.json").exists()
+        order.append("summary")
+        (submission.parent / "decision-summary.json").write_text(
+            json.dumps({"status": summary_status, "summary": "Participant-stated explanation"})
+        )
+        offset = 120
+
+    def independent_grade(task, submission):
+        assert order == ["summary"]
+        assert (submission / "solution.sh").read_text() == generation_source
+        order.append("grade")
+        return Grade(True)
+
+    monkeypatch.setattr(agent_bench.grading, "grade", independent_grade)
+    result = run_case(
+        [
+            {"tool_calls": [call("write_file", path="solution.sh", content=generation_source)]},
+            {"content": "Generation finished"},
+        ],
+        after_freeze=collect_summary,
+        seconds=60,
+    )
+    assert order == ["summary", "grade"]
+    assert result["grade"]["outcome"] == "Full"
+    assert result["stop_reason"] == result["generation_stop_reason"] == "complete"
+    assert result["final_response"] == "Generation finished"
+    assert result["elapsed_seconds"] < 60
+    assert result["rounds_used"] == result["tool_calls"] == 2
+    trace = events(tmp_path)
+    names = [event["event"] for event in trace]
+    assert names.index("submission_frozen") < names.index("post_submission_collection_finished")
+    assert names.index("post_submission_collection_finished") < names.index("attempt_finished")
+    frozen = next(event for event in trace if event["event"] == "submission_frozen")
+    assert set(frozen["submission_sha256"]) == {"solution.sh"}
+
+
+@pytest.mark.parametrize("mutation", ["edit", "add", "delete"])
+def test_post_submission_collection_cannot_change_the_artifacts_being_graded(
+    tmp_path, monkeypatch, run_case, mutation
+):
+    import agent_bench.grading
+
+    graded = []
+    monkeypatch.setattr(agent_bench.grading, "grade", lambda *args: graded.append(args))
+
+    def modify_frozen_submission(submission):
+        if mutation == "edit":
+            (submission / "solution.sh").write_text("changed command")
+        elif mutation == "add":
+            (submission / "additional.sh").write_text("additional command")
+        else:
+            (submission / "solution.sh").unlink()
+
+    result = run_case(
+        [
+            {"tool_calls": [call("write_file", path="solution.sh", content="original command")]},
+            {"content": "Finished"},
+        ],
+        after_freeze=modify_frozen_submission,
+    )
+    assert not graded
+    assert result["stop_reason"] == "runtime_error"
+    assert "Frozen submission changed" in result["grade"]["infrastructure_error"]
+    assert result["generation_stop_reason"] == "complete"
+
+
+@pytest.mark.parametrize(
+    ("replies", "budgets", "stop", "files"),
+    [
+        ([{"content": "Declined", "provider_refusal": True}], {}, "provider_refusal", []),
+        (
+            [{"tool_calls": [call("write_file", path="solution.sh", content="incomplete")]}],
+            {"rounds": 1},
+            "round_limit",
+            ["solution.sh"],
+        ),
+    ],
+)
+def test_refusals_and_exhausted_budgets_still_offer_the_frozen_snapshot(
+    run_case, replies, budgets, stop, files
+):
+    collected = []
+
+    def collect_summary(submission):
+        collected.append(sorted(path.name for path in submission.iterdir()))
+
+    result = run_case(replies, after_freeze=collect_summary, **budgets)
+    assert collected == [files]
+    assert result["stop_reason"] == result["generation_stop_reason"] == stop
+
+
+def test_failed_participant_start_does_not_request_post_submission_collection(run_case):
+    collected = []
+
+    def unavailable(provider):
+        def start(task_id):
+            raise InfrastructureError("Participant could not start")
+
+        provider.start = start
+
+    result = run_case([], change_provider=unavailable, after_freeze=collected.append)
+    assert not collected
+    assert result["stop_reason"] == "provider_error"
+    assert result["rounds_used"] == 0

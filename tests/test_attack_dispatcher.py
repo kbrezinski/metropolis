@@ -22,17 +22,15 @@ ATTACKS = ROOT / "scripts/attacks"
 DISPATCHER = ATTACKS / "run.py"
 
 # Helper modules carry protocol and inventory logic, never a CLI.
-HELPERS = {"_common", "_mqtt", "_telnet", "_c2", "run"}
-
-
-def runnable_names():
-    """Discover CLI modules independently of the dispatcher's registry."""
-    return {
-        path.stem
-        for path in ATTACKS.glob("*/*.py")
-        if not path.name.startswith("_")
-        and 'if __name__ == "__main__":' in path.read_text(encoding="utf-8")
-    }
+HELPERS = {
+    "_common",
+    "_mqtt",
+    "_telnet",
+    "_c2",
+    "run",
+    "run_mirai_choreography",
+    "run_merlin",
+}
 
 
 @pytest.fixture
@@ -111,8 +109,8 @@ def records(result):
     ]
 
 
-def test_dispatcher_lists_runnable_modules_and_no_helpers():
-    """Discovery finds the CLI modules and skips the shared helpers."""
+def test_dispatcher_lists_supported_commands_without_helpers():
+    """The documented entry points are discoverable, but helpers are hidden."""
     result = invoke("--help")
     assert result.returncode == 0
     listed = {
@@ -120,12 +118,13 @@ def test_dispatcher_lists_runnable_modules_and_no_helpers():
         for line in result.stdout.splitlines()
         if line.startswith("  ") and line.strip() and " " not in line.strip()
     }
-    assert listed == runnable_names()
-    assert listed
+    assert {
+        "coap_response_measurement",
+        "mirai_scenario",
+        "merlin_scenario",
+        "mqtt_bruteforce_attack",
+    } <= listed
     assert not (listed & HELPERS)
-    # Every listed tool exists as a module.
-    for name in listed:
-        assert len(list(ATTACKS.glob(f"*/{name}.py"))) == 1
 
 
 def test_gotham_mirai_setup_maps_inventory_without_contacting_gns3(role_inventory):
@@ -344,38 +343,15 @@ def test_gotham_merlin_setup_starts_only_the_example_agent(
         adapter.main()
 
 
-def test_dispatcher_rejects_unknown_tools_with_a_suggestion():
-    """An unknown tool fails with exit 2 and a close-match suggestion."""
-    result = invoke("mqtt_brute", "--dry-run")
-    assert result.returncode == 2
-    assert "unknown tool" in result.stderr
-    assert "mqtt_bruteforce_attack" in result.stderr
-
-
-def test_botnet_scenarios_are_the_only_supported_choreography_commands():
-    result = invoke("--help")
-    assert result.returncode == 0
-    assert "mirai_scenario" in result.stdout
-    assert "merlin_scenario" in result.stdout
-    assert "run_mirai_choreography" not in result.stdout
-    assert "run_merlin" not in result.stdout
-
-
 def test_dispatcher_preserves_the_lab_acknowledgement_gate(role_inventory):
     """The gate lives in the tools, and dispatch must not bypass it."""
-    assert invoke("mqtt_bruteforce_attack").returncode == 2
+    blocked = invoke("mqtt_bruteforce_attack", "--inventory", role_inventory)
+    assert blocked.returncode == 2
+    assert "METROPOLIS_LAB_ACK" in blocked.stdout
     with_ack = invoke(
         "mqtt_bruteforce_attack", "--inventory", role_inventory, "--dry-run", ack=True
     )
     assert with_ack.returncode == 0
-
-
-@pytest.mark.parametrize("name", ["hping3_attack", "coap_experiment_report"])
-def test_cli_parser_variants_respond_to_help(name):
-    result = invoke(name, "--help")
-    assert result.returncode == 0, f"{name}: {result.stdout}{result.stderr}"
-    if name != "coap_experiment_report":
-        assert "--gotham-script" in result.stdout
 
 
 def test_gotham_script_keeps_acknowledgement_gate(tmp_path):

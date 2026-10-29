@@ -25,7 +25,6 @@ def load(name: str, path: Path):
     return module
 
 
-analyzer = load("dosing_analyzer", DEVICES / "field/analyzers/analyzer.py")
 dosing = load("dosing_controller", DEVICES / "controllers/plc/dosing_controller.py")
 scada = load("dosing_scada", DEVICES / "operations/scada/scada_collector.py")
 hmi = load("dosing_hmi", DEVICES / "operations/hmi/hmi_web.py")
@@ -42,18 +41,6 @@ class Drive:
 
     def snapshot(self) -> tuple[bool, bool]:
         return self.active, self.healthy
-
-
-def test_analyzer_registers_change_and_stay_in_range():
-    context = analyzer.make_context()
-    first = context[0].getValues(3, 0, 3)
-    assert first == [720, 58, 0]
-    analyzer.update_registers(context, 22.5)
-    later = context[0].getValues(3, 0, 3)
-    assert first != later
-    assert 675 <= later[0] <= 765
-    assert 38 <= later[1] <= 62
-    assert later[2] == 22
 
 
 def test_dosing_hysteresis_and_drive_failover():

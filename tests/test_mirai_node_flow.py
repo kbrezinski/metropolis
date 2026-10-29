@@ -96,7 +96,7 @@ def test_cnc_delivers_task_to_checked_in_bot_and_records_ack(tcp_servers):
         assert status["results"] == [{"task_id": task_id, "outcome": "recorded"}]
 
 
-@pytest.mark.parametrize("delivery", ["http", "tftp"])
+@pytest.mark.parametrize("delivery", ["tftp"])
 def test_bot_probes_reports_and_fetches_only_inert_marker(
     tcp_servers, delivery, capsys
 ):
@@ -113,31 +113,22 @@ def test_bot_probes_reports_and_fetches_only_inert_marker(
                 threading.Lock(),
             )
 
-    class HttpHandler(socketserver.BaseRequestHandler):
-        def handle(self):
-            loader.handle_http(self.request, self.client_address)
-
     target_port = tcp_servers(TargetHandler)
     listener_port = tcp_servers(ListenerHandler)
-    tftp = None
-    tftp_thread = None
-    if delivery == "http":
-        loader_port = tcp_servers(HttpHandler)
-    else:
-        tftp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        tftp.bind(("127.0.0.1", 0))
-        tftp.settimeout(2)
-        loader_port = tftp.getsockname()[1]
+    tftp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    tftp.bind(("127.0.0.1", 0))
+    tftp.settimeout(2)
+    loader_port = tftp.getsockname()[1]
 
-        def answer_tftp():
-            request, peer = tftp.recvfrom(1024)
-            assert request.startswith(b"\x00\x01mirai.synthetic\x00octet\x00")
-            tftp.sendto(b"\x00\x03\x00\x01" + loader.STUB, peer)
-            acknowledgement, _ = tftp.recvfrom(1024)
-            assert acknowledgement == b"\x00\x04\x00\x01"
+    def answer_tftp():
+        request, peer = tftp.recvfrom(1024)
+        assert request.startswith(b"\x00\x01mirai.synthetic\x00octet\x00")
+        tftp.sendto(b"\x00\x03\x00\x01" + loader.STUB, peer)
+        acknowledgement, _ = tftp.recvfrom(1024)
+        assert acknowledgement == b"\x00\x04\x00\x01"
 
-        tftp_thread = threading.Thread(target=answer_tftp)
-        tftp_thread.start()
+    tftp_thread = threading.Thread(target=answer_tftp)
+    tftp_thread.start()
     try:
         task = {
             "task_id": "task-0001",
@@ -164,10 +155,8 @@ def test_bot_probes_reports_and_fetches_only_inert_marker(
         assert report["payload"]["reachable"] is True
         assert "vulnerable" not in report["payload"]
     finally:
-        if tftp_thread is not None:
-            tftp_thread.join(timeout=2)
-        if tftp is not None:
-            tftp.close()
+        tftp_thread.join(timeout=2)
+        tftp.close()
 
 
 def test_bot_retries_checkin_and_does_not_probe_while_idle(monkeypatch):

@@ -80,7 +80,7 @@ def test_default_normalizes_whitespace_but_preserves_rows_fields_and_blanks(tmp_
     }
 
 
-def test_user_rules_select_fill_and_drop_rows_without_fixed_ips(tmp_path):
+def test_user_rules_select_fill_and_drop_fields_without_fixed_ips(tmp_path):
     report_path, _ = setup_extraction(tmp_path)
     rules = tmp_path / "rules.json"
     rules.write_text(

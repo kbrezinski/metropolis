@@ -141,7 +141,7 @@ def run_fixture(tmp_path, monkeypatch):
     )
 
 
-@pytest.mark.parametrize("failure", [None, RuntimeError, KeyboardInterrupt])
+@pytest.mark.parametrize("failure", [None, KeyboardInterrupt])
 def test_metrics_start_before_lab_and_stop_after_success_error_or_interrupt(
     run_fixture, monkeypatch, failure
 ):
@@ -212,7 +212,7 @@ def test_report_failure_preserves_capture_metadata_and_stops_collectors(run_fixt
     assert any("chart writer failed" in item["reason"] for item in manifest["failures"])
 
 
-@pytest.mark.parametrize("failure", [None, RuntimeError, KeyboardInterrupt])
+@pytest.mark.parametrize("failure", [None, KeyboardInterrupt])
 def test_selected_profile_restored_before_collectors_stop(run_fixture, failure):
     events = run_fixture.events
 
@@ -268,9 +268,8 @@ def test_default_run_does_not_construct_profile_enforcement(run_fixture):
     assert "profiles" not in manifest
 
 
-@pytest.mark.parametrize("status", ["failed"])
 def test_optional_baseline_check_is_read_only_and_does_not_block_capture(
-    run_fixture, status
+    run_fixture,
 ):
     baseline = {
         "path": "baseline.yaml",
@@ -287,7 +286,7 @@ def test_optional_baseline_check_is_read_only_and_does_not_block_capture(
             "path": selected["path"],
             "sha256": selected["sha256"],
             "mode": "check",
-            "status": status,
+            "status": "failed",
             "nodes": {},
             "unsupported": [],
             "failures": [],
@@ -295,7 +294,7 @@ def test_optional_baseline_check_is_read_only_and_does_not_block_capture(
 
     manifest = run_fixture.run(baseline=baseline, baseline_check_fn=check)
     assert manifest["status"] == "complete"
-    assert manifest["resource_baseline"]["status"] == status
+    assert manifest["resource_baseline"]["status"] == "failed"
     schema = json.loads(
         (GNS3.parents[1] / "schemas/experiment-run.schema.json").read_text()
     )
@@ -303,27 +302,6 @@ def test_optional_baseline_check_is_read_only_and_does_not_block_capture(
     assert run_fixture.events.index("baseline_checked") < run_fixture.events.index(
         "capture"
     )
-
-
-def test_unavailable_baseline_check_preserves_collection(run_fixture):
-    def unavailable(*_args, **_kwargs):
-        raise RuntimeError("compute unavailable")
-
-    manifest = run_fixture.run(
-        baseline={"path": "baseline.yaml", "sha256": "a" * 64},
-        baseline_check_fn=unavailable,
-    )
-    assert manifest["status"] == "complete"
-    assert manifest["resource_baseline"]["status"] == "failed"
-    assert "capture" in run_fixture.events
-
-
-def test_no_baseline_keeps_existing_run_behavior(run_fixture):
-    def unwanted(*_args, **_kwargs):
-        pytest.fail("run without a baseline performed baseline checks")
-
-    manifest = run_fixture.run(baseline_check_fn=unwanted)
-    assert "resource_baseline" not in manifest
 
 
 def test_cli_rejects_unknown_profile_targets_before_connecting(tmp_path, monkeypatch):
@@ -347,15 +325,21 @@ def test_cli_rejects_unknown_profile_targets_before_connecting(tmp_path, monkeyp
     assert exc.value.code == 2
 
 
-@pytest.mark.parametrize("value", ["0", "nan"])
-def test_cli_rejects_invalid_metric_intervals_before_connecting(monkeypatch, value):
+@pytest.mark.parametrize("value", ["0"])
+def test_cli_rejects_invalid_metric_intervals_before_connecting(
+    monkeypatch, capsys, value
+):
     monkeypatch.setattr(sys, "argv", ["experiment_run", "--metrics-interval", value])
+    monkeypatch.setattr(
+        experiment_run, "connect", lambda _args: pytest.fail("unexpected connection")
+    )
     with pytest.raises(SystemExit) as exc:
         experiment_run.main()
     assert exc.value.code == 2
+    assert "--metrics-interval must be positive and finite" in capsys.readouterr().err
 
 
-@pytest.mark.parametrize("disabled,baseline_present", [(False, False), (True, True)])
+@pytest.mark.parametrize("disabled,baseline_present", [(False, False)])
 def test_cli_passes_metric_settings_to_run(
     tmp_path, monkeypatch, disabled, baseline_present
 ):

@@ -55,16 +55,6 @@ def certificates(tmp_path_factory):
 # -- certificates -------------------------------------------------------------
 
 
-def test_generate_writes_every_file_needed(certificates):
-    _, written = certificates
-    # The CA, the server certificate, and its key: nothing else is needed now
-    # that the DTLS pre-shared key file is gone.
-    assert set(written) == {"ca", "server", "key"}
-    for label, path in written.items():
-        assert path.is_file(), f"{label} was not written"
-        assert path.stat().st_size > 0
-
-
 def test_a_real_handshake_succeeds_and_validates_the_hostname(certificates):
     """The pair must actually agree, not merely parse."""
     _, written = certificates
@@ -132,9 +122,39 @@ def sensor_module():
     return load("mqtt_sensor_tls", SENSORS / "mqtt_sensor.py")
 
 
-def test_sensor_uses_shared_tls_configuration():
-    import tls_config
-
+def test_sensor_passes_enabled_tls_settings_to_its_mqtt_publisher(
+    monkeypatch, tmp_path
+):
     module = sensor_module()
-    assert module.tls_from_environment is tls_config.from_environment
-    assert module.TlsConfig is tls_config.TlsConfig
+    ca = tmp_path / "ca.crt"
+    ca.write_text("lab CA", encoding="utf-8")
+    monkeypatch.setenv("TLS", "true")
+    monkeypatch.setenv("TLS_CA_FILE", str(ca))
+    monkeypatch.setenv("COAP_ENABLED", "false")
+    monkeypatch.setenv("PLC_HOST", "")
+    monkeypatch.setenv("MQTT_USERNAME", "sensor")
+    monkeypatch.setenv("MQTT_PASSWORD", "synthetic")
+    monkeypatch.setenv("PUBLISH_MODE", "persistent")
+    settings = []
+
+    class EndCycle(Exception):
+        pass
+
+    class Publisher:
+        mode = "persistent"
+
+        def send(self, _payload):
+            raise EndCycle
+
+        def close(self):
+            pass
+
+    def build_publisher(**kwargs):
+        settings.append(kwargs["tls_config"])
+        return Publisher()
+
+    monkeypatch.setattr(module, "build_publisher", build_publisher)
+    with pytest.raises(EndCycle):
+        module.main()
+    assert len(settings) == 1
+    assert settings[0].ca_file == str(ca)

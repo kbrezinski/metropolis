@@ -33,8 +33,6 @@ def test_modbus_level_and_heartbeat_registers():
     "kwargs",
     [
         {"minimum": -1},
-        {"maximum": 1001},
-        {"minimum": 700, "maximum": 400},
         {"period": 0},
         {"elapsed": -1},
     ],

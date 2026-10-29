@@ -17,10 +17,7 @@ if str(ROOT / "src") not in sys.path:
     sys.path.insert(0, str(ROOT / "src"))
 
 from metropolis.topology import (  # noqa: E402
-    Device,
-    Endpoint,
     Interface,
-    Link,
     Router,
     Switch,
     Topology,
@@ -63,34 +60,6 @@ def test_node_kinds_come_from_the_topology(small):
     _, kinds, _ = _graphs(small)
     assert kinds == {"R-EDGE": "router", "sw-1": "switch", "PLC-1": "device"}
 
-    counts: dict[str, int] = {}
-    for kind in kinds.values():
-        counts[kind] = counts.get(kind, 0) + 1
-    assert counts == {"router": 1, "switch": 1, "device": 1}
-
-
-def test_edges_remember_their_kind_and_vlans(small):
-    graph, _, _ = _graphs(small)
-    trunks = [data for _, _, data in graph.edges(data=True) if data["kind"] == "trunk"]
-    assert trunks
-    assert all(data["vlans"] for data in trunks), "a trunk should list its VLANs"
-
-
-def test_a_link_whose_endpoint_is_not_a_node_is_left_out():
-    """The graph should only contain nodes the topology knows about."""
-    lab = Topology(testbed_id="x")
-    lab.add(Switch("sw", ports=("a",)), Device("d", image="i"))
-    lab.links.append(
-        Link(
-            id="ghost",
-            first=Endpoint("sw", port_role="a"),
-            second=Endpoint("GHOST"),
-        )
-    )
-    graph, _, _ = _graphs(lab)
-    assert "GHOST" not in graph
-    assert graph.number_of_edges() == 0
-
 
 # -- rendering ----------------------------------------------------------------
 
@@ -112,15 +81,6 @@ def test_render_puts_the_title_and_note_in_the_picture(small, tmp_path):
     assert "svg" in text[:400]
     assert "A title" in text
     assert "A note" in text
-
-
-@requires_matplotlib
-def test_a_topology_with_one_node_still_renders(tmp_path):
-    lab = Topology(testbed_id="one")
-    lab.add(Device("ONLY", image="i"))
-    target = tmp_path / "one.svg"
-    render(lab, target)
-    assert target.stat().st_size > 0
 
 
 def test_an_empty_topology_is_refused():

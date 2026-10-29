@@ -56,8 +56,6 @@ def run_experiment(
     metrics_report_fn=finalize_metrics,
     profile_session_factory=ProfileSession,
     baseline_check_fn=configure_baseline,
-    rdp_run_factory=RdpRun,
-    mqtt_run_factory=MqttAclRun,
 ) -> dict:
     """Start telemetry before optional lab startup, and stop it after capture."""
     if not math.isfinite(metrics_interval) or metrics_interval <= 0:
@@ -70,7 +68,7 @@ def run_experiment(
         raise ValueError(
             "attack exceptions require router configuration and a baseline policy"
         )
-    rdp_run = rdp_run_factory(
+    rdp_run = RdpRun(
         client,
         project.project_id,
         inventory,
@@ -81,7 +79,7 @@ def run_experiment(
         readiness_timeout=min(20, startup_timeout),
     )
     mqtt_run = (
-        mqtt_run_factory(
+        MqttAclRun(
             client,
             project.project_id,
             inventory,

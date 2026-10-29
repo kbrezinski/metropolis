@@ -95,12 +95,10 @@ test("CLI requires an explicit positive cost limit for a scan", () => {
   assert.equal(parseOptions(["--max-cost-usd", "2", "--auth", "api-key"]).auth, "api-key");
 });
 
-test("preflight targets only settings and catalog, with no result files", async (t) => {
+test("preflight does not start a scan or create result files", async (t) => {
   const outputRoot = await testOutput(t);
-  let selected;
   const client = {
     async preflight(_repository, options) {
-      selected = options.target;
       return { target: { kind: "path" } };
     },
     async run() {
@@ -113,11 +111,9 @@ test("preflight targets only settings and catalog, with no result files", async 
     now: fixedTime,
     repositoryState: fixedRepositoryState,
   });
-  assert.deepEqual(selected, await currentTargets());
   assert.equal(result.status, "preflight");
   assert.equal(result.model, "gpt-6-sol");
   assert.equal(result.cyber_access_program, "daybreak_blue");
-  assert.equal(result.dataset, "testbeds/metropolis/datasets/water_treatment_v1");
   assert.deepEqual(await fs.readdir(outputRoot), []);
 });
 
@@ -245,8 +241,19 @@ test("scan interruption retains a manifest and failure details", async (t) => {
 });
 
 test("scenario validation checks family coverage, evidence paths, and CVE basis", async () => {
-  const families = await currentFamilies();
-  const targetPaths = await currentTargets();
+  const families = catalogFamilies({
+    schema_version: "1.0",
+    scenarios: [
+      { family: "beta", id: "beta.1" },
+      { family: "alpha", id: "alpha.2" },
+      { family: "alpha", id: "alpha.1" },
+    ],
+  });
+  assert.deepEqual([...families], [
+    ["alpha", ["alpha.1", "alpha.2"]],
+    ["beta", ["beta.1"]],
+  ]);
+  const targetPaths = ["testbeds/custom/datasets/v2/topology/network.yaml"];
   const report = scenarioOutput(families, targetPaths);
   assert.equal(validateScenarioReport(report, families, targetPaths), true);
   report.scenarios.pop();
@@ -343,7 +350,11 @@ test("review execution uses a selected future dataset and its catalog", async (t
       await fs.readFile(path.join(repoRoot, "scripts/security", prompt), "utf8"),
     );
   }
-  const targetPaths = (await discoverReviewTargets(root)).targetPaths;
+  const targetPaths = [
+    catalog,
+    `${dataset}/topology/networks.yaml`,
+    "testbeds/another_testbed/router/new_router.sh",
+  ];
   let seenOptions;
   const client = mockClient(async (_repository, options) => {
     seenOptions = options;

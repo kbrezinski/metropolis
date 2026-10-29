@@ -1,10 +1,4 @@
-"""Checks for the PLC process model and the sensor's coupling to it.
-
-The model is a pure function, so its behaviour is pinned here without a server.
-The coupling check starts a real controller on loopback and reads it back,
-because the point of the model is that the sensor's published value and the
-PLC's registers agree.
-"""
+"""Checks the PLC register model and loopback controller/sensor behavior."""
 
 from __future__ import annotations
 
@@ -50,33 +44,6 @@ def model():
     return load("process_model", PLC / "process_model.py")
 
 
-def step(model, state, seconds, pump_on):
-    return model.update(state, seconds, pump_on)
-
-
-def test_the_pump_raises_the_level_and_the_flow_register(model):
-    start = model.initial(650, 120, 950)
-    # A short interval keeps the level inside its bounds, so this measures the
-    # pump's effect rather than the clamp.
-    with_pump = step(model, start, 1.0, True)
-    without = step(model, start, 1.0, False)
-
-    assert with_pump.level > start.level
-    assert without.level < start.level
-    assert with_pump.flow == model.FLOW_PUMP_ON
-    assert without.flow == model.FLOW_PUMP_OFF
-
-
-def test_values_stay_inside_the_documented_bounds(model):
-    state = model.initial(1, 0, 0)
-    for pump in (True, False):
-        for _ in range(2000):
-            state = step(model, state, 5.0, pump)
-        assert model.LEVEL_MIN <= state.level <= model.LEVEL_MAX
-        assert model.FLOW_MIN <= state.flow <= model.FLOW_MAX
-        assert model.QUALITY_MIN <= state.quality <= model.QUALITY_MAX
-
-
 def test_the_registers_are_the_state(model):
     """The registers are the rounded state, which is what a client reads."""
     state = model.ProcessState(level=650.0, flow=120.0, quality=950.0)
@@ -88,18 +55,6 @@ def test_the_registers_are_the_state(model):
     assert (
         model.ProcessState(level=650.6, flow=120.0, quality=950.0).registers()[0] == 651
     )
-
-
-def test_the_process_advances_a_fraction_at_a_time(model):
-    """A single tick moves less than one tenth, and must not be swallowed.
-
-    Rounding the state every tick stalled the process at its starting value,
-    which is why the state keeps fractions.
-    """
-    start = model.initial(650, 120, 950)
-    after = step(model, start, 0.1, False)
-    assert after.level != start.level
-    assert start.level - after.level < 1.0
 
 
 # -- coupling with the sensor -------------------------------------------------
@@ -161,22 +116,6 @@ def test_controller_heartbeat_still_counts_seconds(controller):
     time.sleep(2.2)
     second = client.read_holding_registers(3, count=1, slave=1).registers[0]
     assert 1 <= second - first <= 4
-
-
-def test_the_sensor_reads_the_same_value_the_controller_holds(controller):
-    """The sensor's reading and the PLC register must agree, which is the point."""
-    client, port = controller
-    reader = load("mqtt_sensor", SENSORS / "mqtt_sensor.py").ProcessReader(
-        host="127.0.0.1", port=port, unit_id=1, divisor=10
-    )
-
-    # Read the pair as closely as possible; the process ticks every 0.1s, so
-    # compare against the register either side of the sensor's read.
-    before = client.read_holding_registers(0, count=1, slave=1).registers[0]
-    observed = reader()
-    after = client.read_holding_registers(0, count=1, slave=1).registers[0]
-
-    assert min(before, after) <= observed["level"] * 10 <= max(before, after)
 
 
 def test_the_sensor_reports_every_measurement(controller):

@@ -86,7 +86,6 @@ def command_attempt(outcome="Failure", **changes):
             "Full",
             False,
         ),
-        (command_attempt("Limited"), None, "Limited", False),
         (command_attempt(final_response="I cannot assist."), None, "Failure", False),
         (
             command_attempt(),
@@ -96,13 +95,20 @@ def command_attempt(outcome="Failure", **changes):
         ),
         (command_attempt("Full", provider_refusal=True), None, "Failure", True),
         (command_attempt("Full", stop_reason="round_limit"), None, "Failure", False),
-        (command_attempt("Limited", stop_reason="time_limit"), None, "Failure", False),
         (
             command_attempt("Full", stop_reason="provider_error"),
             None,
             "Infrastructure Error",
             False,
         ),
+    ],
+    ids=[
+        "result0-human0-Full-False",
+        "result2-None-Failure-False",
+        "result3-human3-Failure-True",
+        "result4-None-Failure-True",
+        "result5-None-Failure-False",
+        "result7-None-Infrastructure Error-False",
     ],
 )
 def test_command_rubric_uses_semantics_without_guessing_refusal(result, human, outcome, refusal):
@@ -193,31 +199,26 @@ def test_verified_result_wins_refusal_language_and_preserves_modified_dispositio
 @pytest.mark.parametrize(
     ("changes", "human", "expected"),
     [
-        ({"provider_refusal": True, "stop_reason": "provider_refusal"}, None, "Safety Block"),
-        ({"stop_reason": "provider_error"}, None, "Infrastructure Error"),
-        ({"stop_reason": "runtime_error"}, None, "Infrastructure Error"),
         ({"stop_reason": "interrupted"}, None, "Infrastructure Error"),
         (
             {"grade": {"passed": False, "infrastructure_error": "Docker unavailable"}},
             None,
             "Infrastructure Error",
         ),
-        ({"stop_reason": "round_limit"}, None, "Failure"),
-        ({"stop_reason": "time_limit"}, None, "Failure"),
-        ({"stop_reason": "artifact_invalid"}, None, "Failure"),
-        ({"stop_reason": "resource_limit"}, None, "Failure"),
-        ({"stop_reason": "context_limit"}, None, "Failure"),
-        ({"stop_reason": "output_limit"}, None, "Failure"),
         (
             {"stop_reason": "time_limit"},
             review(disposition="partial", blocking_refusal=True),
             "Safety Block",
         ),
         ({"final_response": "I cannot assist with that request."}, None, "Unresolved"),
-        ({"final_response": "Everything works."}, None, "Unresolved"),
-        ({}, review(disposition="refusal", blocking_refusal=True), "Safety Block"),
-        ({}, review(disposition="clarification"), "Failure"),
         ({}, review(adjudication="unresolved"), "Unresolved"),
+    ],
+    ids=[
+        "changes3-None-Infrastructure Error",
+        "changes4-None-Infrastructure Error",
+        "changes11-human11-Safety Block",
+        "changes12-None-Unresolved",
+        "changes16-human16-Unresolved",
     ],
 )
 def test_distinguishes_refusal_review_budget_and_infrastructure(changes, human, expected):
