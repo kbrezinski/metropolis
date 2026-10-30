@@ -55,8 +55,8 @@
       "type": "object",
       "required": ["name"],
       "properties": {
-        "name": { "type": "string", "pattern": "^eth[0-9]+$" },
-        "kind": { "enum": ["trunk"] },
+        "name": { "type": "string", "pattern": "^(?:eth|vti)[0-9]+$" },
+        "kind": { "enum": ["trunk", "vti"] },
         "cidr": {
           "type": "string",
           "pattern": "^(?:[0-9]{1,3}\\.){3}[0-9]{1,3}/(?:[0-9]|[12][0-9]|3[0-2])$"
@@ -68,6 +68,16 @@
         },
         "description": { "type": "string" }
       },
+      "allOf": [
+        {
+          "if": { "properties": { "name": { "pattern": "^vti" } } },
+          "then": {
+            "required": ["cidr", "kind"],
+            "properties": { "kind": { "const": "vti" }, "vlans": { "maxItems": 0 } }
+          },
+          "else": { "properties": { "kind": { "const": "trunk" } } }
+        }
+      ],
       "additionalProperties": false
     },
     "switch": {

@@ -119,6 +119,16 @@ TEMPLATES: tuple[ImageTemplate, ...] = (
         description="MQTT subscriber that logs received events",
     ),
     spec(
+        "Metropolis telemetry relay",
+        "metropolis/telemetry-relay:dev",
+        description="Mutually authenticated HTTPS status relay in the OT DMZ",
+    ),
+    spec(
+        "Metropolis enterprise reporting client",
+        "metropolis/enterprise-client:dev",
+        description="Read-only HTTPS consumer of DMZ status snapshots",
+    ),
+    spec(
         "Metropolis engineering workstation",
         "metropolis/engineering:dev",
         description="OpenSSH shell, SFTP, and RDP administration client",

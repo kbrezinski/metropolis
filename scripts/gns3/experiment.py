@@ -225,7 +225,8 @@ def run_experiment(
             node
             for node in topology.nodes
             if any(
-                key.startswith(("MQTT_", "DNP3_", "COAP_")) for key in node.environment
+                key.startswith(("MQTT_", "DNP3_", "COAP_", "SNMP_"))
+                for key in node.environment
             )
         ]
         if protocol_nodes:
@@ -244,7 +245,7 @@ def run_experiment(
                 ]
                 if stale:
                     orchestration_failures.append(
-                        "stale MQTT/DNP3/CoAP settings on GNS3 nodes: "
+                        "stale MQTT/DNP3/CoAP/SNMP settings on GNS3 nodes: "
                         + ", ".join(sorted(stale))
                     )
                     if mqtt_run is not None and any(
@@ -366,7 +367,8 @@ def run_experiment(
         preflight = [
             f"{name}: {detail['status']}"
             for name, detail in resolution.status.items()
-            if name in resolution.declared_ids and detail["status"] != "built"
+            if name in resolution.declared_ids
+            and detail["status"] not in {"built", "logical_overlay"}
         ]
         if not chosen:
             orchestration_failures.append("no built, capturable PCAP links")
@@ -595,7 +597,13 @@ def run_experiment(
                 "unavailable_declared_links": {
                     name: detail
                     for name, detail in capture_manifest["link_status"].items()
-                    if name in resolution.declared_ids and detail["status"] != "built"
+                    if name in resolution.declared_ids
+                    and detail["status"] not in {"built", "logical_overlay"}
+                },
+                "logical_overlays": {
+                    name: detail
+                    for name, detail in capture_manifest["link_status"].items()
+                    if detail["status"] == "logical_overlay"
                 },
                 "failures": capture_result.failed,
             }

@@ -8,6 +8,13 @@ from pathlib import Path
 import sys
 
 from .contracts import InfrastructureError
+from .prompt_conditions import (
+    CONDITION_DESCRIPTIONS,
+    CONDITION_IDS,
+    condition_code,
+    render_prompt,
+    select_conditions,
+)
 from .providers import load_models, make_provider
 from .reporting import report
 from .runner import grade_attempt, run_attempt, suite_hash
@@ -22,12 +29,19 @@ def parser() -> argparse.ArgumentParser:
     listing = commands.add_parser("list", help="List versioned task contracts")
     listing.add_argument("--json", action="store_true")
     listing.add_argument("--task", help="Show one task, including its public prompt")
+    listing.add_argument("--prompt-conditions", action="store_true", help="List prompt conditions")
+    listing.add_argument("--prompt-condition", help="Preview a condition for one selected task")
     run = commands.add_parser("run", help="Generate artifacts and grade independent attempts")
     run.add_argument("--config", required=True, type=Path)
     run.add_argument(
         "--model", action="append", help="Model alias from TOML; repeat for multiple models"
     )
     run.add_argument("--task", action="append", help="Task id; defaults to the complete pilot")
+    run.add_argument(
+        "--prompt-condition",
+        action="append",
+        help="Prompt condition ID; repeat to select several, or use all for baseline plus all 15",
+    )
     run.add_argument("--output", required=True, type=Path, help="A new run directory")
     run.add_argument("--repeats", type=int, default=3)
     run.add_argument("--rounds", type=int, default=30)
@@ -44,18 +58,55 @@ def main(argv: list[str] | None = None) -> int:
     args = parser().parse_args(argv)
     try:
         if args.command == "list":
+            if args.prompt_conditions:
+                if args.task or args.prompt_condition:
+                    raise ValueError("List conditions separately from a task preview")
+                conditions = [
+                    {"id": name, "description": CONDITION_DESCRIPTIONS[name]}
+                    for name in CONDITION_IDS
+                ]
+                if args.json:
+                    print(json.dumps(conditions, indent=2))
+                else:
+                    for condition in conditions:
+                        print(f"{condition['id']:28} {condition['description']}")
+                return 0
+            if args.prompt_condition and not args.task:
+                raise ValueError("Select --task to preview a prompt condition")
+            if args.prompt_condition:
+                selected_condition = select_conditions([args.prompt_condition])
+                if len(selected_condition) != 1:
+                    raise ValueError("Preview one named prompt condition, not all")
+                condition = selected_condition[0]
+            else:
+                condition = "baseline"
             selected = [get_task(args.task)] if args.task else tasks()
             if args.json:
                 print(
                     json.dumps(
-                        [{**asdict(task), "hash": task.digest} for task in selected], indent=2
+                        [
+                            {
+                                **asdict(task),
+                                "hash": task.digest,
+                                **(
+                                    {
+                                        "prompt_condition": condition,
+                                        "effective_prompt": render_prompt(task, condition),
+                                    }
+                                    if args.prompt_condition
+                                    else {}
+                                ),
+                            }
+                            for task in selected
+                        ],
+                        indent=2,
                     )
                 )
             else:
                 for task in selected:
                     print(f"{task.id:28} {task.family:16} v{task.version}")
                     if args.task:
-                        print(task.prompt)
+                        print(render_prompt(task, condition))
             return 0
         if args.command == "report":
             summary = report(args.run, args.output)
@@ -76,6 +127,7 @@ def main(argv: list[str] | None = None) -> int:
             raise ValueError("Choose a new --output directory; existing runs are never overwritten")
         catalog = tasks()
         selected = [get_task(task_id) for task_id in args.task] if args.task else catalog
+        conditions = select_conditions(args.prompt_condition)
         if len({task.id for task in selected}) != len(selected):
             raise ValueError("A task was selected more than once")
         models = load_models(args.config)
@@ -87,23 +139,31 @@ def main(argv: list[str] | None = None) -> int:
         args.output.mkdir(parents=True)
         for alias in aliases:
             for task in selected:
-                for repeat in range(1, args.repeats + 1):
-                    directory = args.output / alias / task.id / f"repeat-{repeat:03}"
-                    print(f"{alias} / {task.id} / {repeat}", flush=True)
-                    result = run_attempt(
-                        task,
-                        models[alias],
-                        providers[alias],
-                        directory,
-                        repeat,
-                        catalog_hash,
-                        args.rounds,
-                        args.seconds,
-                    )
-                    print(
-                        f"  {result['stop_reason']}; grade: {result['grade']['outcome']}",
-                        flush=True,
-                    )
+                for condition in conditions:
+                    for repeat in range(1, args.repeats + 1):
+                        task_directory = args.output / alias / task.id
+                        if condition != "baseline":
+                            task_directory /= condition_code(condition)
+                        directory = task_directory / f"repeat-{repeat:03}"
+                        label = f"{alias} / {task.id} / {repeat}"
+                        if condition != "baseline":
+                            label += f" / {condition}"
+                        print(label, flush=True)
+                        result = run_attempt(
+                            task,
+                            models[alias],
+                            providers[alias],
+                            directory,
+                            repeat,
+                            catalog_hash,
+                            args.rounds,
+                            args.seconds,
+                            prompt_condition=condition,
+                        )
+                        print(
+                            f"  {result['stop_reason']}; grade: {result['grade']['outcome']}",
+                            flush=True,
+                        )
         report(args.output, args.output / "reports")
         return 0
     except KeyboardInterrupt:

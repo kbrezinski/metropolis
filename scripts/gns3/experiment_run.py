@@ -19,12 +19,18 @@ from _cli import (
     add_server_arguments,
     connect,
     load_documents,
+    router_scripts,
     template_name_by_image,
 )
 from collect_device_logs import docker_host_mapping
 from experiment import run_experiment
 from firewall_policy import compile_policy, parse_attack_exception
-from router_config import DEFAULT_PASSWORD, DEFAULT_USERNAME
+from router_config import (
+    DEFAULT_PASSWORD,
+    DEFAULT_USERNAME,
+    RouterError,
+    validate_router_secrets,
+)
 from run_profiles import load_profile
 from baseline_config import BASELINE_FILE, load_baseline
 from mqtt_acl_run import declared_probe
@@ -153,12 +159,20 @@ def main() -> int:
         baseline_firewall_commands, _ = compile_policy(
             dataset, infrastructure, inventory
         )
-    except (ValueError, KeyError, FileNotFoundError) as exc:
+        if args.configure_routers:
+            validate_router_secrets(router_scripts(infrastructure))
+    except (ValueError, KeyError, FileNotFoundError, RouterError) as exc:
         parser.error(f"firewall policy: {exc}")
     declared = {link["id"] for link in link_plan["links"]}
     unknown = set(args.links or []) - declared
     if unknown:
         parser.error(f"unknown declared link(s): {', '.join(sorted(unknown))}")
+    overlays = {link["id"] for link in link_plan["links"] if link["kind"] == "overlay"}
+    if requested_overlays := set(args.links or []) & overlays:
+        parser.error(
+            "logical IPsec overlays are not GNS3 capture links: "
+            + ", ".join(sorted(requested_overlays))
+        )
     client = connect(args)
     project = client.project_by_name(args.project)
     if project is None:
@@ -178,6 +192,7 @@ def main() -> int:
         "dataset_version": dataset.name,
         "dataset_path": str(dataset),
         "project_name": project.name,
+        "ipsec_tunnels": firewall_report.get("ipsec_tunnels", []),
         "topology_document_sha256": {
             str(path.relative_to(dataset)): hashlib.sha256(
                 path.read_bytes()

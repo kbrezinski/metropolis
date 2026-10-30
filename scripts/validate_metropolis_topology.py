@@ -13,6 +13,8 @@ import re
 import yaml
 
 from gns3.mqtt_acl import compile_mqtt_access
+from gns3.firewall_policy import compile_policy
+from gns3.telemetry_config import compile_telemetry
 
 try:
     from jsonschema import Draft202012Validator
@@ -22,8 +24,8 @@ except ImportError:  # pragma: no cover - the dev dependency group provides it
         "run 'uv sync --group dev'"
     ) from None
 
-# "GNS3 interface map:" entries read "ethN -> neighbour, detail".
-INTERFACE_MAP = re.compile(r"^#\s+(eth\d+)\s*->\s*(.+?)\s*$")
+# Physical and logical interface-map entries use their configured names.
+INTERFACE_MAP = re.compile(r"^#\s+((?:eth|vti)\d+)\s*->\s*(.+?)\s*$")
 
 
 @dataclass(frozen=True)
@@ -204,7 +206,7 @@ def validate_topology(
     ospf_problems: list[str] = []
     router_ids: dict[IPv4Address, str] = {}
     address_pattern = re.compile(
-        r"set interfaces ethernet \S+(?: vif (\d+))? address '([^']+)'"
+        r"^set interfaces (?:ethernet|vti) \S+(?: vif (\d+))? address '([^']+)'", re.M
     )
     ospf_pattern = re.compile(r"^set protocols ospf area 0 network '([^']+)'$", re.M)
     active_pattern = re.compile(
@@ -269,7 +271,25 @@ def validate_topology(
                         f"{router_file.name}: VLAN {vlan} on {address.network} "
                         f"does not match address-plan VLAN {plan_record.get('vlan_id')}"
                     )
-        connected = {address.network for address in local_addresses}
+        configured_interfaces = {
+            f"{base}.{vlan}" if vlan else base: ip_interface(address)
+            for base, vlan, address in re.findall(
+                r"^set interfaces (?:ethernet|vti) ((?:eth|vti)\d+)(?: vif (\d+))? address '([^']+)'$",
+                text,
+                re.M,
+            )
+        }
+        underlay_interfaces = set(
+            re.findall(
+                r"^set vpn ipsec ipsec-interfaces interface '([^']+)'$", text, re.M
+            )
+        )
+        underlay_networks = {
+            address.network
+            for interface, address in configured_interfaces.items()
+            if interface in underlay_interfaces
+        }
+        connected = {address.network for address in local_addresses} - underlay_networks
         advertised = {ip_network(value) for value in ospf_pattern.findall(text)}
         if advertised != connected:
             ospf_problems.append(
@@ -281,24 +301,20 @@ def validate_topology(
             ospf_problems.append(
                 f"{router_file.name}: OSPF interfaces are not passive by default"
             )
-        if "set protocols static route " in text:
+        if re.search(r"^set protocols static (?:route|interface-route)\b", text, re.M):
             ospf_problems.append(f"{router_file.name}: static routes remain configured")
-        configured_interfaces = {
-            f"{base}.{vlan}" if vlan else base: ip_interface(address)
-            for base, vlan, address in re.findall(
-                r"^set interfaces ethernet (eth\d+)(?: vif (\d+))? address '([^']+)'$",
-                text,
-                re.M,
-            )
-        }
         for interface in active_pattern.findall(text):
+            if interface in underlay_interfaces:
+                ospf_problems.append(
+                    f"{router_file.name}: IPsec underlay {interface} must not run OSPF"
+                )
             if interface not in configured_interfaces:
                 ospf_problems.append(
                     f"{router_file.name}: active OSPF interface {interface} has no address"
                 )
             elif (
                 configured_interfaces[interface].network.prefixlen == 30
-                and "set interfaces ethernet "
+                and f"set interfaces {'vti' if interface.startswith('vti') else 'ethernet'} "
                 f"{interface.replace('.', ' vif ', 1)} ip ospf network 'point-to-point'"
                 not in lines
             ):
@@ -466,6 +482,28 @@ def validate_topology(
                 ),
             )
         )
+        resolved_infrastructure = {
+            **infrastructure,
+            "routers": [
+                {**router, "config": str(repository_root / router["config"])}
+                for router in infrastructure.get("routers", [])
+            ],
+        }
+        try:
+            compile_policy(dataset_root, resolved_infrastructure, inventory)
+        except (ValueError, KeyError, OSError) as exc:
+            policy_problems = (str(exc),)
+        else:
+            policy_problems = ()
+        checks.append(
+            Check("IPsec overlays and routed firewall policy compile", policy_problems)
+        )
+    checks.append(
+        Check(
+            "IPsec configuration uses compatible IKEv2 profiles",
+            tuple(_validate_ipsec_profiles(router_sources, link_plan)),
+        )
+    )
     checks.append(
         Check(
             "Link plan matches the inventory, address plan, and router interfaces",
@@ -504,8 +542,95 @@ def validate_topology(
     return checks
 
 
+def _validate_ipsec_profiles(
+    router_sources: dict[str, Path], link_plan: dict
+) -> list[str]:
+    """Check local VTI prerequisites and matching peer cryptographic profiles."""
+    problems: list[str] = []
+    profiles: dict[tuple[str, str], tuple] = {}
+    for node, source in router_sources.items():
+        if not source.is_file():
+            continue
+        text = source.read_text(encoding="utf-8")
+        bindings = re.findall(
+            r"^set vpn ipsec site-to-site peer '?([^'\s]+)'? vti bind '(vti\d+)'$",
+            text,
+            re.M,
+        )
+        if (
+            bindings
+            and "set vpn ipsec options disable-route-autoinstall"
+            not in text.splitlines()
+        ):
+            problems.append(f"{node}: IPsec VTI requires disable-route-autoinstall")
+        for peer, interface in bindings:
+            prefix = rf"^set vpn ipsec site-to-site peer '?{re.escape(peer)}'? "
+            ike = re.search(prefix + r"ike-group '([^']+)'$", text, re.M)
+            esp = re.search(prefix + r"vti esp-group '([^']+)'$", text, re.M)
+            if ike is None or esp is None:
+                problems.append(
+                    f"{node} {interface}: IPsec peer requires IKE and ESP groups"
+                )
+                continue
+            ike_group, esp_group = re.escape(ike.group(1)), re.escape(esp.group(1))
+            if not re.search(
+                rf"^set vpn ipsec ike-group {ike_group} key-exchange 'ikev2'$",
+                text,
+                re.M,
+            ):
+                problems.append(f"{node} {interface}: IPsec peer requires IKEv2")
+            ike_proposals = tuple(
+                sorted(
+                    re.findall(
+                        rf"^set vpn ipsec ike-group {ike_group} proposal \d+ (.+)$",
+                        text,
+                        re.M,
+                    )
+                )
+            )
+            esp_proposals = tuple(
+                sorted(
+                    re.findall(
+                        rf"^set vpn ipsec esp-group {esp_group} proposal \d+ (.+)$",
+                        text,
+                        re.M,
+                    )
+                )
+            )
+            esp_settings = tuple(
+                sorted(
+                    re.findall(
+                        rf"^set vpn ipsec esp-group {esp_group} ((?:mode|pfs) .+)$",
+                        text,
+                        re.M,
+                    )
+                )
+            )
+            if (
+                not ike_proposals
+                or not esp_proposals
+                or "mode 'tunnel'" not in esp_settings
+            ):
+                problems.append(
+                    f"{node} {interface}: incomplete IKE/ESP tunnel profile"
+                )
+            profiles[node, interface] = (ike_proposals, esp_proposals, esp_settings)
+    for link in link_plan["links"]:
+        if link["kind"] != "overlay":
+            continue
+        keys = [(end["node"], end.get("interface")) for end in link["endpoints"]]
+        if (
+            all(key in profiles for key in keys)
+            and profiles[keys[0]] != profiles[keys[1]]
+        ):
+            problems.append(
+                f"{link['id']}: IPsec endpoints have incompatible IKE/ESP profiles"
+            )
+    return problems
+
+
 def _router_interfaces(router_file: Path) -> tuple[set[str], set[tuple[int, int]]]:
-    """Interface numbers and (vif, vlan) pairs a router script configures."""
+    """Ethernet numbers, VTI names, and (vif, vlan) pairs in a script."""
     text = router_file.read_text(encoding="utf-8")
     numbers: set[str] = set()
     subinterfaces: set[tuple[int, int]] = set()
@@ -514,6 +639,7 @@ def _router_interfaces(router_file: Path) -> tuple[set[str], set[tuple[int, int]
         numbers.add(number)
         if subinterface := re.search(r"vif (\d+)", rest):
             subinterfaces.add((int(number), int(subinterface.group(1))))
+    numbers.update(re.findall(r"^set interfaces vti (vti\d+)\b", text, re.M))
     return numbers, subinterfaces
 
 
@@ -521,12 +647,12 @@ def _router_addresses(router_file: Path) -> dict[str, str]:
     """Address configured on each router interface, keyed by interface number."""
     addresses: dict[str, str] = {}
     for match in re.finditer(
-        r"^set interfaces ethernet eth(\d+) address '([^']+)'",
+        r"^set interfaces (?:ethernet|vti) ((?:eth|vti)\d+) address '([^']+)'",
         router_file.read_text(encoding="utf-8"),
         re.M,
     ):
         number, address = match.groups()
-        addresses[number] = address
+        addresses[number.removeprefix("eth")] = address
     return addresses
 
 
@@ -602,7 +728,7 @@ def _validate_router_snmp(
             addresses = {
                 ip_interface(value).ip
                 for value in re.findall(
-                    r"^set interfaces ethernet \S+(?: vif \d+)? address '([^']+)'$",
+                    r"^set interfaces (?:ethernet|vti) \S+(?: vif \d+)? address '([^']+)'$",
                     script,
                     re.M,
                 )
@@ -1156,6 +1282,10 @@ def _validate_device_targets(devices: list[dict]) -> list[str]:
     known_addresses = {ip_interface(device["address"]).ip for device in devices}
     by_name = {device["name"]: device for device in devices}
     problems = []
+    try:
+        compile_telemetry({"devices": devices})
+    except ValueError as exc:
+        problems.append(str(exc))
     for device in devices:
         environment = device.get("environment", {})
         if target_name := environment.get("COAP_TARGET_NODE"):
@@ -1315,6 +1445,25 @@ def _validate_service_flows(
     }
     for device in devices:
         environment = device.get("environment", {})
+        if relay_name := environment.get("TELEMETRY_RELAY_NODE"):
+            relay = devices_by_name.get(relay_name)
+            if relay is not None and "telemetry-relay" in relay.get("protocols", []):
+                try:
+                    port = int(
+                        relay.get("environment", {}).get("TELEMETRY_PORT", "443")
+                    )
+                except (TypeError, ValueError):
+                    continue  # The service-target check reports invalid ports.
+                source = ip_interface(device["address"]).ip
+                destination = ip_interface(relay["address"]).ip
+                if ip_network(device["subnet"]) != ip_network(
+                    relay["subnet"]
+                ) and not _flow_allows(
+                    firewall_policy, networks, source, destination, port
+                ):
+                    problems.append(
+                        f"{device['name']}: no TCP/{port} firewall flow to telemetry relay {relay_name}"
+                    )
         targets_text = environment.get("SCADA_TARGETS")
         if targets_text:
             try:

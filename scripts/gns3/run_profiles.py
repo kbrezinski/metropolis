@@ -90,6 +90,11 @@ def load_profile(
         for item in group
     )
     declared_links = Counter(item["id"] for item in link_plan.get("links", []))
+    logical_links = {
+        item["id"]
+        for item in link_plan.get("links", [])
+        if item.get("kind") == "overlay"
+    }
     for entries, key, declared in (
         (devices, "node", node_names),
         (links, "link", declared_links),
@@ -102,4 +107,8 @@ def load_profile(
                 raise ValueError(f"unknown declared profile {key}: {name}")
             if declared[name] != 1:
                 raise ValueError(f"ambiguous declared profile {key}: {name}")
+            if key == "link" and name in logical_links:
+                raise ValueError(
+                    f"profile link {name} is a logical overlay, not a physical GNS3 link"
+                )
     return document

@@ -133,6 +133,83 @@ def test_redaction_preserves_json_and_hides_pem_material():
     assert not inside
 
 
+@pytest.mark.parametrize("quote", ["", "'", '"'])
+def test_ipsec_psk_redaction_preserves_cli_and_structured_log_fields(quote):
+    synthetic_key = "lab-only-key-" + "A1_+/=-" * 5
+    command = (
+        "set vpn ipsec site-to-site peer 192.0.2.2 authentication "
+        f"pre-shared-secret {quote}{synthetic_key}{quote}"
+    )
+    safe, changed, _ = redact(command)
+    assert changed
+    assert synthetic_key not in safe
+    assert safe.endswith(f"pre-shared-secret {quote}[REDACTED]{quote}")
+    payload = {
+        "event": "configuration_changed",
+        "message": command,
+        "outcome": "success",
+    }
+    structured, changed, _ = redact(json.dumps(payload))
+    assert changed
+    decoded = json.loads(structured)
+    assert decoded == {**payload, "message": safe}
+    relay = parse_syslog(
+        f"<86>Oct 20 03:15:12 ROUTER configuration: {command}".encode(),
+        "192.0.2.1",
+    )
+    assert synthetic_key not in json.dumps(relay)
+    assert relay["source"] == "ROUTER"
+    assert relay["message"].endswith(safe)
+    structured_relay = parse_syslog(
+        f"<86>Oct 20 03:15:12 ROUTER {json.dumps(payload)}".encode(), "192.0.2.1"
+    )
+    assert json.loads(structured_relay["message"]) == decoded
+    assert synthetic_key not in structured_relay["raw_syslog"]
+    auth_line = "Failed password for invalid user guest from 192.0.2.3 port 40123 ssh2"
+    assert redact(auth_line) == (auth_line, False, False)
+
+
+def test_ipsec_psks_are_redacted_before_raw_and_normalized_writes(tmp_path):
+    synthetic_key = "lab-only-key-" + "B2_+/=-" * 5
+    command = (
+        "set vpn ipsec site-to-site peer 192.0.2.2 authentication "
+        f'pre-shared-secret "{synthetic_key}"'
+    )
+    record = {
+        "_metropolis_syslog": True,
+        "source": "ROUTER",
+        "event": "configuration_changed",
+        "message": command,
+        "raw_syslog": command,
+    }
+    process = FakeProcess((json.dumps(record) + "\n").encode(), b"")
+    collector = DeviceLogCollector(
+        FakeClient([node()]),
+        "project-1",
+        tmp_path / "run",
+        "run",
+        {"remote-1": "ssh://host"},
+        popen=lambda *_args, **_kwargs: process,
+    )
+    manifest = collector.run(0.01, poll_interval=0.001)
+    raw_path = (
+        collector.run_dir / manifest["logs"]["sources"]["MET-SCADA-01"]["raw_path"]
+    )
+    for path in [
+        raw_path,
+        collector.run_dir / "logs/devices.jsonl",
+        collector.run_dir / "logs/syslog.jsonl",
+    ]:
+        retained = path.read_text()
+        assert synthetic_key not in retained
+        assert "[REDACTED]" in retained
+    normalized = json.loads((collector.run_dir / "logs/devices.jsonl").read_text())
+    assert normalized["event"] == "configuration_changed"
+    assert normalized["source"] == "ROUTER"
+    assert normalized["redacted"] is True
+    assert normalized["attributes"]["raw_syslog"].endswith('"[REDACTED]"')
+
+
 def test_incremental_streaming_and_remote_compute_attribution(tmp_path):
     payload = (
         b'2026-10-20T03:15:12.482Z {"event":"ready","message":"started"}\n'
@@ -141,6 +218,25 @@ def test_incremental_streaming_and_remote_compute_attribution(tmp_path):
     )
     process = FakeProcess(payload, b"2026-10-20T03:15:15Z warning\n")
     commands = []
+    tunnels = [
+        {
+            "link_id": "custom-site-vpn",
+            "endpoints": [
+                {
+                    "node": "edge-a",
+                    "interface": "vti7",
+                    "underlay_interface": "eth2",
+                    "underlay_address": "192.0.2.1",
+                },
+                {
+                    "node": "site-b",
+                    "interface": "vti9",
+                    "underlay_interface": "eth3",
+                    "underlay_address": "192.0.2.2",
+                },
+            ],
+        }
+    ]
 
     def start(command, **kwargs):
         commands.append(command)
@@ -152,6 +248,7 @@ def test_incremental_streaming_and_remote_compute_attribution(tmp_path):
         tmp_path / "run-1",
         "run-1",
         {"remote-1": "ssh://gns3@compute.example"},
+        metadata={"ipsec_tunnels": tunnels},
         popen=start,
     )
     collector.discover()
@@ -173,6 +270,9 @@ def test_incremental_streaming_and_remote_compute_attribution(tmp_path):
     assert process.terminated
     assert manifest["status"] == "complete"
     assert manifest["logs"]["sources"]["MET-SCADA-01"]["lines"] == 4
+    assert manifest["ipsec_tunnels"] == tunnels
+    saved_manifest = json.loads((collector.run_dir / "manifest.json").read_text())
+    assert saved_manifest["ipsec_tunnels"] == tunnels
     raw_path = (
         tmp_path / "run-1" / manifest["logs"]["sources"]["MET-SCADA-01"]["raw_path"]
     )

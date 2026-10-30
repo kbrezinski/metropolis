@@ -72,7 +72,14 @@ def resolve_links(
     }
     result = LinkResolution()
     result.declared_ids = set(declared_ids)
+    logical = set(topology.logical_links)
     for declared_id in declared_ids:
+        if declared_id in logical:
+            result.status[declared_id] = {
+                "status": "logical_overlay",
+                "reason": "logical tunnel overlay, not a physical GNS3 capture link",
+            }
+            continue
         link = planned.get(declared_id)
         if link is None:
             result.status[declared_id] = {
@@ -177,8 +184,11 @@ def coverage_report(
     local: set[str] = set()
     routed: set[str] = set()
     linked_nodes: set[str] = set()
+    logical = {link["id"] for link in link_plan["links"] if link["kind"] == "overlay"}
     for link in link_plan["links"]:
         link_id = link["id"]
+        if link_id in logical:
+            continue
         ends = {endpoint["node"] for endpoint in link["endpoints"]}
         if link_id in physical:
             linked_nodes.update(ends)
@@ -189,7 +199,7 @@ def coverage_report(
     unresolved = {
         name: detail
         for name, detail in resolution.status.items()
-        if detail["status"] != "built"
+        if detail["status"] not in {"built", "logical_overlay"}
     }
     uncabled_devices = sorted(device_names - linked_nodes)
     uncabled_segments = sorted(
@@ -197,6 +207,12 @@ def coverage_report(
     )
     return {
         "declared_links": len(resolution.declared_ids),
+        "declared_physical_links": len(resolution.declared_ids - logical),
+        "logical_overlays": {
+            name: resolution.status[name]
+            for name in sorted(logical)
+            if name in resolution.status
+        },
         "built_capturable_links": len(physical),
         "selected_links": sorted(chosen),
         "undeclared_physical_links": sorted(
@@ -215,7 +231,9 @@ def coverage_report(
         "all_network_traffic_verified": False,
         "claim_limit": (
             "Selected links show potential capture coverage. Confirm local and "
-            "routed flows in PCAPs; uncabled or undeclared paths cannot be covered."
+            "routed flows in PCAPs; uncabled or undeclared paths cannot be covered. "
+            "WAN underlay captures do not establish decrypted tunnel-content coverage; "
+            "use physical LAN attachment captures for application traffic."
         ),
     }
 

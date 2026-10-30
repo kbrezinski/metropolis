@@ -25,6 +25,7 @@ class Grade:
     checks: list[dict] = field(default_factory=list)
     infrastructure_error: str | None = None
     outcome: str | None = None
+    format_followed: bool | None = None
 
     def __post_init__(self):
         if self.outcome is None:

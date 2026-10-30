@@ -59,6 +59,7 @@ Layer 2 segment for OT DMZ hosts.
 | 0 | `router-uplink` | access | untagged | `MET-OT-DMZ` eth1 — OT/DMZ router to the DMZ switch |
 | 1 | `dmz-host-1` | access | untagged | `MET-RDP-DMZ-01` — RDP administration endpoint on the OT DMZ segment |
 | 2 | `dmz-host-2` | spare | — | nothing cabled |
+| 3 | `telemetry-relay` | access | untagged | `MET-TELEMETRY-RELAY-01` — HTTPS status relay on the OT DMZ segment |
 
 ## `sw-enterprise`
 
@@ -67,7 +68,7 @@ Layer 2 enterprise-side segment attached to the boundary router.
 | Port | Role | Mode | VLANs | Far end |
 |---|---|---|---|---|
 | 0 | `router-uplink` | access | untagged | `MET-OT-DMZ` eth2 — OT/DMZ router to the enterprise switch |
-| 1 | `enterprise-host-1` | spare | — | nothing cabled |
+| 1 | `enterprise-host-1` | access | untagged | `MET-ENTERPRISE-REPORTING-01` — Read-only reporting client on the enterprise segment |
 
 ## `sw-attack-test`
 
@@ -115,8 +116,9 @@ Access Layer 2 segment for the raw-water lift station.
 - VLAN numbers and subnets come from `topology/address-plan.yaml`. The router
   trunks must carry the same VLANs listed here, and
   `scripts/validate_metropolis_topology.py` checks that they do.
-- Firewall policy and IPsec are router-layer concerns and are not configured.
-  Switch VLAN membership separates traffic; it does not filter it.
+- Firewall policy and IPsec are applied by the router configuration tooling,
+  not by these switches. Switch VLAN membership separates traffic; it does
+  not filter it. IPsec VTI overlays do not create additional switch ports.
 - This table is the declared intent. The Metropolis Open vSwitch Docker image
   receives these settings from the topology builder, which checks applied OVS
   state and reports any switch that remains unconfigured.

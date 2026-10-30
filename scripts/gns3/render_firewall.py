@@ -40,6 +40,7 @@ def main() -> int:
                     "baseline_flows": len(report["baseline_flows"]),
                     "attack_exceptions": len(report["attack_exceptions"]),
                     "local_subnet_flows": report["local_subnet_flows"],
+                    "ipsec_tunnels": report.get("ipsec_tunnels", []),
                     "routers": {name: len(lines) for name, lines in commands.items()},
                 },
                 indent=2,

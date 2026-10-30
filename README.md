@@ -128,13 +128,13 @@ guide:
 | Level 3.5 | OT DMZ | `10.20.40.0/24` |
 | Level 4 | Simulated enterprise network | `10.30.10.0/24` |
 | Lab-only test zone | Attack-generation hosts | `10.99.10.0/24` |
-| Inter-site transport | Simulated WAN underlay, with reserved IPsec overlays | `172.31.255.0/24`; `10.20.254.12/30` and `10.20.254.16/30` reserved |
+| Inter-site transport | Untrusted WAN underlay and two IPsec overlays | `172.31.255.0/24`; tunnels `10.20.254.12/30` and `10.20.254.16/30` |
 
 These ranges belong to Metropolis. Future testbeds can use the same schema with
 different CIDRs, or reuse an allocation pattern deliberately when two
 environments need to be comparable.
 
-The reference topology declares 73 GNS3 nodes across four plant cells—intake,
+The reference topology declares 75 GNS3 nodes across four plant cells—intake,
 dosing, filtration, and disinfection—and two remote RTU sites. It covers a
 treatment plant, a raw-water lift station, and a
 reservoir/booster station, with routers and switches organised by backbone and
@@ -145,27 +145,39 @@ notes](testbeds/metropolis/datasets/water_treatment_v1/README.md).
 Open vSwitch provides VLAN access ports and tagged trunks between cell,
 HMI, and operations networks. The builder applies those settings to the
 repo-owned switch image. Router scripts configure OSPF, BFD, read-only SNMP,
-and central syslog forwarding.
+central syslog forwarding, and site-to-site IPsec on the WAN edge and remote
+routers.
+
+A DMZ telemetry relay accepts selected SCADA status and alarms over mutually
+authenticated HTTPS. An enterprise reporting client reads those snapshots,
+adding regular traffic across the IT/OT boundary through specific TCP 443
+permissions. See the [data-path guide](scripts/gns3/README.md#dmz-and-enterprise-data-path).
 
 **The routing and firewall still need runtime validation.** Router scripts
 define interfaces and OSPF area 0. OSPF neighbors are limited to
-router transit links and the shared WAN; device-facing LANs are passive, and
-enterprise and attack-test networks are advertised passively for return routing. When routers are
+internal router transit links and IPsec tunnel interfaces; device-facing LANs
+are passive, and enterprise and attack-test networks are advertised passively
+for return routing. When routers are
 configured through the GNS3 tooling, `topology/firewall-policy.yaml` grants
 selected LANs or CIDRs access by protocol and port to all hosts in those
 networks, with default-deny VyOS 1.3 zone rules and narrow OSPF control-plane
 allowances. The loader removes the exact static routes installed by earlier
 Metropolis scripts. Attack-lab access requires a recorded per-run exception.
-The simulated WAN is the untrusted public-network underlay in this scenario;
-site-to-site IPsec is planned but not configured. GNS3 does not connect this
-segment to the actual Internet. Same-VLAN traffic bypasses the routers. See
-the [firewall run guide](scripts/gns3/README.md#routed-firewall-policy).
+`MET-OT-WAN` remains the dedicated edge firewall and IKEv2/IPsec hub for the
+raw-water and reservoir sites. Inter-site routing uses the encrypted tunnels;
+the untrusted WAN permits peer-scoped IPsec traffic, with no plaintext
+operational fallback. Configuration requires two controller-side keys; see the
+[IPsec setup guide](scripts/gns3/README.md#site-to-site-ipsec).
+GNS3 does not connect this simulated WAN to the actual Internet. Same-VLAN
+traffic bypasses the routers. The
+[layered topology view](docs/images/metropolis-purdue-topology.svg) shows all
+routers and switches, grouped devices, and the two tunnel endpoints.
 
 ## Device models
 
 The emulated set includes Modbus TCP, DNP3, cyclic EtherNet/IP, MQTT, CoAP, HTTP,
 RDP over TCP, SSH/SFTP, Telnet, DNS, NTP, SNMP, and syslog, alongside OSPF/BFD
-routing traffic. A separate UDP 3389 service is synthetic lab traffic:
+routing and IPsec/IKEv2 traffic. A separate UDP 3389 service is synthetic lab traffic:
 
 | Role | What it does |
 |---|---|
@@ -180,6 +192,7 @@ routing traffic. A separate UDP 3389 service is synthetic lab traffic:
 | SCADA | Polls four plant PLCs and two remote RTUs over Modbus TCP; polls remote RTU DNP3 events; publishes MQTT status and plant-PLC setpoint readback acknowledgements |
 | HMI | Authenticated HTTP panel on TCP 8080; shows telemetry and controller status, and sends a command only after an operator submits a setpoint |
 | Historian | Subscribes to MQTT topics and logs what it receives |
+| DMZ telemetry relay / enterprise reader | Separate writer/reader identities exchange selected SCADA status over HTTPS on TCP 443 |
 | Engineering workstation | OpenSSH shell and SFTP on TCP 22 |
 | Routine control client | Resolves the PLC via DNS, samples NTP, makes bounded periodic Modbus reads and writes, polls router uptime over read-only SNMP, and reads the sensor's CoAP status |
 | VyOS routers | Exchange OSPF and BFD control traffic on routed peer links; answer the control client's SNMP polls |
@@ -327,7 +340,10 @@ traffic; inspect the copied PCAPs before claiming coverage. See the
 [GNS3 capture guide](scripts/gns3/README.md#capture-coverage-and-files).
 
 For DNP3, include `attach-scada`, `attach-reservoir-rtu`,
-`attach-raw-water-rtu`, and the WAN uplinks. For the engineering CoAP read,
+`attach-raw-water-rtu`, and the WAN uplinks. WAN uplinks show encrypted IPsec
+traffic; the SCADA/RTU attachments and `link-core-wan` show application traffic
+before or after encryption. Logical tunnel links are reported separately and
+cannot be captured as GNS3 cables. For the engineering CoAP read,
 include `attach-control-client`, `attach-intake-sensor`, and their routed
 uplinks. The default experiment selects every built, capturable link.
 
@@ -371,10 +387,12 @@ investigation question.
 
 - **Firewall runtime behavior is unverified.** Offline policy checks and router
   command generation exist, but enforcement needs the user's GNS3 check. Same-
-  VLAN traffic is outside the router policy; the simulated WAN has no IPsec.
+  VLAN traffic is outside the router policy. IPsec configuration and offline
+  checks exist; live tunnel negotiation, routing, and enforcement remain unverified.
 - **Some protocols remain plaintext.** MQTT over TLS works with the lab CA for
   the sensor, SCADA, HMI, and historian. CoAP has no DTLS in this testbed, and
-  DNP3 has no secure authentication here; the remote-site WAN has no IPsec yet.
+  DNP3 has no secure authentication here. IPsec protects inter-site transport
+  when configured and established; it does not add application-level authentication.
 - **Process behavior is simplified.** Intake has a small coupled PLC model;
   newer cells and remote instruments emit independent readings. A register
   write is not a validated model of physical process damage.

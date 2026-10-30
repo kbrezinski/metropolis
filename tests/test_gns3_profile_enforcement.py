@@ -140,6 +140,7 @@ def profile_lab(tmp_path):
         ],
     }
     topology = SimpleNamespace(
+        logical_links=[],
         links=[
             PlannedLink(
                 "declared-link",
@@ -147,7 +148,7 @@ def profile_lab(tmp_path):
                 PlannedPort("PLC", 0),
                 PlannedPort("Switch", 2),
             )
-        ]
+        ],
     )
 
     def session():

@@ -21,6 +21,7 @@ from router_config import (  # noqa: E402
     Console,
     RouterError,
     apply_router_config,
+    configure_project_routers,
     expected_interfaces,
 )
 
@@ -282,3 +283,134 @@ def test_apply_reports_firewall_missing_from_router_readback(scripted, router_sc
     )
     assert result.error is None
     assert result.missing == ["firewall MET_e0"]
+
+
+@pytest.fixture
+def ipsec_script(tmp_path):
+    script = tmp_path / "edge.sh"
+    script.write_text(
+        ': "${CUSTOM_SITE_PSK:?Supply the site key}"\n'
+        "configure\n"
+        "set interfaces ethernet eth0 address '192.0.2.1/24'\n"
+        "set interfaces vti vti7 address '198.51.100.1/30'\n"
+        "set vpn ipsec site-to-site peer '192.0.2.2' local-address '192.0.2.1'\n"
+        "set vpn ipsec site-to-site peer '192.0.2.2' vti bind 'vti7'\n"
+        "set vpn ipsec site-to-site peer '192.0.2.2' authentication pre-shared-secret \"${CUSTOM_SITE_PSK}\"\n"
+        "commit\nsave\nexit\n",
+        encoding="utf-8",
+    )
+    return script
+
+
+IPSEC_READBACK = (
+    b"set interfaces vti vti7 address 198.51.100.1/30\n"
+    b"set vpn ipsec site-to-site peer 192.0.2.2 local-address 192.0.2.1\n"
+    b"set vpn ipsec site-to-site peer 192.0.2.2 vti bind vti7\n"
+    b"set vpn ipsec site-to-site peer 192.0.2.2 authentication pre-shared-secret '********'\n"
+)
+
+
+@pytest.mark.parametrize(
+    "value", [None, "too-short", "A" * 40 + "\ncommit", "B" * 40 + "'x"]
+)
+def test_ipsec_secret_preflight_prevents_all_router_changes(
+    ipsec_script, monkeypatch, value
+):
+    if value is None:
+        monkeypatch.delenv("CUSTOM_SITE_PSK", raising=False)
+    else:
+        monkeypatch.setenv("CUSTOM_SITE_PSK", value)
+
+    class NoConnection:
+        def project_nodes(self, *_):
+            pytest.fail("secret preflight must run before contacting GNS3")
+
+    result = configure_project_routers(
+        NoConnection(), "project", {"edge": str(ipsec_script)}
+    )
+    assert len(result) == 1
+    assert not result[0].applied
+    assert "CUSTOM_SITE_PSK" in result[0].error
+    if value:
+        assert value not in result[0].error
+
+
+def test_ipsec_applies_secret_and_checks_tunnel_readback(
+    ipsec_script, scripted, monkeypatch
+):
+    monkeypatch.setenv("CUSTOM_SITE_PSK", "A" * 48)
+    fake = scripted(
+        interfaces=b"eth0 192.0.2.1/24\nvti7 198.51.100.1/30",
+        configuration=IPSEC_READBACK,
+    )
+    result = apply_router_config("127.0.0.1", 1, ipsec_script, boot_timeout=1)
+    assert result.applied and result.error is None
+    assert result.missing == []
+    sent = b"".join(fake.sent).decode()
+    assert f'authentication pre-shared-secret "{"A" * 48}"' in sent
+    assert "${" not in sent and "Supply the site key" not in sent
+    assert expected_interfaces(ipsec_script)["vti7"] == {"198.51.100.1/30"}
+
+
+def test_ipsec_reports_wrong_binding_and_stale_plaintext_routing(
+    ipsec_script, scripted, monkeypatch
+):
+    monkeypatch.setenv("CUSTOM_SITE_PSK", "B" * 48)
+    ipsec_script.write_text(
+        "delete protocols ospf passive-interface-exclude 'eth0'\n"
+        + ipsec_script.read_text(),
+        encoding="utf-8",
+    )
+    scripted(
+        interfaces=b"eth0 192.0.2.1/24\nvti7 198.51.100.1/30",
+        configuration=IPSEC_READBACK.replace(b"vti bind vti7", b"vti bind vti8")
+        + b"set protocols ospf passive-interface-exclude eth0\n",
+    )
+    result = apply_router_config("127.0.0.1", 1, ipsec_script, boot_timeout=1)
+    assert any("vti bind 'vti7'" in item for item in result.missing)
+    assert any("obsolete configuration remains" in item for item in result.missing)
+
+
+def test_ipsec_commit_failure_redacts_echoed_secret(ipsec_script, monkeypatch):
+    secret = "C" * 48
+    longer_secret = secret + "-second-key"
+    monkeypatch.setenv("CUSTOM_SITE_PSK", secret)
+    monkeypatch.setenv("OTHER_SITE_PSK", longer_secret)
+    ipsec_script.write_text(
+        ipsec_script.read_text().replace(
+            "commit\n",
+            "set vpn ipsec site-to-site peer '192.0.2.3' authentication pre-shared-secret \"${OTHER_SITE_PSK}\"\ncommit\n",
+        ),
+        encoding="utf-8",
+    )
+
+    class FailedCommit(ScriptedSocket):
+        def _react(self, command):
+            if command == "commit":
+                self.pending += (
+                    f"Commit failed: keys {secret} {longer_secret}\n".encode()
+                    + self.config_prompt
+                )
+            else:
+                super()._react(command)
+
+    fake = FailedCommit()
+    monkeypatch.setattr(socket, "create_connection", lambda *a, **k: fake)
+    result = apply_router_config("127.0.0.1", 1, ipsec_script, boot_timeout=1)
+    assert not result.applied
+    assert secret not in result.error
+    assert "second-key" not in result.error
+    assert "[REDACTED]" in result.error
+
+
+def test_ipsec_unparseable_readback_is_reported_without_config_contents(
+    ipsec_script, scripted, monkeypatch
+):
+    monkeypatch.setenv("CUSTOM_SITE_PSK", "D" * 48)
+    scripted(
+        interfaces=b"eth0 192.0.2.1/24\nvti7 198.51.100.1/30",
+        configuration=b"set vpn ipsec invalid 'unterminated",
+    )
+    result = apply_router_config("127.0.0.1", 1, ipsec_script, boot_timeout=1)
+    assert result.applied
+    assert result.error == "router configuration readback could not be parsed"

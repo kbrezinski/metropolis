@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate a lab CA and server certificate for MQTT or synthetic Merlin.
+"""Generate lab TLS certificates for MQTT, synthetic Merlin, or telemetry.
 
 The Metropolis lab needs a CA and a server certificate for TLS services.
 Generating them here means the lab does not depend on a public certificate for a
@@ -13,11 +13,14 @@ The functions are importable, because the broker image generates its own
 certificates at startup if none were supplied. For Merlin, provide a selected
 dataset so the certificate covers that dataset's C&C address. Generate a
 separate bundle before building the Merlin images.
+Telemetry also uses the selected dataset, with distinct writer and reader
+client certificates in one shared bundle for its three images.
 
 Usage::
 
     uv run python scripts/gen_lab_certificates.py --out-dir certs
     uv run python scripts/gen_lab_certificates.py --service merlin --dataset DATASET
+    uv run python scripts/gen_lab_certificates.py --service telemetry --dataset DATASET
     uv run python scripts/gen_lab_certificates.py --help
 """
 
@@ -128,6 +131,110 @@ def write_pem(path: Path, certificate) -> None:
     path.write_bytes(certificate.public_bytes(serialization.Encoding.PEM))
 
 
+def build_client_certificate(ca_key, ca_certificate, common_name: str):
+    """Issue a distinct, client-only identity for a telemetry role."""
+    from cryptography import x509
+    from cryptography.hazmat.primitives import hashes
+    from cryptography.hazmat.primitives.asymmetric import rsa
+    from cryptography.x509.oid import NameOID
+
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    now = datetime.datetime.now(datetime.timezone.utc)
+    certificate = (
+        x509.CertificateBuilder()
+        .subject_name(x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, common_name)]))
+        .issuer_name(ca_certificate.subject)
+        .public_key(key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(now - datetime.timedelta(minutes=5))
+        .not_valid_after(now + datetime.timedelta(days=CERT_VALID_DAYS))
+        .add_extension(x509.BasicConstraints(ca=False, path_length=None), critical=True)
+        .add_extension(
+            x509.ExtendedKeyUsage([x509.oid.ExtendedKeyUsageOID.CLIENT_AUTH]),
+            critical=False,
+        )
+        .sign(ca_key, hashes.SHA256())
+    )
+    return key, certificate
+
+
+def telemetry_identities(dataset: Path) -> dict[str, str]:
+    """Resolve relay and client certificate identities from selected inventory."""
+    inventory_path = dataset / "device_instances" / "initial_devices.yaml"
+    inventory = yaml.safe_load(inventory_path.read_text(encoding="utf-8"))
+    devices = {device["name"]: device for device in inventory.get("devices", [])}
+    relays = [
+        device
+        for device in devices.values()
+        if "telemetry-relay" in device.get("protocols", [])
+    ]
+    if len(relays) != 1:
+        raise ValueError(
+            f"Expected one telemetry relay in {inventory_path}; found {len(relays)}"
+        )
+    relay = relays[0]
+    environment = relay.get("environment", {})
+    names = {"relay": relay["name"]}
+    for role, setting in (
+        ("writer", "TELEMETRY_WRITER_NODE"),
+        ("reader", "TELEMETRY_READER_NODE"),
+    ):
+        name = environment.get(setting)
+        if not name or name not in devices:
+            raise ValueError(
+                f"{relay['name']}: {setting} must name an inventoried node"
+            )
+        if (
+            devices[name].get("environment", {}).get("TELEMETRY_RELAY_NODE")
+            != relay["name"]
+        ):
+            raise ValueError(
+                f"{name}: TELEMETRY_RELAY_NODE must select {relay['name']}"
+            )
+        names[role] = name
+    if len(set(names.values())) != 3:
+        raise ValueError("Telemetry relay, writer, and reader must be distinct nodes")
+    names["address"] = str(ipaddress.ip_interface(relay["address"]).ip)
+    return names
+
+
+def generate_telemetry(out_dir: Path, identities: dict[str, str]) -> dict[str, Path]:
+    """Generate a shared CA and three role-specific keys; never write the CA key."""
+    from cryptography.hazmat.primitives import serialization
+
+    out_dir.mkdir(parents=True, exist_ok=True)
+    ca_key, ca_certificate = build_ca("Metropolis Telemetry CA")
+    ca_path = out_dir / "ca.crt"
+    write_pem(ca_path, ca_certificate)
+    keys = {
+        "server": build_server_certificate(
+            ca_key, ca_certificate, [identities["relay"]], [identities["address"]]
+        ),
+        "writer": build_client_certificate(
+            ca_key, ca_certificate, identities["writer"]
+        ),
+        "reader": build_client_certificate(
+            ca_key, ca_certificate, identities["reader"]
+        ),
+    }
+    written = {"ca": ca_path}
+    for role, (key, certificate) in keys.items():
+        cert_path = out_dir / f"{role}.crt"
+        key_path = out_dir / f"{role}.key"
+        write_pem(cert_path, certificate)
+        key_path.write_bytes(
+            key.private_bytes(
+                encoding=serialization.Encoding.PEM,
+                format=serialization.PrivateFormat.PKCS8,
+                encryption_algorithm=serialization.NoEncryption(),
+            )
+        )
+        key_path.chmod(0o600)
+        written[role] = cert_path
+        written[f"{role}_key"] = key_path
+    return written
+
+
 def generate(out_dir: Path, names: list[str], addresses: list[str]) -> dict[str, Path]:
     """Write the CA, server certificate, and server private key."""
     from cryptography.hazmat.primitives import serialization
@@ -179,17 +286,19 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     parser.add_argument(
         "--service",
-        choices=("mqtt", "merlin"),
+        choices=("mqtt", "merlin", "telemetry"),
         default="mqtt",
         help="Certificate identity to generate (default: mqtt)",
     )
     parser.add_argument(
-        "--dataset", type=Path, help="Selected dataset directory (required for merlin)"
+        "--dataset",
+        type=Path,
+        help="Selected dataset directory (required for merlin/telemetry)",
     )
     parser.add_argument(
         "--out-dir",
         type=Path,
-        help="Output directory (default: certs or certs/merlin)",
+        help="Output directory (default: certs or certs/<service>)",
     )
     parser.add_argument(
         "--name",
@@ -204,6 +313,21 @@ def main() -> int:
         help="Extra IP address the certificate must be valid for",
     )
     args = parser.parse_args()
+
+    if args.service == "telemetry":
+        if args.dataset is None:
+            parser.error("--dataset is required for --service telemetry")
+        if args.names or args.addresses:
+            parser.error(
+                "Telemetry identities come from --dataset; --name/--address are unsupported"
+            )
+        written = generate_telemetry(
+            args.out_dir or Path("certs/telemetry"), telemetry_identities(args.dataset)
+        )
+        for label, path in written.items():
+            print(f"  {label}: {path}")
+        print("Rebuild relay, SCADA, and enterprise client with this same bundle.")
+        return 0
 
     if args.service == "merlin":
         if args.dataset is None:

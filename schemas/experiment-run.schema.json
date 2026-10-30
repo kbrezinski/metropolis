@@ -14,6 +14,32 @@
     "dataset_path": {"type": "string"},
     "topology_document_sha256": {"type": "object", "additionalProperties": {"type": "string"}},
     "firewall_policy_sha256": {"type": "string"},
+    "ipsec_tunnels": {
+      "type": "array",
+      "description": "Declared tunnel endpoints; not proof of live negotiation or encryption. Contains no key values.",
+      "items": {
+        "type": "object",
+        "required": ["link_id", "endpoints"],
+        "properties": {
+          "link_id": {"type": "string"},
+          "endpoints": {
+            "type": "array", "minItems": 2, "maxItems": 2,
+            "items": {
+              "type": "object",
+              "required": ["node", "interface", "underlay_interface", "underlay_address"],
+              "properties": {
+                "node": {"type": "string"},
+                "interface": {"type": "string", "pattern": "^vti[0-9]+$"},
+                "underlay_interface": {"type": "string"},
+                "underlay_address": {"type": "string", "format": "ipv4"}
+              },
+              "additionalProperties": false
+            }
+          }
+        },
+        "additionalProperties": false
+      }
+    },
     "firewall": {
       "type": "object",
       "required": ["policy_sha256", "attack_exceptions", "configuration_requested", "restored_baseline", "failures"],
@@ -234,6 +260,7 @@
         "manifest_path": {"type": "string"},
         "links": {"type": "object", "additionalProperties": {"type": "object"}},
         "unavailable_declared_links": {"type": "object", "additionalProperties": {"type": "object"}},
+        "logical_overlays": {"type": "object", "additionalProperties": {"type": "object"}},
         "failures": {"type": "array", "items": {"type": "string"}}
       },
       "additionalProperties": false

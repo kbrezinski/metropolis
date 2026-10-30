@@ -152,6 +152,35 @@ def test_validator_rejects_missing_ospf_advertisement(sandbox):
     assert "OSPF networks differ from connected networks" in result.stdout
 
 
+@pytest.mark.parametrize("mutation", ["underlay-ospf", "ikev1", "esp-mismatch"])
+def test_validator_rejects_ipsec_routing_or_profile_drift(sandbox, mutation):
+    scripts = _router_scripts(sandbox)
+    source = next(path for path in scripts if "set interfaces vti " in path.read_text())
+    text = source.read_text(encoding="utf-8")
+    if mutation == "underlay-ospf":
+        underlay = re.search(
+            r"^set vpn ipsec ipsec-interfaces interface '([^']+)'$", text, re.M
+        ).group(1)
+        text += f"\nset protocols ospf passive-interface-exclude '{underlay}'\n"
+        expected = f"IPsec underlay {underlay} must not run OSPF"
+    elif mutation == "ikev1":
+        text = text.replace("key-exchange 'ikev2'", "key-exchange 'ikev1'", 1)
+        expected = "IPsec peer requires IKEv2"
+    else:
+        text = text.replace(
+            "proposal 1 encryption 'aes256gcm128'",
+            "proposal 1 encryption 'aes128gcm128'",
+            1,
+        )
+        expected = "IPsec endpoints have incompatible IKE/ESP profiles"
+    source.write_text(text, encoding="utf-8")
+
+    result = run_validator(sandbox)
+
+    assert result.returncode != 0
+    assert expected in result.stdout
+
+
 def _router_scripts(sandbox: Path) -> list[Path]:
     infrastructure = load_document(sandbox, 3)
     return [

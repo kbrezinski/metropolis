@@ -75,15 +75,143 @@ def test_plan_rejects_missing_protocol_peer():
         _plan(inventory)
 
 
-def test_reused_node_protocol_drift_is_detected_without_disclosing_values():
+def telemetry_inventory():
+    return {
+        "devices": [
+            {
+                "name": "plant-publisher",
+                "image": "scada:image",
+                "address": "192.0.2.10/24",
+                "subnet": "192.0.2.0/24",
+                "protocols": ["telemetry-publisher"],
+                "environment": {"TELEMETRY_RELAY_NODE": "boundary-cache"},
+            },
+            {
+                "name": "boundary-cache",
+                "image": "relay:image",
+                "address": "198.51.100.30/24",
+                "subnet": "198.51.100.0/24",
+                "protocols": ["telemetry-relay"],
+                "environment": {
+                    "TELEMETRY_WRITER_NODE": "plant-publisher",
+                    "TELEMETRY_READER_NODE": "office-reader",
+                    "TELEMETRY_PORT": "8443",
+                },
+            },
+            {
+                "name": "office-reader",
+                "image": "consumer:image",
+                "address": "203.0.113.10/24",
+                "subnet": "203.0.113.0/24",
+                "protocols": ["telemetry-consumer"],
+                "environment": {"TELEMETRY_RELAY_NODE": "boundary-cache"},
+            },
+        ]
+    }
+
+
+def test_telemetry_plan_resolves_selected_relay_and_certificate_source():
+    inventory = telemetry_inventory()
+    inventory["devices"][1]["address"] = "198.51.100.99/24"
+    plan = build_plan(
+        inventory,
+        {"routers": [], "switches": [], "segments": []},
+        {"links": []},
+        {device["image"]: device["image"] for device in inventory["devices"]},
+    )
+    nodes = {node.name: node for node in plan.nodes}
+    assert (
+        nodes["plant-publisher"].environment["TELEMETRY_RELAY_URL"]
+        == "https://198.51.100.99:8443/v1/status"
+    )
+    assert (
+        nodes["office-reader"].environment["TELEMETRY_RELAY_URL"]
+        == "https://198.51.100.99:8443/v1/status"
+    )
+    assert nodes["plant-publisher"].environment["DEVICE_NAME"] == "plant-publisher"
+    assert "TELEMETRY_RELAY_URL" not in inventory["devices"][0]["environment"]
+
+
+@pytest.mark.parametrize(
+    "node,key,value,diagnostic",
+    [
+        (0, "TELEMETRY_RELAY_NODE", "missing", "must name"),
+        (1, "TELEMETRY_READER_NODE", "plant-publisher", "telemetry-consumer"),
+        (1, "TELEMETRY_PORT", "65536", "invalid TELEMETRY_PORT"),
+        (2, "TELEMETRY_RELAY_URL", "http://198.51.100.30/v1/status", "disagrees"),
+    ],
+)
+def test_telemetry_plan_rejects_unusable_or_unauthorized_peer(
+    node, key, value, diagnostic
+):
+    from telemetry_config import compile_telemetry
+
+    inventory = telemetry_inventory()
+    inventory["devices"][node]["environment"][key] = value
+    with pytest.raises(ValueError, match=diagnostic):
+        compile_telemetry(inventory)
+
+
+def test_telemetry_validator_checks_firewall_direction_and_port():
+    sys.path.insert(0, str(GNS3.parent))
+    from validate_metropolis_topology import (
+        _validate_device_targets,
+        _validate_service_flows,
+    )
+
+    inventory = telemetry_inventory()
+    assert _validate_device_targets(inventory["devices"]) == []
+    policy = {
+        "flows": [
+            {
+                "source": "203.0.113.0/24",
+                "destination": "198.51.100.0/24",
+                "protocol": "tcp",
+                "port": 8443,
+            }
+        ]
+    }
+    assert _validate_service_flows(inventory["devices"], [], policy) == [
+        "plant-publisher: no TCP/8443 firewall flow to telemetry relay boundary-cache"
+    ]
+    policy["flows"].append(
+        {
+            "source": "192.0.2.0/24",
+            "destination": "198.51.100.0/24",
+            "protocol": "tcp",
+            "port": 8443,
+        }
+    )
+    assert _validate_service_flows(inventory["devices"], [], policy) == []
+
+
+@pytest.mark.parametrize(
+    "key,expected,previous,private_key",
+    [
+        ("MQTT_USERNAME", "new-user", "old-user", "MQTT_PASSWORD"),
+        ("SNMP_TARGETS", "edge=192.0.2.5", "edge=198.51.100.6", "SNMP_COMMUNITY"),
+        (
+            "TELEMETRY_RELAY_URL",
+            "https://192.0.2.5:443/v1/status",
+            "https://198.51.100.6:443/v1/status",
+            "TELEMETRY_KEY_FILE",
+        ),
+    ],
+)
+def test_reused_node_protocol_drift_is_detected_without_disclosing_values(
+    key, expected, previous, private_key
+):
+    environment = {key: expected, private_key: "private-lab-value"}
     planned = PlannedNode(
         "sensor",
         "template",
-        environment={"MQTT_USERNAME": "new-user", "MQTT_PASSWORD": "private-lab-value"},
+        environment=environment,
     )
     current = {
         "properties": {
-            "environment": 'MQTT_USERNAME="new-user"\nMQTT_PASSWORD="private-lab-value"'
+            "environment": "\n".join(
+                f'{name}="{value}"' for name, value in environment.items()
+            )
         }
     }
     current.update({"name": "sensor", "node_id": "gns3-1", "status": "started"})
@@ -96,9 +224,11 @@ def test_reused_node_protocol_drift_is_detected_without_disclosing_values():
     _, result = ensure_nodes(Client(), "project", topology, {})
     assert result.skipped == []
     current["properties"]["environment"] = (
-        'MQTT_USERNAME="old-user"\nMQTT_PASSWORD="private-lab-value"'
+        f'{key}="{previous}"\n{private_key}="private-lab-value"'
     )
+    stale_environment = current["properties"]["environment"]
     _, result = ensure_nodes(Client(), "project", topology, {})
     assert len(result.skipped) == 1
-    assert "stale MQTT/DNP3/CoAP environment" in result.skipped[0]
+    assert "stale MQTT/DNP3/CoAP/SNMP/telemetry environment" in result.skipped[0]
     assert "private-lab-value" not in result.skipped[0]
+    assert current["properties"]["environment"] == stale_environment

@@ -108,6 +108,7 @@ def render(
         matplotlib.use("Agg")
         import matplotlib.patches as mpatches
         import matplotlib.pyplot as plt
+        from matplotlib.lines import Line2D
         import networkx as nx
     except ImportError as exc:  # pragma: no cover - depends on the environment
         raise ImportError(
@@ -236,6 +237,16 @@ def render(
     ]
     legend.append(mpatches.Patch(facecolor=LINK_COLOURS["trunk"], label="trunk link"))
     legend.append(mpatches.Patch(facecolor=LINK_COLOURS["access"], label="other link"))
+    if any(graph[a][b]["kind"] == "overlay" for a, b in graph.edges()):
+        legend.append(
+            Line2D(
+                [0],
+                [0],
+                color=LINK_COLOURS["overlay"],
+                linestyle="--",
+                label="overlay (logical)",
+            )
+        )
     axes.legend(handles=legend, loc="lower left", fontsize=8, framealpha=0.9)
     if note:
         figure.text(0.5, 0.01, note, ha="center", fontsize=8, color="#5f6368")

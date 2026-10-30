@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import io
+import copy
 import struct
 import subprocess
 import sys
@@ -217,6 +218,86 @@ def test_router_interfaces_become_adapter_numbers(documents, plan):
             end for end in (built.first, built.second) if end.node == endpoint["node"]
         )
         assert actual.adapter == int(endpoint["interface"].removeprefix("eth"))
+
+
+def test_logical_overlay_is_reported_without_creating_or_capturing_a_cable(documents):
+    _, inventory, infrastructure, link_plan = copy.deepcopy(documents)
+    overlay = {
+        "id": "site-vpn",
+        "kind": "overlay",
+        "endpoints": [
+            {"node": "router-a", "interface": "vti7"},
+            {"node": "router-b", "interface": "vti7"},
+        ],
+    }
+    physical_ids = {link["id"] for link in link_plan["links"]}
+    link_plan["links"].append(overlay)
+    topology = build_plan(
+        inventory, infrastructure, link_plan, template_name_by_image()
+    )
+    assert {link.link_id for link in topology.links} == physical_ids
+    assert topology.logical_links == ["site-vpn"]
+    assert topology.skipped == []
+
+    client = FakeCaptureClient()
+    build(client, "lab", topology, template_ids())
+    assert len(client.created_links) == len(physical_ids)
+    resolution = resolve_links(client, "p1", topology, [*physical_ids, "site-vpn"])
+    assert resolution.status["site-vpn"]["status"] == "logical_overlay"
+    assert "site-vpn" not in resolution.capturable
+    coverage = coverage_report(
+        resolution, resolution.capturable, link_plan, inventory, infrastructure
+    )
+    assert coverage["declared_physical_links"] == len(physical_ids)
+    assert set(coverage["logical_overlays"]) == {"site-vpn"}
+    assert coverage["unresolved_links"] == {}
+    assert coverage["missing_routed_points"] == []
+    assert coverage["modeled_routed_paths_selected"] is True
+    assert coverage["all_network_traffic_verified"] is False
+    assert "decrypted" in coverage["claim_limit"]
+
+
+def test_tunnel_interface_cannot_be_misdeclared_as_a_physical_adapter(documents):
+    _, inventory, infrastructure, link_plan = copy.deepcopy(documents)
+    link_plan["links"][0]["endpoints"][0]["interface"] = "vti7"
+    topology = build_plan(
+        inventory, infrastructure, link_plan, template_name_by_image()
+    )
+    assert "router-transit" not in {link.link_id for link in topology.links}
+    assert topology.skipped == ["router-transit: no port for router-a"]
+
+
+def test_capture_cli_labels_overlays_and_rejects_direct_selection(
+    documents, monkeypatch, capsys
+):
+    import capture_traffic
+
+    copied = copy.deepcopy(documents)
+    copied[3]["links"].append(
+        {
+            "id": "site-vpn",
+            "kind": "overlay",
+            "endpoints": [
+                {"node": "router-a", "interface": "vti7"},
+                {"node": "router-b", "interface": "vti7"},
+            ],
+        }
+    )
+    monkeypatch.setattr(capture_traffic, "load_documents", lambda _dataset: copied)
+    monkeypatch.setattr(
+        capture_traffic, "connect", lambda _args: pytest.fail("unexpected GNS3 access")
+    )
+    monkeypatch.setattr(sys, "argv", ["capture_traffic.py", "--links", "site-vpn"])
+    assert capture_traffic.main() == 2
+    assert (
+        "logical overlays are not physical capture links: site-vpn"
+        in capsys.readouterr().err
+    )
+    monkeypatch.setattr(sys, "argv", ["capture_traffic.py", "--list"])
+    assert capture_traffic.main() == 0
+    assert (
+        "site-vpn (logical overlay; not directly capturable)" in capsys.readouterr().out
+    )
 
 
 def test_segments_are_created_as_switch_nodes(documents, plan):
@@ -496,6 +577,8 @@ def test_startup_order_enforces_infrastructure_and_service_dependencies():
         {"name": "rdp-server"},
         {"name": "ops-client"},
         {"name": "engineer"},
+        {"name": "dmz-relay"},
+        {"name": "enterprise-reader"},
     ]
     kinds = {
         "sw-plant-aggregation": "switch",
@@ -516,10 +599,15 @@ def test_startup_order_enforces_infrastructure_and_service_dependencies():
         "rdp-server": "metropolis/rdp-server:dev",
         "ops-client": "metropolis/rdp-client:dev",
         "engineer": "metropolis/engineering:dev",
+        "dmz-relay": "metropolis/telemetry-relay:dev",
+        "enterprise-reader": "metropolis/enterprise-client:dev",
     }
     order = startup_order(nodes, kinds, images)
     assert order[:2] == ["sw-plant-aggregation", "MET-PLANT"]
     assert order.index("MET-MQTT-BROKER-01") < order.index("MET-SCADA-01")
+    assert order.index("dmz-relay") < min(
+        order.index(name) for name in ("MET-SCADA-01", "enterprise-reader")
+    )
     services = {"mirai-cnc", "mirai-listener", "mirai-tftp", "mirai-http", "merlin-cnc"}
     agents = {"mirai-bot", "merlin-agent"}
     assert max(order.index(name) for name in services) < min(
@@ -914,8 +1002,20 @@ def test_capture_missing_path_and_empty_file_are_failures(built_capture, tmp_pat
 def test_experiment_shares_run_id_and_reports_missing_log_sources(
     documents, built_capture, tmp_path
 ):
-    address_plan, inventory, infrastructure, link_plan = documents
+    address_plan, inventory, infrastructure, link_plan = copy.deepcopy(documents)
     client, topology, resolution = built_capture
+    topology = copy.deepcopy(topology)
+    topology.logical_links.append("site-vpn")
+    link_plan["links"].append(
+        {
+            "id": "site-vpn",
+            "kind": "overlay",
+            "endpoints": [
+                {"node": "router-a", "interface": "vti7"},
+                {"node": "router-b", "interface": "vti7"},
+            ],
+        }
+    )
     chosen = topology.links[0].link_id
     run_id = "test_shared_run"
 
@@ -943,6 +1043,9 @@ def test_experiment_shares_run_id_and_reports_missing_log_sources(
     assert capture_entry["sha256"] and capture_entry["packet_count"] == 1
     assert Path(capture_entry["local_file"]).is_file()
     assert Path(manifest["captures"][0]).parent == tmp_path / "captures" / run_id
+    assert set(manifest["capture"]["logical_overlays"]) == {"site-vpn"}
+    assert "site-vpn" not in manifest["capture"]["unavailable_declared_links"]
+    assert all("site-vpn" not in failure for failure in manifest["capture"]["failures"])
     assert manifest["syslog"]["missing_sources"]
     assert manifest["status"] == "failed"
     timeline = [

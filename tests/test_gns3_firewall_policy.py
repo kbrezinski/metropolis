@@ -201,16 +201,187 @@ def _has_rule(lines, source, destination, protocol, port):
         if not line.endswith(f"source address '{source}'"):
             continue
         prefix = line.rsplit(" source address", 1)[0]
-        if all(
-            f"{prefix} {part}" in lines
-            for part in (
-                f"destination address '{destination}'",
-                f"protocol '{protocol}'",
-                f"destination port '{port}'",
-            )
-        ):
+        parts = [f"destination address '{destination}'", f"protocol '{protocol}'"]
+        if port is not None:
+            parts.append(f"destination port '{port}'")
+        if all(f"{prefix} {part}" in lines for part in parts):
             return True
     return False
+
+
+@pytest.fixture
+def ipsec_lab(lab):
+    """Two renamed VTI endpoints over a shared WAN, not the bundled topology."""
+    dataset, infrastructure, inventory = lab
+    plan_path = dataset / "topology/address-plan.yaml"
+    plan = yaml.safe_load(plan_path.read_text())
+    next(item for item in plan["networks"] if item["id"] == "transit").update(
+        kind="underlay", cidr="10.0.0.0/24"
+    )
+    plan["networks"].append(
+        {"id": "protected", "kind": "overlay", "cidr": "192.0.2.0/30"}
+    )
+    plan_path.write_text(yaml.safe_dump(plan))
+    links_path = dataset / "topology/links.yaml"
+    links = yaml.safe_load(links_path.read_text())
+    transit = next(item for item in links["links"] if item["id"] == "transit")
+    transit.update(kind="underlay", network_id="transit", cidr="10.0.0.0/24")
+    transit["endpoints"][1] = {"node": "wan-switch", "port_role": "hub"}
+    links["links"].extend(
+        [
+            {
+                "id": "peer-underlay",
+                "kind": "underlay",
+                "network_id": "transit",
+                "cidr": "10.0.0.0/24",
+                "endpoints": [
+                    {"node": "router-b", "interface": "eth0"},
+                    {"node": "wan-switch", "port_role": "spoke"},
+                ],
+            },
+            {
+                "id": "protected-path",
+                "kind": "overlay",
+                "network_id": "protected",
+                "cidr": "192.0.2.0/30",
+                "endpoints": [
+                    {"node": "router-a", "interface": "vti42"},
+                    {"node": "router-b", "interface": "vti9"},
+                ],
+            },
+        ]
+    )
+    links_path.write_text(yaml.safe_dump(links))
+    infrastructure["switches"] = [{"name": "wan-switch"}]
+    for number, declaration in enumerate(infrastructure["routers"], 1):
+        script = Path(declaration["config"])
+        text = script.read_text().replace("10.0.0.0/30", "192.0.2.0/30")
+        text = text.replace(f"10.0.0.{number}/30", f"10.0.0.{number}/24")
+        vti = "vti42" if number == 1 else "vti9"
+        other = 3 - number
+        text = text.replace(
+            "passive-interface-exclude 'eth0'", f"passive-interface-exclude '{vti}'"
+        )
+        text += (
+            f"set interfaces vti {vti} address '192.0.2.{number}/30'\n"
+            f"set interfaces vti {vti} ip ospf network 'point-to-point'\n"
+            f"set interfaces vti {vti} ip ospf bfd\n"
+            f"set protocols bfd peer '192.0.2.{other}'\n"
+            "set vpn ipsec ipsec-interfaces interface 'eth0'\n"
+            f"set vpn ipsec site-to-site peer '10.0.0.{other}' local-address '10.0.0.{number}'\n"
+            f"set vpn ipsec site-to-site peer '10.0.0.{other}' vti bind '{vti}'\n"
+            f"set vpn ipsec site-to-site peer '10.0.0.{other}' authentication mode 'pre-shared-secret'\n"
+            f"set vpn ipsec site-to-site peer '10.0.0.{other}' authentication pre-shared-secret \"${{PAIR_PSK}}\"\n"
+        )
+        script.write_text(text)
+    return dataset, infrastructure, inventory
+
+
+def test_ipsec_policy_separates_encrypted_underlay_from_inner_flows(ipsec_lab):
+    commands, report = compile_policy(*ipsec_lab)
+    for name, local, peer, vti in (
+        ("router-a", "10.0.0.1", "10.0.0.2", "vti42"),
+        ("router-b", "10.0.0.2", "10.0.0.1", "vti9"),
+    ):
+        lines = commands[name]
+        assert _has_rule(lines, f"{peer}/32", f"{local}/32", "udp", 500)
+        assert _has_rule(lines, f"{peer}/32", f"{local}/32", "udp", 4500)
+        assert _has_rule(lines, f"{peer}/32", f"{local}/32", "50", None)
+        assert _has_rule(lines, f"{local}/32", f"{peer}/32", "50", None)
+        assert _has_rule(lines, "10.1.0.0/24", "10.2.0.0/24", "tcp", 502)
+        assert not any("MET_e1_e0 rule" in line for line in lines)
+        assert not any("MET_e0_e1 rule" in line for line in lines)
+        assert f"set zone-policy zone MET_{vti} interface '{vti}'" in lines
+        inner_local, inner_peer = (
+            ("192.0.2.1", "192.0.2.2")
+            if name == "router-a"
+            else ("192.0.2.2", "192.0.2.1")
+        )
+        assert _has_rule(lines, inner_peer, "0.0.0.0/0", "89", None)
+        assert _has_rule(lines, f"{inner_peer}/32", f"{inner_local}/32", "udp", 3784)
+        outer = [line for line in lines if "name MET_e0_local " in line]
+        assert not any(
+            "protocol '89'" in line or "port '3784'" in line for line in outer
+        )
+        esp_prefix = next(
+            line.rsplit(" protocol", 1)[0] for line in outer if "protocol '50'" in line
+        )
+        assert int(esp_prefix.rsplit(" ", 1)[1]) < 10
+        assert f"{esp_prefix} state new 'enable'" not in lines
+        assert not any(
+            line.startswith(f"{esp_prefix} destination port") for line in lines
+        )
+    assert report["ipsec_tunnels"][0]["link_id"] == "protected-path"
+    assert {
+        endpoint["interface"] for endpoint in report["ipsec_tunnels"][0]["endpoints"]
+    } == {"vti42", "vti9"}
+
+
+@pytest.mark.parametrize(
+    "corruption,diagnostic",
+    [
+        ("missing-overlay", "overlay"),
+        ("wrong-vti", "overlay"),
+        ("missing-underlay", "underlay"),
+        ("asymmetric-peer", "reciprocal"),
+        ("missing-key-reference", "secret"),
+        ("plaintext-routing", "underlay"),
+    ],
+)
+def test_incomplete_or_plaintext_ipsec_paths_fail_closed(
+    ipsec_lab, corruption, diagnostic
+):
+    dataset, infrastructure, _ = ipsec_lab
+    path = dataset / "topology/links.yaml"
+    links = yaml.safe_load(path.read_text())
+    if corruption == "missing-overlay":
+        links["links"] = [
+            link for link in links["links"] if link["id"] != "protected-path"
+        ]
+    elif corruption == "wrong-vti":
+        overlay = next(
+            link for link in links["links"] if link["id"] == "protected-path"
+        )
+        overlay["endpoints"][1]["interface"] = "vti99"
+    elif corruption == "missing-underlay":
+        links["links"] = [
+            link for link in links["links"] if link["id"] != "peer-underlay"
+        ]
+    else:
+        script = Path(infrastructure["routers"][1]["config"])
+        text = script.read_text()
+        if corruption == "asymmetric-peer":
+            text = text.replace("peer '10.0.0.1'", "peer '10.0.0.99'")
+        elif corruption == "missing-key-reference":
+            text = "\n".join(
+                line
+                for line in text.splitlines()
+                if "authentication pre-shared-secret" not in line
+            )
+        else:
+            text += "set protocols ospf area 0 network '10.0.0.0/24'\nset protocols ospf passive-interface-exclude 'eth0'\n"
+        script.write_text(text)
+    path.write_text(yaml.safe_dump(links))
+    with pytest.raises(ValueError, match=diagnostic):
+        compile_policy(*ipsec_lab)
+
+
+def test_router_management_cannot_advertise_or_target_wan_underlay(ipsec_lab):
+    dataset, _, _ = ipsec_lab
+    path = dataset / "topology/firewall-policy.yaml"
+    policy = yaml.safe_load(path.read_text())
+    policy["flows"].append(
+        {
+            "id": "wan-management",
+            "source": "source",
+            "destination": "10.0.0.2/32",
+            "protocol": "udp",
+            "port": 161,
+        }
+    )
+    path.write_text(yaml.safe_dump(policy))
+    with pytest.raises(ValueError, match="not advertised"):
+        compile_policy(*ipsec_lab)
 
 
 def test_bfd_rules_follow_declared_ospf_peers(lab):
@@ -242,7 +413,7 @@ def test_router_local_snmp_flow_uses_exact_interface_address(lab):
         {
             "id": "management",
             "source": "10.1.0.10/32",
-            "destination": ["10.1.0.1/32", "10.2.0.1/32"],
+            "destination": ["10.1.0.1/32", "10.2.0.1/32", "10.0.0.2/32"],
             "protocol": "udp",
             "port": 161,
         }
@@ -253,9 +424,11 @@ def test_router_local_snmp_flow_uses_exact_interface_address(lab):
     assert _has_rule(commands["router-a"], "10.1.0.10/32", "10.1.0.1/32", "udp", 161)
     assert _has_rule(commands["router-a"], "10.1.0.10/32", "10.2.0.1/32", "udp", 161)
     assert _has_rule(commands["router-b"], "10.1.0.10/32", "10.2.0.1/32", "udp", 161)
+    assert _has_rule(commands["router-b"], "10.1.0.10/32", "10.0.0.2/32", "udp", 161)
     flows = [flow for flow in report["baseline_flows"] if flow["id"] == "management"]
     assert [flow["routers"] for flow in flows] == [
         ["router-a"],
+        ["router-a", "router-b"],
         ["router-a", "router-b"],
     ]
 

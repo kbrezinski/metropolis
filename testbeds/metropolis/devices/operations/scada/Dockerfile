@@ -1,5 +1,7 @@
 FROM python:3.12-slim
 
+ARG TELEMETRY_CERT_DIR=certs/telemetry
+
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     DEVICE_NAME=MET-SCADA-01 \
@@ -20,8 +22,13 @@ COPY testbeds/metropolis/devices/operations/scada/dnp3_master.py /opt/metropolis
 COPY testbeds/metropolis/devices/runtime/alarms.py /opt/metropolis/alarms.py
 COPY testbeds/metropolis/devices/runtime/dnp3_points.py /opt/metropolis/dnp3_points.py
 COPY testbeds/metropolis/devices/runtime/tls_config.py /opt/metropolis/tls_config.py
+COPY testbeds/metropolis/devices/runtime/telemetry_http.py /opt/metropolis/telemetry_http.py
+COPY testbeds/metropolis/devices/runtime/telemetry_export.py /opt/metropolis/telemetry_export.py
+COPY ${TELEMETRY_CERT_DIR}/ca.crt /certs/ca.crt
+COPY ${TELEMETRY_CERT_DIR}/writer.crt /certs/client.crt
+COPY ${TELEMETRY_CERT_DIR}/writer.key /certs/client.key
 COPY testbeds/metropolis/devices/runtime/network-entrypoint.sh /usr/local/bin/metropolis-entrypoint
-RUN chmod +x /usr/local/bin/metropolis-entrypoint
+RUN chmod +x /usr/local/bin/metropolis-entrypoint && chmod 600 /certs/client.key
 
 ENTRYPOINT ["/usr/local/bin/metropolis-entrypoint"]
 CMD ["python", "/opt/metropolis/scada_collector.py"]

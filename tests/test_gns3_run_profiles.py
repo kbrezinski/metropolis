@@ -108,6 +108,13 @@ def test_router_is_not_a_declared_docker_profile_target(profile_lab):
         load(document)
 
 
+def test_link_profiles_reject_logical_tunnels_before_runtime_access(profile_lab):
+    _, _, _, links, load = profile_lab
+    links["links"].append({"id": "site-vpn", "kind": "overlay"})
+    with pytest.raises(ValueError, match="logical overlay, not a physical GNS3 link"):
+        load(link_profile(link="site-vpn"))
+
+
 def test_ambiguous_dataset_names_are_not_silently_selected(profile_lab):
     _, inventory, _, links, load = profile_lab
     inventory["devices"].append({"name": "custom-controller"})

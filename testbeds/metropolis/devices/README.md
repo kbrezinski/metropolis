@@ -24,6 +24,8 @@ Paths below are relative to this directory.
 | SCADA | `operations/scada/` | Controller polling and HMI command/readback |
 | HMI | `operations/hmi/` | Authenticated HTTP panel using MQTT |
 | Historian | `operations/historian/` | MQTT subscription and console records |
+| DMZ telemetry relay | `services/telemetry_relay/` | Latest selected SCADA status over mutually authenticated HTTPS |
+| Enterprise reader | `operations/enterprise_client/` | Periodic read-only HTTPS requests to the DMZ relay |
 | Engineering workstation | `operations/engineering_workstation/` | OpenSSH shell and SFTP; routed FreeRDP client during captures |
 | RDP server | `operations/rdp_server/` | Linux xrdp desktop on TCP 3389 plus a separate synthetic UDP 3389 responder |
 | RDP client | `operations/rdp_client/` | Headless FreeRDP sessions initiated by experiment runs |
@@ -169,8 +171,9 @@ integrity snapshot on connection and every 60 seconds, and polls class-1 alarm
 events every five seconds on a separate reconnecting worker. Modbus continues
 to carry the existing routine values and attack-facing registers. This is a
 small solicited-poll model, not a certified DNP3 implementation or secure
-authentication profile. Capture `attach-scada`, each RTU attachment, and the
-WAN uplinks for the routed path.
+authentication profile. Capture `attach-scada`, each RTU attachment, and
+`link-core-wan` for application payloads. The WAN uplinks carry encrypted
+IPsec traffic; logical VTI overlays are not physical GNS3 capture links.
 
 ## HMI and engineering workstation
 
@@ -213,6 +216,38 @@ MQTT settings change; the builder reports stale settings.
 OpenSSH provides a real non-root shell and SFTP. Root login, forwarding, and
 sudo are disabled. Each node generates host keys in `/var/lib/metropolis/ssh`;
 persist that directory separately per node if stable host identity is needed.
+
+## DMZ telemetry relay and enterprise reader
+
+SCADA sends a snapshot after each controller polling cycle, with a five-second
+pause between cycles by default. It contains source and UTC time, then each
+cell's ID, event time, quality, alarms, and optional heartbeat. Export uses an explicit field list;
+controller addresses, HMI commands, credentials, and arbitrary MQTT payloads
+are not forwarded. A bounded background sender keeps only the latest pending
+snapshot, so relay failures do not delay controller polling. Failed deliveries
+are reported; this service does not guarantee delivery of every alarm event.
+
+The relay accepts `POST /v1/status` only from its configured writer certificate
+and permits `GET /v1/status` only with its reader certificate. TLS verifies both
+the CA and relay hostname/address. The relay holds one snapshot in memory,
+adds UTC `received_at`, and returns HTTP 503 until it has data. Restarting it
+clears that snapshot. A successful read can return old data after SCADA stops;
+the original and receipt timestamps remain available for freshness analysis.
+This is a small status relay, not a persistent historian or reporting UI.
+
+| Setting | Meaning |
+|---|---|
+| `TELEMETRY_RELAY_NODE` | Inventoried relay name on SCADA/reader; builder derives its HTTPS URL |
+| `TELEMETRY_WRITER_NODE`, `TELEMETRY_READER_NODE` | Distinct inventoried certificate identities accepted by the relay |
+| `TELEMETRY_PORT` | Relay listening port, default 443; align firewall policy when changed |
+| `TELEMETRY_INTERVAL` | Enterprise read interval, default 10 seconds |
+| `TELEMETRY_CA_FILE`, `TELEMETRY_CERT_FILE`, `TELEMETRY_KEY_FILE` | Role-specific certificate paths under `/certs/` |
+
+Omitting the relay URL disables export in a standalone SCADA container. An
+explicitly enabled exporter requires valid certificate files. Certificate
+generation and image builds are in the
+[GNS3 guide](../../../scripts/gns3/README.md#2-build-the-images-on-the-compute).
+The existing MQTT historian remains a separate subscriber.
 
 ## Routine traffic, Telnet, DNS, and time
 

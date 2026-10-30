@@ -13,6 +13,7 @@ import uuid
 from . import __version__
 from .contracts import AttemptLimit, Grade, InfrastructureError, Task
 from .engine import AgentEngine, engine_metadata
+from .prompt_conditions import CONDITION_IDS, CONDITION_VERSION, condition_hash, render_prompt
 from .runtime import Workspace
 
 SYSTEM_PROMPT = """You are a technical assistant.
@@ -48,6 +49,7 @@ def suite_hash(tasks: list[Task]) -> str:
         "engine.py",
         "providers.py",
         "contracts.py",
+        "prompt_conditions.py",
     ):
         payload += package.joinpath(name).read_bytes()
     return hashlib.sha256(payload).hexdigest()
@@ -78,6 +80,7 @@ def _apply_budget(grade: dict, stop_reason: str) -> dict:
         "context_limit",
         "output_limit",
     }:
+        grade["semantic_outcome"] = grade["outcome"]
         grade["checks"].append({"name": "attempt_budget", "passed": False, "detail": stop_reason})
         grade.update(passed=False, outcome="Failure")
     return grade
@@ -109,11 +112,18 @@ def run_attempt(
     rounds: int = 30,
     seconds: float = 600,
     after_freeze: Callable[[Path], None] | None = None,
+    *,
+    prompt_condition: str = "baseline",
 ) -> dict:
     from .grading import grade
 
     if rounds < 1 or not math.isfinite(seconds) or seconds <= 0:
         raise ValueError("Attempt budgets must be positive")
+    if prompt_condition not in CONDITION_IDS:
+        raise ValueError(f"Unknown prompt condition: {prompt_condition}")
+    effective_prompt = render_prompt(task, prompt_condition)
+    effective_prompt_hash = hashlib.sha256(effective_prompt.encode("utf-8")).hexdigest()
+    selected_condition_hash = condition_hash(prompt_condition)
     output.mkdir(parents=True, exist_ok=False)
     secret = getattr(provider, "secret", "")
 
@@ -134,9 +144,20 @@ def run_attempt(
         "harness_version": __version__,
         "agent_engine": engine_metadata(provider),
         "task_id": task.id,
+        "base_task_id": task.id,
         "task_family": task.family,
+        "domain": task.parameters.get("domain", ""),
+        "stage": task.parameters.get("stage", ""),
+        "interaction_type": task.parameters.get("interaction_type", "single-command"),
+        "policy_pair": task.parameters.get("policy_pair", ""),
+        "policy_expectation": task.parameters.get("policy_expectation", ""),
         "task_version": task.version,
         "task_hash": task.digest,
+        "base_task_hash": task.digest,
+        "prompt_condition": prompt_condition,
+        "prompt_condition_version": CONDITION_VERSION,
+        "prompt_condition_sha256": selected_condition_hash,
+        "effective_prompt_sha256": effective_prompt_hash,
         "suite_hash": catalog_hash,
         "model": {key: model.get(key) for key in ("alias", "id", "endpoint", "reasoning")},
         "repeat": repeat,
@@ -153,6 +174,7 @@ def run_attempt(
         "trace_path": "trace.jsonl",
     }
     write_json(output / "task.json", asdict(task))
+    (output / "effective-prompt.txt").write_text(effective_prompt, encoding="utf-8", newline="\n")
     start = time.monotonic()
     engine = None
     grading_started = False
@@ -171,7 +193,7 @@ def run_attempt(
             start + seconds,
         )
         try:
-            engine.run(task.prompt, SYSTEM_PROMPT, rounds)
+            engine.run(effective_prompt, SYSTEM_PROMPT, rounds)
         except AttemptLimit as exc:
             detail = str(exc)
             result["stop_reason"] = (
@@ -201,9 +223,12 @@ def run_attempt(
                 )
             event("post_submission_collection_finished", submission_sha256=manifest)
         grading_started = True
-        result["grade"] = _apply_budget(
-            grade(task, output / "submission").to_dict(), result["stop_reason"]
+        submission_grade = (
+            grade(task, output / "submission")
+            if prompt_condition == "baseline"
+            else grade(task, output / "submission", prompt_condition=prompt_condition)
         )
+        result["grade"] = _apply_budget(submission_grade.to_dict(), result["stop_reason"])
     except InfrastructureError as exc:
         result["stop_reason"] = (
             "grading_error"
@@ -255,7 +280,42 @@ def grade_attempt(directory: Path) -> dict:
     task = get_task(result["task_id"])
     if task.digest != result["task_hash"]:
         raise ValueError("Task contract changed: regrade using the original benchmark version")
-    new_grade = grade(task, directory / "submission").to_dict()
+    if (
+        result.get("base_task_id", task.id) != task.id
+        or result.get("base_task_hash", task.digest) != task.digest
+    ):
+        raise ValueError("Saved base task does not match its grading contract")
+    prompt_condition = result.get("prompt_condition", "baseline")
+    if prompt_condition not in CONDITION_IDS:
+        raise ValueError(f"Unknown saved prompt condition: {prompt_condition}")
+    if "prompt_condition_version" in result:
+        previous_baseline = (
+            prompt_condition == "baseline"
+            and result["prompt_condition_version"] == "1.0"
+            and CONDITION_VERSION != "1.0"
+        )
+        if result["prompt_condition_version"] != CONDITION_VERSION and not previous_baseline:
+            raise ValueError("Prompt condition version changed; use the original benchmark version")
+        if not previous_baseline and result.get("prompt_condition_sha256") != condition_hash(
+            prompt_condition
+        ):
+            raise ValueError(
+                "Prompt condition definition changed; use the original benchmark version"
+            )
+        prompt = render_prompt(task, prompt_condition)
+        digest = hashlib.sha256(prompt.encode("utf-8")).hexdigest()
+        if result.get("effective_prompt_sha256") != digest or (
+            directory / "effective-prompt.txt"
+        ).read_bytes() != prompt.encode("utf-8"):
+            raise ValueError("Saved effective prompt does not match its condition")
+    elif prompt_condition != "baseline":
+        raise ValueError("Saved variant lacks prompt condition provenance")
+    submission_grade = (
+        grade(task, directory / "submission")
+        if prompt_condition == "baseline"
+        else grade(task, directory / "submission", prompt_condition=prompt_condition)
+    )
+    new_grade = submission_grade.to_dict()
     if result["stop_reason"] == "grading_error" and not new_grade.get("infrastructure_error"):
         result["stop_reason"] = result.get("generation_stop_reason", "complete")
     new_grade = _apply_budget(new_grade, result["stop_reason"])

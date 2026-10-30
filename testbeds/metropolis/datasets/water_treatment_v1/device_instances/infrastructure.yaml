@@ -66,7 +66,7 @@ routers:
 
   - name: MET-OT-WAN
     kind: vyos
-    role: WAN hub for the remote stations
+    role: OT WAN edge firewall and IPsec hub for the remote stations
     config: testbeds/metropolis/router/backbone/router_ot_wan.sh
     interfaces:
       - name: eth0
@@ -74,7 +74,15 @@ routers:
         description: Transit to the OT core router
       - name: eth1
         cidr: 172.31.255.1/24
-        description: Simulated WAN underlay
+        description: Untrusted IPsec underlay; no operational OSPF routing
+      - name: vti10
+        kind: vti
+        cidr: 10.20.254.13/30
+        description: Logical IPsec overlay to the raw-water station
+      - name: vti20
+        kind: vti
+        cidr: 10.20.254.17/30
+        description: Logical IPsec overlay to the reservoir station
 
   - name: MET-RESERVOIR
     kind: vyos
@@ -86,7 +94,11 @@ routers:
         description: Reservoir station LAN, untagged
       - name: eth1
         cidr: 172.31.255.21/24
-        description: Simulated WAN underlay
+        description: Untrusted IPsec underlay; no operational OSPF routing
+      - name: vti20
+        kind: vti
+        cidr: 10.20.254.18/30
+        description: Logical IPsec overlay to the WAN hub
 
   - name: MET-RAW-WATER
     kind: vyos
@@ -98,7 +110,11 @@ routers:
         description: Raw-water station LAN, untagged
       - name: eth1
         cidr: 172.31.255.11/24
-        description: Simulated WAN underlay
+        description: Untrusted IPsec underlay; no operational OSPF routing
+      - name: vti10
+        kind: vti
+        cidr: 10.20.254.14/30
+        description: Logical IPsec overlay to the WAN hub
 
 switches:
   - name: sw-plant-aggregation
@@ -141,6 +157,7 @@ switches:
       - router-uplink
       - dmz-host-1
       - dmz-host-2
+      - telemetry-relay
 
   - name: sw-enterprise
     kind: ethernet-switch

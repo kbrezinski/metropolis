@@ -52,6 +52,21 @@ rejected. Repeat `--docker-host` for multiple computes.
 Clone the repository onto every compute that will host its images. Run the
 following commands from the repository root **on that compute**.
 
+Generate the telemetry certificate bundle before building SCADA, the DMZ relay,
+or the enterprise client:
+
+```bash
+uv run python scripts/gen_lab_certificates.py --service telemetry \
+  --dataset testbeds/metropolis/datasets/water_treatment_v1
+```
+
+Use the same ignored `certs/telemetry/` bundle on all hosting computes. The
+relay image receives its server key; SCADA receives only the writer key; the
+enterprise client receives only the reader key. All three receive the CA
+certificate. The CA key is never saved. Keep these lab images private. Changing
+node names, the relay address, or certificates requires rebuilding these images
+from a newly shared bundle and refreshing the affected GNS3 nodes.
+
 Before building the two Merlin images, generate their lab certificate bundle
 from the selected dataset:
 
@@ -78,6 +93,8 @@ docker build -f "$DEVICES/field/level_instrument/Dockerfile" -t metropolis/level
 docker build -f "$DEVICES/field/sensors/Dockerfile" -t metropolis/mqtt-sensor:dev .
 docker build -f "$DEVICES/services/mqtt_broker/Dockerfile" -t metropolis/mqtt-broker:dev .
 docker build -f "$DEVICES/operations/scada/Dockerfile" -t metropolis/scada:dev .
+docker build -f "$DEVICES/services/telemetry_relay/Dockerfile" -t metropolis/telemetry-relay:dev .
+docker build -f "$DEVICES/operations/enterprise_client/Dockerfile" -t metropolis/enterprise-client:dev .
 docker build -f "$DEVICES/operations/hmi/Dockerfile" -t metropolis/hmi:dev .
 docker build -f "$DEVICES/operations/historian/Dockerfile" -t metropolis/historian:dev .
 docker build -f "$DEVICES/operations/engineering_workstation/Dockerfile" -t metropolis/engineering:dev .
@@ -128,12 +145,15 @@ settings, and checks the switch port state. If your router template or compute
 has another name, supply `--router-template NAME` or `--compute-id ID` to the
 build command; use `--dataset PATH` for another versioned dataset. Reused
 Docker nodes keep their original environment. The builder reports stale
-MQTT/DNP3/CoAP settings without printing credentials; refresh or recreate
+MQTT/DNP3/CoAP/SNMP settings without printing credentials; refresh or recreate
 those nodes before a run, then rebuild their images on the hosting compute.
 The router scripts target VyOS 1.3; changing a template name
 does not make them compatible with another VyOS release.
 
 ## 4. Start and configure
+
+Set the two controller-side [IPsec keys](#site-to-site-ipsec) before configuring
+the reference routers. Planning and offline validation need no keys.
 
 ```bash
 uv run python scripts/gns3/run.py lab_lifecycle --start
@@ -142,8 +162,8 @@ uv run python scripts/gns3/run.py build_topology --configure-routers \
 ```
 
 Startup orders infrastructure, field devices, controllers, services, and polling
-clients. The router loader applies interface, OSPF, BFD, SNMP, syslog, and
-generated firewall settings, then checks the reported configuration.
+clients. The router loader applies interface, OSPF, BFD, SNMP, syslog, IPsec,
+and generated firewall settings, then checks the reported configuration.
 
 The router console defaults are `vyos` / `vyos`. If changed, use the builder's
 `--router-username` and `--router-password` options. For `experiment_run`,
@@ -151,6 +171,36 @@ the password override is the `METROPOLIS_ROUTER_PASSWORD` environment variable.
 
 Check cabling, VLAN isolation, router neighbors, permitted/blocked paths, and
 service startup in your GNS3 environment. Offline checks validate declarations.
+
+### DMZ and enterprise data path
+
+The reference dataset adds `MET-TELEMETRY-RELAY-01` (`10.20.40.30`) in the DMZ
+and `MET-ENTERPRISE-REPORTING-01` (`10.30.10.10`) on the enterprise switch.
+SCADA posts one selected status/alarm snapshot after each polling cycle; the
+enterprise client reads the latest snapshot every ten seconds. Both connections
+terminate at the relay on TCP 443. The policy permits SCADA and enterprise
+subnets to reach that service; other routed traffic remains subject to default
+drop. It adds no enterprise-to-controller permission.
+
+Mutual TLS identifies the writer and reader separately. The reader can only
+read; it cannot publish or issue control commands. The builder derives peer
+URLs from `TELEMETRY_RELAY_NODE` in the selected inventory and reports stale
+`TELEMETRY_` settings on reused nodes. Rebuild and recreate/refresh existing
+SCADA nodes to activate the new image and environment; name reuse alone does
+not update either.
+
+Capture `attach-scada`, `attach-telemetry-relay`, `attach-enterprise-reporting`,
+`link-core-dmz`, `link-dmz-switch`, and `link-enterprise-switch` to observe the
+reference paths. Default all-link capture includes these points. HTTPS PCAPs
+show encrypted exchanges and timing; they do not expose the JSON payloads.
+Relay/client stdout records receipt, authorization failures, and transport
+errors as container diagnostics in the usual run logs. Those logs are not
+network-delivered syslog. A successful container start does not prove delivery.
+
+For live checks, confirm the enterprise client receives current snapshots,
+rejects an untrusted relay certificate, and cannot publish with its reader
+identity. Stop the relay and confirm SCADA keeps polling, then restart it and
+check recovery. See the [device settings and limits](../../testbeds/metropolis/devices/README.md#dmz-telemetry-relay-and-enterprise-reader).
 
 To give containers shared CPU/RAM limits, apply the optional
 [resource baseline](#container-resource-baseline) after startup and before
@@ -255,10 +305,15 @@ uv run python scripts/gns3/run.py capture_traffic \
 identities **and adapter/port numbers** and reports missing, ambiguous, or
 miswired links. `--all-built` selects available physical links, including
 undeclared links labeled `gns3_<link-id>`; uncabled declarations are unavailable.
+Logical IPsec overlays are reported separately, create no GNS3 cables, and
+cannot be selected as capture points or link-profile targets.
 
 Capture host attachments for local subnet exchanges and uplinks for routed
 traffic. A router uplink does not see traffic switched within one VLAN.
 Selection alone does not prove complete traffic coverage.
+On remote-site WAN links, expect IKE/ESP or NAT-T traffic. Capture
+`attach-scada`, the RTU attachments, and `link-core-wan` to see application
+traffic before or after encryption; WAN PCAPs do not expose decrypted payloads.
 
 PCAPs are retrieved into `captures/<run-id>/` under the selected dataset.
 Each must contain a complete packet. Its manifest records declared/GNS3 link
@@ -505,7 +560,8 @@ all hosts in those networks. Router-originated syslog uses `router/NAME`.
 The generated policy drops other new routed traffic, allows established
 replies, and includes router-local zones. Same-VLAN traffic bypasses it.
 Router scripts declare OSPF area 0 with passive device LANs, BFD on peer links,
-and read-only SNMP polling from the control client.
+and read-only SNMP polling from the control client. Inter-site OSPF/BFD uses
+IPsec VTI interfaces; the physical WAN is not advertised into OSPF.
 
 `render_firewall --check` validates the declared paths; omitting `--check`
 prints the resolved flows and VyOS commands. In GNS3, inspect
@@ -530,6 +586,57 @@ bot-origin probe to reach the Telnet gateway; select the corresponding network
 IDs for a custom dataset. Start the capture run with that exception, then
 launch `mirai_scenario` separately with the same run ID while capture is active.
 
+## Site-to-site IPsec
+
+`MET-OT-WAN` is the dedicated edge firewall and IKEv2/IPsec hub. The two
+remote routers initiate route-based tunnels over the existing untrusted WAN:
+
+| Site | Outer peer addresses: hub / site | VTI: hub / site | Controller key variable |
+|---|---|---|---|
+| Raw-water | `172.31.255.1` / `172.31.255.11` | `vti10`: `10.20.254.13/30` / `10.20.254.14/30` | `METROPOLIS_IPSEC_RAW_WATER_PSK` |
+| Reservoir | `172.31.255.1` / `172.31.255.21` | `vti20`: `10.20.254.17/30` / `10.20.254.18/30` | `METROPOLIS_IPSEC_RESERVOIR_PSK` |
+
+Use two distinct random keys, kept in your password manager. Each must be
+32–128 characters using letters, digits, or `_+/=-`. Enter them without
+putting their values in commands or shell history:
+
+```bash
+read -rsp "Raw-water IPsec key: " METROPOLIS_IPSEC_RAW_WATER_PSK; echo
+read -rsp "Reservoir IPsec key: " METROPOLIS_IPSEC_RESERVOIR_PSK; echo
+export METROPOLIS_IPSEC_RAW_WATER_PSK METROPOLIS_IPSEC_RESERVOIR_PSK
+```
+
+Keep the same keys when reapplying router configuration. The loader validates
+them before contacting/configuring routers and substitutes them only into
+IPsec PSK commands, without shell evaluation. It redacts keys from errors;
+the keys are not saved in run metadata. They do persist in the VyOS appliance
+configuration, so protect appliance configurations and console access.
+
+The configured profile uses AES-256-GCM, SHA-256 for IKE, DH/PFS group 19,
+1400-byte VTI MTUs, and dead-peer detection. Outer firewall rules admit only
+the declared peers on UDP 500/4500 and ESP (IP protocol 50). Decrypted traffic
+uses separate VTI zones and the existing protocol/port policy. OSPF/BFD runs
+inside the tunnels, with no operational routes or fallback over the clear WAN.
+Reconfiguration removes the former Metropolis WAN OSPF/BFD settings; it does
+not reconcile arbitrary custom router configuration. The WAN hub's SNMP
+target is its internal `10.20.254.10` address. On an existing project, refresh
+or recreate `MET-CONTROL-CLIENT-01` so its stored `SNMP_TARGETS` picks up this
+change; the builder reports stale settings but does not overwrite them.
+The current configs assume the shared, directly connected WAN in the dataset;
+an arbitrary routed ISP transport is not modeled.
+
+Apply through `build_topology --configure-routers` or
+`experiment_run --configure-routers`. Offline `render_firewall --check`
+validates the tunnel declarations and reports peers without needing keys.
+Configuration readback does not prove negotiation or packet encryption.
+In your manual GNS3 check, inspect `show vpn ike sa`, `show vpn ipsec sa`,
+`show ip ospf neighbor`, and `show protocols bfd peer`; confirm encrypted WAN
+captures, permitted/blocked application flows, and loss of remote access when
+a tunnel is disabled. No live GNS3 verification is included in repository tests.
+
+The command syntax targets [VyOS 1.3 site-to-site IPsec](https://docs.vyos.io/en/1.3/configuration/vpn/site2site_ipsec.html)
+and [VTI interfaces](https://docs.vyos.io/en/1.3/configuration/interfaces/vti.html).
+
 ## Rebuilds and troubleshooting
 
 | Symptom or change | Check |
@@ -542,6 +649,7 @@ launch `mirai_scenario` separately with the same run ID while capture is active.
 | Missing logs | Compute ID/URI, Docker access, node startup, log rotation, source status |
 | Missing metrics/charts | Compute Docker access, source status and failures, and the installed development dependencies |
 | Legacy static routes | Use the router loader; it removes only routes from earlier Metropolis scripts and its managed `MET_` firewall rules |
+| IPsec configuration/negotiation failure | Both controller key variables, matching peer keys, VTI/outer addresses, IKE/ESP policy, and live SA status |
 | Need port numbers | `build_topology --plan --write-ports PATH` or the [generated switch reference](../../testbeds/metropolis/switch/README.md) |
 
 Builds reuse existing nodes/links. `--prune-missing` additionally deletes nodes

@@ -8,10 +8,12 @@ else builds on that.
 from __future__ import annotations
 
 import sys
+import json
 from pathlib import Path
 
 import pytest
 import yaml
+from jsonschema import Draft202012Validator
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT / "src") not in sys.path:
@@ -102,6 +104,78 @@ def test_saving_and_reloading_is_stable(tmp_path):
     topology.save(tmp_path / "copy")
     reloaded = Topology.from_directory(tmp_path / "copy")
     assert reloaded.to_dicts() == topology.to_dicts()
+
+
+def test_vti_overlays_round_trip_without_becoming_physical_ports(tmp_path):
+    lab = Topology(testbed_id="custom_vpn")
+    lab.add(Network("vpn", "10.90.0.0/30", kind="overlay"))
+    for name, interface, address in (
+        ("EDGE", "vti7", "10.90.0.1/30"),
+        ("SITE", "vti9", "10.90.0.2/30"),
+    ):
+        lab.add(
+            Router(
+                name,
+                config=f"{name}.sh",
+                role="VPN boundary",
+                interfaces=(Interface(interface, kind="vti", cidr=address),),
+            )
+        )
+    overlay = lab.link(
+        "vpn-link",
+        "EDGE:vti7",
+        "SITE:vti9",
+        kind="overlay",
+        network_id="vpn",
+        cidr="10.90.0.0/30",
+        description="Logical IPsec",
+    )
+    lab.validate().save(tmp_path / "custom")
+    restored = Topology.from_directory(tmp_path / "custom")
+    assert restored.to_dicts() == lab.to_dicts()
+    assert overlay.first.interface == "vti7"
+    assert overlay.first.port_role is None
+    for document, schema_file in (
+        ("infrastructure", "infrastructure.schema.json"),
+        ("links", "link-plan.schema.json"),
+    ):
+        schema = json.loads((ROOT / "schemas" / schema_file).read_text())
+        Draft202012Validator(schema).validate(restored.to_dicts()[document])
+    overlay.kind = "transit"
+    with pytest.raises(TopologyError, match="logical overlay, not a physical cable"):
+        lab.validate()
+
+
+def test_overlay_requires_declared_vti_endpoints_on_its_network():
+    lab = Topology(testbed_id="custom_vpn")
+    lab.add(Network("vpn", "10.90.0.0/30", kind="overlay"))
+    lab.add(
+        Router(
+            "EDGE",
+            config="edge.sh",
+            interfaces=(Interface("vti7", kind="vti", cidr="10.90.0.1/30"),),
+        )
+    )
+    lab.add(
+        Router(
+            "SITE",
+            config="site.sh",
+            interfaces=(Interface("vti9", kind="vti", cidr="10.91.0.1/30"),),
+        )
+    )
+    lab.link(
+        "vpn-link",
+        "EDGE:vti7",
+        "SITE:vti9",
+        kind="overlay",
+        network_id="vpn",
+        cidr="10.90.0.0/30",
+    )
+    with pytest.raises(TopologyError, match="does not match overlay CIDR"):
+        lab.validate()
+    lab.links[0].second = Endpoint("SITE", interface="eth0")
+    with pytest.raises(TopologyError, match="must select a declared router VTI"):
+        lab.validate()
 
 
 def test_documents_from_different_testbeds_are_refused():

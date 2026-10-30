@@ -26,8 +26,8 @@
         "node": { "type": "string", "minLength": 1 },
         "interface": {
           "type": "string",
-          "pattern": "^eth[0-9]+(?:\\.vif[0-9]+)?$",
-          "description": "Interface as the model configures it, optionally a 802.1Q subinterface"
+          "pattern": "^(?:eth[0-9]+(?:\\.vif[0-9]+)?|vti[0-9]+)$",
+          "description": "Ethernet interface, optional 802.1Q subinterface, or logical IPsec VTI"
         },
         "port_role": {
           "type": "string",
@@ -49,8 +49,8 @@
       "properties": {
         "id": { "type": "string", "pattern": "^[a-z][a-z0-9_-]*$" },
         "kind": {
-          "enum": ["trunk", "access", "transit", "underlay"],
-          "description": "trunk carries several VLANs, access one untagged segment, transit and underlay are routed point-to-point"
+          "enum": ["trunk", "access", "transit", "underlay", "overlay"],
+          "description": "Physical cabling or a logical overlay. Overlay links configure router VTIs and are not GNS3 cables or capture points."
         },
         "description": { "type": "string", "minLength": 1 },
         "network_id": {
@@ -80,6 +80,21 @@
         },
         "notes": { "type": "string" }
       },
+      "allOf": [
+        {
+          "if": { "properties": { "kind": { "const": "overlay" } }, "required": ["kind"] },
+          "then": {
+            "required": ["network_id", "cidr"],
+            "properties": {
+              "vlans": { "maxItems": 0 },
+              "endpoints": { "items": { "required": ["interface"], "properties": { "interface": { "pattern": "^vti[0-9]+$" } }, "not": { "required": ["port_role"] } } }
+            }
+          },
+          "else": {
+            "properties": { "endpoints": { "items": { "properties": { "interface": { "not": { "pattern": "^vti" } } } } } }
+          }
+        }
+      ],
       "additionalProperties": false
     }
   },

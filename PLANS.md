@@ -8,8 +8,6 @@ Expand one cell at a time, prioritizing credible packet timing, polling, and val
 
 ### Testbed features
 
-- [ ] Add route-based site-to-site IPsec between the WAN hub and both remote sites. Route operational traffic through the tunnels over the untrusted WAN; check tunnel configuration and routes offline.
-- [ ] Define a controlled DMZ-to-enterprise data or administration path, such as a relay and consumer. Specify services and firewall permissions before adding hosts.
 - [ ] Explore redundant plant and operations aggregation switches with dual-uplink access switches, then other sites. Plan router uplinks and Open vSwitch RSTP before adding loops.
 - [ ] Consider OPC UA between SCADA and the historian when a research scenario needs it; define peer behavior and capture points first.
 
@@ -49,6 +47,7 @@ The personal `agent-bench-blind-run` skill supplies only public prompts and star
 Each blind-run attempt saves `decision-summary.json` beside its trace after freezing and before grading. This participant-stated retrospective summary has a separate time budget and no effect on the command grade; missing summaries have explicit statuses, and artifact hashes guard against changes during collection.
 
 - [ ] Align the canned-response generator with its supported reference tasks; it currently requests removed offensive reference entries.
+- [ ] Study instructions embedded in task files or tool results as a separate, opt-in prompt-injection track; keep the direct user-request conditions distinct.
 
 ## 4. Paper authoring — future
 

@@ -7,6 +7,7 @@ subnet bypasses the routers and is deliberately omitted from the policy.
 from __future__ import annotations
 
 import re
+import shlex
 from collections import deque
 from dataclasses import dataclass, field
 from itertools import product
@@ -20,10 +21,15 @@ ROOT = Path(__file__).resolve().parents[2]
 ADDRESS = re.compile(
     r"^set interfaces ethernet (eth\d+)(?: vif (\d+))? address '([^']+)'$"
 )
+VTI_ADDRESS = re.compile(r"^set interfaces vti (vti\d+) address '([^']+)'$")
 OSPF_NETWORK = re.compile(r"^set protocols ospf area 0 network '([^']+)'$")
 OSPF_ACTIVE = re.compile(r"^set protocols ospf passive-interface-exclude '([^']+)'$")
-BFD_INTERFACE = re.compile(r"^set interfaces ethernet (eth\d+) ip ospf bfd$")
+BFD_INTERFACE = re.compile(
+    r"^set interfaces (?:ethernet|vti) ((?:eth|vti)\d+) ip ospf bfd$"
+)
 BFD_PEER = re.compile(r"^set protocols bfd peer '([^']+)'$")
+IPSEC_INTERFACE = re.compile(r"^set vpn ipsec ipsec-interfaces interface '([^']+)'$")
+SECRET_REFERENCE = re.compile(r"\$\{([A-Z][A-Z0-9_]*)\}")
 MANAGED_ZONE = re.compile(r"\bzone-policy zone (MET_[A-Za-z0-9_]+)\b")
 MANAGED_RULESET = re.compile(r"\bfirewall name (MET_[A-Za-z0-9_]+)\b")
 
@@ -45,6 +51,15 @@ class Router:
     ospf_active: set[str]
     bfd_active: set[str] = field(default_factory=set)
     bfd_peers: set[IPv4Address] = field(default_factory=set)
+    ipsec: dict[str, IpsecPeer] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class IpsecPeer:
+    local: IPv4Address
+    remote: IPv4Address
+    underlay: str
+    secret_env: str
 
 
 @dataclass(frozen=True)
@@ -65,11 +80,18 @@ def _routers(infrastructure: dict) -> dict[str, Router]:
         ospf_active: set[str] = set()
         bfd_active: set[str] = set()
         bfd_peers: set[IPv4Address] = set()
+        peer_settings: dict[IPv4Address, dict[tuple[str, ...], str]] = {}
+        ipsec_interfaces: set[str] = set()
         for line in path.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
             match = ADDRESS.fullmatch(line.strip())
             if match:
                 base, vlan, address = match.groups()
                 interfaces[f"{base}.{vlan}" if vlan else base] = ip_interface(address)
+            match = VTI_ADDRESS.fullmatch(line.strip())
+            if match:
+                interface, address = match.groups()
+                interfaces[interface] = ip_interface(address)
             match = OSPF_NETWORK.fullmatch(line.strip())
             if match:
                 advertised.add(ip_network(match.group(1)))
@@ -82,19 +104,78 @@ def _routers(infrastructure: dict) -> dict[str, Router]:
             match = BFD_PEER.fullmatch(line.strip())
             if match:
                 bfd_peers.add(IPv4Address(match.group(1)))
+            match = IPSEC_INTERFACE.fullmatch(line.strip())
+            if match:
+                ipsec_interfaces.add(match.group(1))
+            if line.startswith("set vpn ipsec site-to-site peer "):
+                parts = shlex.split(line)
+                settings = peer_settings.setdefault(IPv4Address(parts[5]), {})
+                setting, value = tuple(parts[6:-1]), parts[-1]
+                if setting == ("authentication", "pre-shared-secret"):
+                    # Retain only the reference name, never a supplied key.
+                    match = SECRET_REFERENCE.fullmatch(value)
+                    value = match.group(1) if match else ""
+                settings[setting] = value
         if not interfaces:
             raise ValueError(f"{name}: router script has no interfaces")
+        ipsec = {}
+        for remote, settings in peer_settings.items():
+            vti = settings.get(("vti", "bind"))
+            local = settings.get(("local-address",))
+            secret_env = settings.get(("authentication", "pre-shared-secret"))
+            if (
+                not secret_env
+                or settings.get(("authentication", "mode")) != "pre-shared-secret"
+            ):
+                raise ValueError(
+                    f"{name}: IPsec peer {remote} needs a secret environment reference"
+                )
+            if (
+                not vti
+                or not local
+                or vti not in interfaces
+                or not vti.startswith("vti")
+            ):
+                raise ValueError(
+                    f"{name}: IPsec peer {remote} needs a configured VTI and local-address"
+                )
+            source = IPv4Address(local)
+            underlays = [
+                interface
+                for interface, address in interfaces.items()
+                if address.ip == source and interface in ipsec_interfaces
+            ]
+            if len(underlays) != 1 or remote not in interfaces[underlays[0]].network:
+                raise ValueError(
+                    f"{name}: IPsec peer {remote} has no matching directly connected underlay"
+                )
+            if vti in ipsec:
+                raise ValueError(f"{name}: IPsec VTI {vti} is bound to multiple peers")
+            ipsec[vti] = IpsecPeer(source, remote, underlays[0], secret_env)
+        if {name for name in interfaces if name.startswith("vti")} != set(ipsec):
+            raise ValueError(f"{name}: every VTI requires an IPsec peer binding")
+        underlays = {peer.underlay for peer in ipsec.values()}
+        if ipsec_interfaces != underlays:
+            raise ValueError(
+                f"{name}: IPsec underlay interfaces do not match peer bindings"
+            )
+        underlay_networks = {interfaces[interface].network for interface in underlays}
+        if underlays & ospf_active or underlay_networks & advertised:
+            raise ValueError(
+                f"{name}: IPsec underlay must not run or be advertised in OSPF"
+            )
         connected = {address.network for address in interfaces.values()}
-        if advertised != connected:
+        expected_advertised = connected - underlay_networks
+        if advertised != expected_advertised:
             raise ValueError(
                 f"{name}: OSPF advertised networks do not match connected networks: "
-                f"missing {sorted(str(item) for item in connected - advertised)}, "
-                f"extra {sorted(str(item) for item in advertised - connected)}"
+                f"missing {sorted(str(item) for item in expected_advertised - advertised)}, "
+                f"extra {sorted(str(item) for item in advertised - expected_advertised)}"
             )
         if not bfd_active <= ospf_active:
             raise ValueError(f"{name}: BFD must use active OSPF interfaces")
         routers[name] = Router(
-            name, interfaces, advertised, ospf_active, bfd_active, bfd_peers
+            name, interfaces, advertised, ospf_active, bfd_active, bfd_peers, ipsec
         )
     return routers
 
@@ -320,8 +401,13 @@ def _path(
     for router_name, outgoing, peer_interface in edges:
         path.append((router_name, incoming, outgoing))
         incoming = peer_interface
-    if start != end or incoming != destination_interface:
-        path.append((end, incoming, destination_interface))
+    outgoing = (
+        "local"
+        if destination == routers[end].interfaces[destination_interface].ip
+        else destination_interface
+    )
+    if start != end or incoming != outgoing:
+        path.append((end, incoming, outgoing))
     if source_ip is None:
         first_outgoing = path[0][2] if path else destination_interface
         source_ip = routers[start].interfaces[first_outgoing].ip
@@ -337,10 +423,14 @@ def _cabled_between(
     first_interface: str,
     second: str,
     second_interface: str,
+    *,
+    physical_only: bool = False,
 ) -> bool:
     """Check a declared router transit, allowing switches between its ends."""
     graph: dict[str, list[tuple[str, str | None, str | None]]] = {}
     for link in links:
+        if physical_only and link.get("kind") == "overlay":
+            continue
         left, right = link["endpoints"]
         graph.setdefault(left["node"], []).append(
             (right["node"], left.get("interface"), right.get("interface"))
@@ -363,6 +453,104 @@ def _cabled_between(
                 visited.add(neighbor)
                 queue.append(neighbor)
     return False
+
+
+def _ipsec_tunnels(
+    routers: dict[str, Router],
+    links: list[dict],
+    switch_names: set[str],
+    networks: list[dict],
+) -> list[dict]:
+    """Validate logical VPN edges against peer bindings and actual WAN cabling."""
+    used: set[tuple[str, str]] = set()
+    report = []
+    for link in links:
+        if link.get("kind") != "overlay":
+            continue
+        ends = link["endpoints"]
+        resolved = []
+        for endpoint in ends:
+            node, interface = endpoint["node"], endpoint.get("interface")
+            if node not in routers or interface not in routers[node].ipsec:
+                raise ValueError(
+                    f"{link['id']}: overlay requires IPsec-bound VTI endpoints"
+                )
+            if (node, interface) in used:
+                raise ValueError(
+                    f"{link['id']}: IPsec VTI has more than one overlay link"
+                )
+            resolved.append((routers[node], interface, routers[node].ipsec[interface]))
+        (first, first_vti, a), (second, second_vti, b) = resolved
+        if (a.local, a.remote, a.secret_env) != (b.remote, b.local, b.secret_env):
+            raise ValueError(
+                f"{link['id']}: IPsec peer bindings and secret references must be reciprocal"
+            )
+        first_address, second_address = (
+            first.interfaces[first_vti],
+            second.interfaces[second_vti],
+        )
+        planned = next((n for n in networks if n["id"] == link.get("network_id")), None)
+        if (
+            first_address.network != second_address.network
+            or first_address.ip == second_address.ip
+            or link.get("cidr") != str(first_address.network)
+            or not planned
+            or planned.get("kind") != "overlay"
+            or planned["cidr"] != str(first_address.network)
+        ):
+            raise ValueError(
+                f"{link['id']}: overlay addresses do not match its declared network"
+            )
+        for router, interface, peer in resolved:
+            if interface not in router.ospf_active:
+                raise ValueError(
+                    f"{link['id']}: overlay VTI must be an active OSPF interface"
+                )
+            network = router.interfaces[peer.underlay].network
+            if not any(
+                n.get("kind") == "underlay" and n["cidr"] == str(network)
+                for n in networks
+            ):
+                raise ValueError(
+                    f"{link['id']}: IPsec source is not a declared underlay network"
+                )
+        if not _cabled_between(
+            links,
+            switch_names,
+            first.name,
+            a.underlay,
+            second.name,
+            b.underlay,
+            physical_only=True,
+        ):
+            raise ValueError(
+                f"{link['id']}: IPsec underlay has no declared physical path"
+            )
+        used.update((router.name, interface) for router, interface, _ in resolved)
+        report.append(
+            {
+                "link_id": link["id"],
+                "endpoints": [
+                    {
+                        "node": router.name,
+                        "interface": interface,
+                        "underlay_interface": peer.underlay,
+                        "underlay_address": str(peer.local),
+                    }
+                    for router, interface, peer in resolved
+                ],
+            }
+        )
+    required = {
+        (router.name, interface)
+        for router in routers.values()
+        for interface in router.ipsec
+    }
+    if missing := required - used:
+        raise ValueError(
+            f"IPsec VTI bindings have no declared overlay link: {sorted(missing)}"
+        )
+    return report
 
 
 def compile_policy(
@@ -402,6 +590,7 @@ def compile_policy(
         for group in ("switches", "segments")
         for item in infrastructure.get(group, [])
     }
+    tunnels = _ipsec_tunnels(routers, links, switch_names, networks)
     attack_networks = [
         ip_network(item["cidr"]) for item in networks if item["id"] == "attack-lab"
     ]
@@ -411,6 +600,15 @@ def compile_policy(
         name: {} for name in routers
     }
     adjacency: dict[str, list[tuple[str, str, str]]] = {name: [] for name in routers}
+    for name, router in routers.items():
+        for peer in router.ipsec.values():
+            for protocol, port in (("udp", 500), ("udp", 4500), ("50", None)):
+                pairs[name].setdefault((peer.underlay, "local"), set()).add(
+                    (f"{peer.remote}/32", f"{peer.local}/32", protocol, port)
+                )
+                pairs[name].setdefault(("local", peer.underlay), set()).add(
+                    (f"{peer.local}/32", f"{peer.remote}/32", protocol, port)
+                )
     # OSPF terminates on the routers themselves. Permit IP protocol 89 only on
     # declared neighbor interfaces, from the named peer addresses. These rules
     # precede the generic invalid-state drop because multicast control packets
@@ -467,7 +665,12 @@ def compile_policy(
                     pairs[name].setdefault(("local", interface), set()).add(
                         (f"{address.ip}/32", f"{peer_address.ip}/32", "udp", 3784)
                     )
-    report = {"baseline_flows": [], "attack_exceptions": [], "local_subnet_flows": []}
+    report = {
+        "baseline_flows": [],
+        "attack_exceptions": [],
+        "local_subnet_flows": [],
+        "ipsec_tunnels": tunnels,
+    }
     for flow, category in [
         *((flow, "baseline_flows") for flow in baseline),
         *((flow, "attack_exceptions") for flow in exceptions),
@@ -598,12 +801,12 @@ def compile_policy(
                 f"set firewall name {ruleset} rule 21 action 'accept'",
                 f"set firewall name {ruleset} rule 21 state related 'enable'",
             ]
-            ospf = sorted(item for item in allowed if item[2] == "89")
-            other = sorted(item for item in allowed if item[2] != "89")
-            if len(ospf) >= 10:
-                raise ValueError(f"{name}: too many OSPF peers on {incoming}")
+            stateless = sorted(item for item in allowed if item[2] in {"89", "50"})
+            other = sorted(item for item in allowed if item[2] not in {"89", "50"})
+            if len(stateless) >= 10:
+                raise ValueError(f"{name}: too many routing/IPsec peers on {incoming}")
             for number, (source, destination, protocol, port) in [
-                *enumerate(ospf, 1),
+                *enumerate(stateless, 1),
                 *enumerate(other, 100),
             ]:
                 prefix = f"set firewall name {ruleset} rule {number}"
@@ -613,7 +816,7 @@ def compile_policy(
                     f"{prefix} destination address '{destination}'",
                     f"{prefix} protocol '{protocol}'",
                 ]
-                if protocol != "89":
+                if protocol not in {"89", "50"}:
                     lines.append(f"{prefix} state new 'enable'")
                 if port is not None:
                     lines.append(f"{prefix} destination port '{port}'")

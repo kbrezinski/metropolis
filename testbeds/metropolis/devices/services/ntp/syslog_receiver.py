@@ -15,6 +15,11 @@ SYSLOG = re.compile(
 SECRET = re.compile(
     r"(?i)\b(password|passwd|secret|token|private[_-]?key)(\s*[:=]\s*)\S+"
 )
+# Match the console-safe PSK token without consuming JSON string delimiters.
+IPSEC_PSK = re.compile(
+    r"(?i)(\bauthentication\s+pre-shared-secret\s+)"
+    r"(?P<quote>\\*[\"']|)(?P<value>[A-Za-z0-9_+/=-]+)(?P=quote)"
+)
 LEVELS = (
     "EMERGENCY",
     "ALERT",
@@ -30,6 +35,10 @@ LEVELS = (
 def parse_syslog(payload: bytes, peer: str) -> dict:
     raw = payload.decode("utf-8", errors="replace").rstrip("\x00\r\n")
     safe = SECRET.sub(lambda match: match[1] + match[2] + "[REDACTED]", raw)
+    safe = IPSEC_PSK.sub(
+        lambda match: match[1] + match["quote"] + "[REDACTED]" + match["quote"],
+        safe,
+    )
     match = SYSLOG.match(safe)
     pri = int(match["pri"]) if match else None
     return {

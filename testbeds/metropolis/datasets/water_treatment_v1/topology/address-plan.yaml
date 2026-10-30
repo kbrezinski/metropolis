@@ -192,17 +192,17 @@ networks:
     kind: transit
     cidr: 10.20.254.8/30
     purpose: Point-to-point router link.
-  - id: ipsec-reserved
-    name: Reserved remote-site IPsec overlay range
+  - id: ipsec-raw-water
+    name: WAN hub to raw-water IPsec overlay
     site: inter_site
     zone: transport
     kind: overlay
     cidr: 10.20.254.12/30
-    purpose: Reserved for future encrypted remote-site tunnels; not configured.
-  - id: ipsec-reservoir-reserved
-    name: Reserved reservoir IPsec overlay range
+    purpose: Route-based IPsec VTI carrying operational traffic, OSPF, and BFD.
+  - id: ipsec-reservoir
+    name: WAN hub to reservoir IPsec overlay
     site: inter_site
     zone: transport
     kind: overlay
     cidr: 10.20.254.16/30
-    purpose: Reserved for a future encrypted reservoir tunnel; not configured.
+    purpose: Route-based IPsec VTI carrying operational traffic, OSPF, and BFD.

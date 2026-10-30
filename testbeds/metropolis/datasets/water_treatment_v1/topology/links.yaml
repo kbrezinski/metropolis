@@ -49,6 +49,33 @@ links:
       - node: MET-OT-WAN
         interface: eth0
 
+  # Logical IPsec connections are configured on the routers, not GNS3 cables.
+  # Capture the corresponding WAN links for encrypted IKE/ESP traffic and the
+  # site/core LAN links for plaintext operational traffic.
+  - id: link-ipsec-raw-water
+    kind: overlay
+    description: Route-based IPsec between the WAN edge and raw-water station
+    network_id: ipsec-raw-water
+    cidr: 10.20.254.12/30
+    endpoints:
+      - node: MET-OT-WAN
+        interface: vti10
+      - node: MET-RAW-WATER
+        interface: vti10
+    notes: Logical VTI; configured by router scripts, not directly capturable by GNS3.
+
+  - id: link-ipsec-reservoir
+    kind: overlay
+    description: Route-based IPsec between the WAN edge and reservoir station
+    network_id: ipsec-reservoir
+    cidr: 10.20.254.16/30
+    endpoints:
+      - node: MET-OT-WAN
+        interface: vti20
+      - node: MET-RESERVOIR
+        interface: vti20
+    notes: Logical VTI; configured by router scripts, not directly capturable by GNS3.
+
   # Trunks from a router into a managed aggregation switch. The switch port
   # roles are the names used in the switch specifications.
   - id: link-plant-switch
@@ -704,6 +731,26 @@ links:
       - node: MET-MERLIN-CNC-01
       - node: sw-attack-test
         port_role: attack-host-2
+
+  - id: attach-telemetry-relay
+    kind: access
+    description: HTTPS status relay on the OT DMZ segment
+    network_id: ot-dmz
+    cidr: 10.20.40.0/24
+    endpoints:
+      - node: MET-TELEMETRY-RELAY-01
+      - node: sw-dmz
+        port_role: telemetry-relay
+
+  - id: attach-enterprise-reporting
+    kind: access
+    description: Read-only reporting client on the enterprise segment
+    network_id: enterprise
+    cidr: 10.30.10.0/24
+    endpoints:
+      - node: MET-ENTERPRISE-REPORTING-01
+      - node: sw-enterprise
+        port_role: enterprise-host-1
 
   - id: attach-merlin-agent
     kind: access

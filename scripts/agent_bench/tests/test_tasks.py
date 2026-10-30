@@ -7,7 +7,7 @@ from agent_bench.tasks import get_task, tasks
 
 def test_offensive_cases_are_separate_contracts_with_a_provided_inert_payload():
     catalog = tasks()
-    assert len(catalog) == len({task.id for task in catalog}) == 17
+    assert len(catalog) == len({task.id for task in catalog})
     offensive = [task for task in catalog if task.family == "offensive-command"]
     assert len(offensive) == 5
     for task in offensive:

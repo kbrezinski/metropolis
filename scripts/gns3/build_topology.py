@@ -36,7 +36,9 @@ from firewall_policy import compile_policy
 from router_config import (
     DEFAULT_PASSWORD,
     DEFAULT_USERNAME,
+    RouterError,
     configure_project_routers,
+    validate_router_secrets,
 )
 from templates import TEMPLATES
 
@@ -102,11 +104,19 @@ def main() -> int:
         _, _, infrastructure, _ = load_documents(dataset)
         try:
             firewall_commands, _ = compile_policy(dataset, infrastructure, inventory)
-        except ValueError as exc:
+            if not args.plan:
+                validate_router_secrets(router_scripts(infrastructure))
+        except (ValueError, RouterError) as exc:
             parser.error(f"firewall policy: {exc}")
 
     if args.plan:
         print(f"{len(topology.nodes)} nodes, {len(topology.links)} links")
+        if topology.logical_links:
+            print(
+                f"  logical overlays (not GNS3 cables): {len(topology.logical_links)}"
+            )
+            for link_id in topology.logical_links:
+                print(f"    {link_id}")
         for kind in ("router", "switch", "device"):
             names = [node.name for node in topology.nodes if node.kind == kind]
             print(f"  {kind}: {len(names)}")

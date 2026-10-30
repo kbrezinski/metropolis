@@ -39,16 +39,27 @@ def main() -> int:
     dataset = args.dataset.resolve()
     address_plan, inventory, infrastructure, link_plan = load_documents(dataset)
     declared = [link["id"] for link in link_plan["links"]]
+    logical = {link["id"] for link in link_plan["links"] if link["kind"] == "overlay"}
     if args.list or not (args.links or args.all_built or args.coverage):
         print(f"{len(declared)} declared links in {dataset.name}:")
         for name in declared:
-            print(f"  {name}")
+            suffix = (
+                " (logical overlay; not directly capturable)" if name in logical else ""
+            )
+            print(f"  {name}{suffix}")
         if not (args.links or args.all_built or args.coverage):
             return 0
     unknown = [name for name in args.links or [] if name not in declared]
     if unknown:
         for name in unknown:
             print(f"error: {name} is not declared in links.yaml", file=sys.stderr)
+        return 2
+    if selected_overlays := sorted(set(args.links or []) & logical):
+        print(
+            "error: logical overlays are not physical capture links: "
+            + ", ".join(selected_overlays),
+            file=sys.stderr,
+        )
         return 2
     if args.duration <= 0:
         print("error: --duration must be positive", file=sys.stderr)
@@ -86,7 +97,7 @@ def main() -> int:
         preflight = [
             f"{name}: {detail['status']}"
             for name, detail in resolution.status.items()
-            if detail["status"] not in {"built", "undeclared_built"}
+            if detail["status"] not in {"built", "undeclared_built", "logical_overlay"}
         ]
     result = capture_for(
         client,

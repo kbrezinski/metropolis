@@ -25,6 +25,11 @@ SECRET = re.compile(
     r"(?i)\b(password|passwd|secret|token|api[_-]?key|private[_-]?key)"
     r"([\"']?\s*[:=]\s*)(\"[^\"]*\"|'[^']*'|[^\s,}]+)"
 )
+# Preserve quote escaping when console-safe PSKs appear inside JSON log fields.
+IPSEC_PSK = re.compile(
+    r"(?i)(\bauthentication\s+pre-shared-secret\s+)"
+    r"(?P<quote>\\*[\"']|)(?P<value>[A-Za-z0-9_+/=-]+)(?P=quote)"
+)
 PEM_START = re.compile(r"-----BEGIN (?:[A-Z ]* )?PRIVATE KEY-----")
 PEM_END = re.compile(r"-----END (?:[A-Z ]* )?PRIVATE KEY-----")
 SAFE_NAME = re.compile(r"[^A-Za-z0-9._-]+")
@@ -47,7 +52,11 @@ def redact(line: str, *, in_private_key: bool = False) -> tuple[str, bool, bool]
         return match[1] + match[2] + replacement
 
     cleaned, count = SECRET.subn(substitute, line)
-    return cleaned, bool(count), False
+    cleaned, psk_count = IPSEC_PSK.subn(
+        lambda match: match[1] + match["quote"] + "[REDACTED]" + match["quote"],
+        cleaned,
+    )
+    return cleaned, bool(count or psk_count), False
 
 
 def normalize_line(

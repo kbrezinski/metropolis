@@ -38,6 +38,7 @@ are not preserved when a topology is loaded and written again; the data is.
 from __future__ import annotations
 
 import ipaddress
+import re
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Iterable, Iterator, Mapping, Sequence
@@ -126,7 +127,7 @@ class Network:
 
 @dataclass
 class Interface:
-    """One router port: an address on a subnet, or a VLAN trunk."""
+    """An Ethernet interface, VLAN trunk, or logical IPsec VTI."""
 
     name: str
     cidr: str | None = None
@@ -617,7 +618,7 @@ class Endpoint:
     def parse(cls, value: Any) -> Endpoint:
         """Accept ``"NODE:eth0"``, ``"NODE:role"``, or a mapping.
 
-        A suffix beginning with ``eth`` is an interface; anything else is a
+        A suffix beginning with ``eth`` or ``vti`` is an interface; anything else is a
         switch port role.
         """
         if isinstance(value, Endpoint):
@@ -626,7 +627,7 @@ class Endpoint:
             node, _, suffix = value.partition(":")
             if not suffix:
                 return cls(node=node)
-            if suffix.startswith("eth"):
+            if suffix.startswith(("eth", "vti")):
                 return cls(node=node, interface=suffix)
             return cls(node=node, port_role=suffix)
         if isinstance(value, Mapping):
@@ -648,7 +649,7 @@ class Endpoint:
 
 @dataclass
 class Link:
-    """A cable: two endpoints, and what it carries between them."""
+    """A physical cable or logical overlay between two endpoints."""
 
     id: str
     first: Endpoint
@@ -1165,6 +1166,17 @@ class Topology:
             if len(set(names)) != len(names):
                 found.append(f"router {router.name}: interface names are not unique")
             for interface in router.interfaces:
+                if interface.name.startswith("vti") or interface.kind == "vti":
+                    if (
+                        not re.fullmatch(r"vti\d+", interface.name)
+                        or interface.kind != "vti"
+                        or interface.cidr is None
+                        or interface.vlans
+                    ):
+                        found.append(
+                            f"router {router.name} {interface.name}: VTI requires "
+                            "a vti name, kind vti, an address, and no VLANs"
+                        )
                 if interface.cidr is None and interface.kind is None:
                     found.append(
                         f"router {router.name} {interface.name}: neither an address "
@@ -1184,6 +1196,11 @@ class Topology:
         found: list[str] = []
         known = self.node_names()
         switch_names = {item.name for item in self.switches}
+        router_interfaces = {
+            (router.name, interface.name): interface
+            for router in self.routers
+            for interface in router.interfaces
+        }
         for link in self.links:
             for endpoint in link.endpoints:
                 if endpoint.node not in known:
@@ -1200,6 +1217,48 @@ class Topology:
                             f"link {link.id}: {endpoint.node} has no port role "
                             f"{endpoint.port_role!r}"
                         )
+                interface = router_interfaces.get((endpoint.node, endpoint.interface))
+                if link.kind == "overlay":
+                    if (
+                        interface is None
+                        or interface.kind != "vti"
+                        or endpoint.port_role
+                    ):
+                        found.append(
+                            f"link {link.id}: overlay endpoint {endpoint.node} "
+                            f"{endpoint.interface} must select a declared router VTI"
+                        )
+                    elif interface.cidr and link.cidr:
+                        try:
+                            matches = ipaddress.ip_interface(
+                                interface.cidr
+                            ).network == ipaddress.ip_network(link.cidr)
+                        except ValueError:
+                            matches = False
+                        if not matches:
+                            found.append(
+                                f"link {link.id}: VTI {endpoint.node} "
+                                f"{endpoint.interface} does not match overlay CIDR"
+                            )
+                elif endpoint.interface and endpoint.interface.startswith("vti"):
+                    found.append(
+                        f"link {link.id}: a VTI is a logical overlay, not a physical cable"
+                    )
+            if link.kind == "overlay":
+                network = network_by_id.get(link.network_id)
+                if (
+                    network is None
+                    or network.kind != "overlay"
+                    or not link.cidr
+                    or link.vlans
+                ):
+                    found.append(
+                        f"link {link.id}: overlay requires an overlay network, CIDR, and no VLANs"
+                    )
+                elif network.cidr != link.cidr:
+                    found.append(
+                        f"link {link.id}: overlay CIDR differs from its network"
+                    )
             if link.network_id is not None and link.network_id not in network_by_id:
                 found.append(
                     f"link {link.id}: network {link.network_id!r} is not in the "
@@ -1602,7 +1661,11 @@ def _dot_links(topology: Topology) -> list[str]:
         if link.second.interface or link.second.port_role:
             parts.append(link.second.interface or link.second.port_role or "")
         label = " / ".join(part for part in parts if part)
-        style = ' [style="dashed"' if link.status == "planned" else " ["
+        style = (
+            ' [style="dashed"'
+            if link.status == "planned" or link.kind == "overlay"
+            else " ["
+        )
         lines.append(
             f'  "{_escape(link.first.node)}" -> "{_escape(link.second.node)}"'
             f'{style} label="{_escape(label)}"];'

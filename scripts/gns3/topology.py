@@ -75,6 +75,7 @@ class Topology:
     skipped: list[str]
     missing_templates: list[str]
     switch_ports: dict[str, dict[int, dict]] = field(default_factory=dict)
+    logical_links: list[str] = field(default_factory=list)
 
 
 def load(dataset: Path) -> tuple[dict, dict, dict]:
@@ -103,11 +104,13 @@ def _device_nodes(
     inventory: dict, templates: dict[str, str]
 ) -> tuple[list[PlannedNode], list[str]]:
     from mqtt_acl import compile_mqtt_access
+    from telemetry_config import compile_telemetry
 
     nodes: list[PlannedNode] = []
     missing: list[str] = []
     devices = {device["name"]: device for device in inventory["devices"]}
     broker_access = compile_mqtt_access(inventory)
+    telemetry = compile_telemetry(inventory)
     for device in inventory["devices"]:
         template_name = templates.get(device["image"])
         if template_name is None:
@@ -116,6 +119,7 @@ def _device_nodes(
             )
             continue
         environment = dict(device.get("environment", {}))
+        environment.update(telemetry.get(device["name"], {}))
         if "MQTT_OPERATOR_USERNAME" in environment:
             environment.update(broker_access)
         if peer_names := environment.get("DNP3_PEER_NODES"):
@@ -207,6 +211,8 @@ def switch_port_settings(
     roles = port_map(infrastructure)
     settings: dict[str, dict[int, dict]] = {name: {} for name in roles}
     for link in link_plan["links"]:
+        if link["kind"] == "overlay":
+            continue
         for endpoint in link["endpoints"]:
             name, role = endpoint["node"], endpoint.get("port_role")
             if name not in roles or role is None:
@@ -254,6 +260,8 @@ def _adapter_for(endpoint: dict, roles: dict[str, dict[str, int]]) -> int | None
     interface = endpoint.get("interface")
     if interface and interface.startswith("eth"):
         return int(interface[3:])
+    if interface:
+        return None
     return 0
 
 
@@ -297,9 +305,19 @@ def build_plan(
     segments = {item["name"] for item in infrastructure.get("segments", [])}
     next_segment_adapter = dict.fromkeys(segments, 0)
     links: list[PlannedLink] = []
+    logical_links: list[str] = []
     skipped: list[str] = []
     for link in link_plan["links"]:
         endpoints = link["endpoints"]
+        if link["kind"] == "overlay":
+            absent = [end["node"] for end in endpoints if end["node"] not in known]
+            if absent:
+                skipped.append(
+                    f"{link['id']}: {', '.join(absent)} is not a created node"
+                )
+            else:
+                logical_links.append(link["id"])
+            continue
         adapters = []
         for endpoint in endpoints:
             name = endpoint["node"]
@@ -339,4 +357,5 @@ def build_plan(
         skipped=skipped,
         missing_templates=missing,
         switch_ports=switch_port_settings(infrastructure, link_plan),
+        logical_links=logical_links,
     )

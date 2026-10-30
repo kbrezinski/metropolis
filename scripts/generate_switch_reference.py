@@ -59,8 +59,9 @@ FOOTER = """
 - VLAN numbers and subnets come from `topology/address-plan.yaml`. The router
   trunks must carry the same VLANs listed here, and
   `scripts/validate_metropolis_topology.py` checks that they do.
-- Firewall policy and IPsec are router-layer concerns and are not configured.
-  Switch VLAN membership separates traffic; it does not filter it.
+- Firewall policy and IPsec are applied by the router configuration tooling,
+  not by these switches. Switch VLAN membership separates traffic; it does
+  not filter it. IPsec VTI overlays do not create additional switch ports.
 - This table is the declared intent. The Metropolis Open vSwitch Docker image
   receives these settings from the topology builder, which checks applied OVS
   state and reports any switch that remains unconfigured.

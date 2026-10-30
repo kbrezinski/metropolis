@@ -8,6 +8,7 @@ import math
 import os
 import queue
 import re
+import signal
 import threading
 import time
 from collections import OrderedDict
@@ -27,6 +28,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path("/opt/metropolis")))
 from tls_config import TlsConfig, apply_to  # noqa: E402,F401
 from alarms import ALARM_NAMES  # noqa: E402
+from telemetry_export import TelemetryExporter  # noqa: E402
 
 
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
@@ -375,6 +377,7 @@ class CommandBridge:
 
 def main() -> None:
     name = os.getenv("DEVICE_NAME", "MET-SCADA-01")
+    exporter = TelemetryExporter.from_environment(name)
     targets = configured_targets(
         os.getenv("SCADA_TARGETS"),
         legacy_host=os.getenv("PLC_HOST", "10.20.10.10"),
@@ -460,8 +463,16 @@ def main() -> None:
     poll_ok: dict[str, bool] = {}
     poll_stale: dict[str, bool] = {}
 
+    def terminate(signum, frame) -> None:
+        raise KeyboardInterrupt
+
+    previous_term = signal.signal(signal.SIGTERM, terminate)
+    if exporter is not None:
+        exporter.start()
+
     try:
         while True:
+            statuses = []
             for target in targets:
                 try:
                     payload = poll_target(target, port=modbus_port, unit_id=unit_id)
@@ -487,21 +498,22 @@ def main() -> None:
                     log.info(
                         "Polled %s heartbeat=%s", target.cell, payload["heartbeat"]
                     )
+                    statuses.append(payload)
                 except Exception as exc:  # Keep other cells polling during an outage.
+                    unavailable = {
+                        "device": name,
+                        "cell": target.cell,
+                        "controller": target.host,
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                        "quality": "unavailable",
+                        "alarms": ["controller_unreachable"],
+                        "transition": "poll_lost",
+                    }
+                    statuses.append(unavailable)
                     if poll_ok.get(target.cell) is not False:
                         publisher.publish(
                             target.topic,
-                            json.dumps(
-                                {
-                                    "device": name,
-                                    "cell": target.cell,
-                                    "controller": target.host,
-                                    "timestamp": datetime.now(timezone.utc).isoformat(),
-                                    "quality": "unavailable",
-                                    "alarms": ["controller_unreachable"],
-                                    "transition": "poll_lost",
-                                }
-                            ),
+                            json.dumps(unavailable),
                             qos=0,
                             retain=False,
                         )
@@ -509,10 +521,15 @@ def main() -> None:
                     poll_ok[target.cell] = False
                     poll_stale[target.cell] = False
                     heartbeat_monitor.forget(target.cell)
+            if exporter is not None:
+                exporter.submit(statuses)
             time.sleep(interval)
     except KeyboardInterrupt:
         pass
     finally:
+        signal.signal(signal.SIGTERM, previous_term)
+        if exporter is not None:
+            exporter.close()
         stop_dnp3.set()
         if dnp3_thread is not None:
             dnp3_thread.join(timeout=4)

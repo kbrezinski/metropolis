@@ -56,7 +56,7 @@ python scripts/attacks/run.py network_recon_scan --dry-run
 
 - Central SCADA polls four PLCs and two RTUs over Modbus and polls remote RTU alarm events over DNP3; HMI setpoint readback covers plant cells. The control client reads the intake sensor's CoAP status. These are lab protocol models, not vendor profiles or physical process simulation.
 - Router scripts in `testbeds/metropolis/router/` use OSPF area 0. Firewall policy permits selected LANs/CIDRs by protocol/port and drops other routed traffic; same-VLAN traffic bypasses it.
-- The WAN is an untrusted public-network underlay; site-to-site IPsec is planned, not configured. VyOS is imported separately; `scripts/gns3/switch_config.py` configures the repo-owned Open vSwitch image.
+- The WAN is an untrusted public-network underlay. `MET-OT-WAN` is the edge firewall and IKEv2/IPsec hub; inter-site OSPF/BFD and operational traffic use VTI overlays. Controller-side PSKs are required for router configuration; never commit or report their values. Logical overlays are not GNS3 cables or capture points. Live tunnel behavior remains user-verified. VyOS is imported separately; `scripts/gns3/switch_config.py` configures the repo-owned Open vSwitch image.
 
 ## Node change workflow
 
@@ -66,7 +66,9 @@ python scripts/attacks/run.py network_recon_scan --dry-run
 4. Check service targets, protocols, and startup/readiness. Run `render_firewall --check` for routed flows; change permissions only as needed.
 5. Check capture points and log attribution, run applicable tests/validation, and update owning docs and `PLANS.md` when scope/status changes.
 
-The builder reuses nodes by name without reconciling changed images or environments; it reports stale MQTT/DNP3/CoAP environment settings.
+- SCADA exports selected status/alarms to a mutually authenticated HTTPS relay in the DMZ; an enterprise reader polls that relay. Resolve peers from inventory and generate role certificates before building the three images; see the GNS3 guide.
+
+The builder reuses nodes by name without reconciling changed images or environments; it reports stale MQTT/DNP3/CoAP/SNMP/telemetry environment settings.
 
 ## Runs, attacks, and documentation
 

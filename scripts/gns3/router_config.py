@@ -19,7 +19,9 @@ it will boot at all; that is the one step that cannot be automated.
 from __future__ import annotations
 
 import logging
+import os
 import re
+import shlex
 import socket
 import time
 from dataclasses import dataclass, field
@@ -110,6 +112,48 @@ class RouterResult:
     error: str | None = None
 
 
+SECRET_REFERENCE = re.compile(r"\$\{([A-Z][A-Z0-9_]*)\}")
+SECRET_GUARD = re.compile(r'^:\s+"\$\{[A-Z][A-Z0-9_]*:\?[^"\r\n]*\}"$')
+SAFE_PSK = re.compile(r"[A-Za-z0-9_+/=-]{32,128}")
+
+
+def _secret_commands(commands: list[str]) -> list[str]:
+    """Expand only IPsec PSK placeholders, without evaluating shell code."""
+    resolved = []
+    for command in commands:
+        names = SECRET_REFERENCE.findall(command)
+        if "${" in command and not names:
+            raise RouterError("unsupported environment placeholder in router script")
+        if names:
+            if (
+                len(names) != 1
+                or not command.startswith("set vpn ipsec site-to-site peer ")
+                or " authentication pre-shared-secret " not in command
+                or not command.endswith('"${' + names[0] + '}"')
+            ):
+                raise RouterError(
+                    "environment placeholders are only supported for IPsec PSKs"
+                )
+            name = names[0]
+            value = os.environ.get(name, "")
+            if not SAFE_PSK.fullmatch(value):
+                raise RouterError(
+                    f"{name} must contain 32–128 letters, digits, or _+/=- characters"
+                )
+            command = command.replace("${" + name + "}", value)
+        resolved.append(command)
+    return resolved
+
+
+def validate_router_secrets(scripts: dict[str, str]) -> None:
+    """Fail before any router changes if required controller-side PSKs are missing."""
+    for name, script in sorted(scripts.items()):
+        try:
+            _secret_commands(config_commands(Path(script)))
+        except (OSError, RouterError) as exc:
+            raise RouterError(f"{name}: {exc}") from None
+
+
 def config_commands(path: Path) -> list[str]:
     """The commands a router script applies, in order.
 
@@ -125,6 +169,7 @@ def config_commands(path: Path) -> list[str]:
             or stripped.startswith("#")
             or stripped in {"configure", "exit"}
             or stripped.startswith("source ")
+            or SECRET_GUARD.fullmatch(stripped)
         ):
             continue
         commands.append(stripped)
@@ -138,14 +183,14 @@ def expected_interfaces(path: Path) -> dict[str, set[str]]:
     reports, not what the script said it would configure.
     """
     pattern = re.compile(
-        r"^set interfaces ethernet eth(\d+)(?: vif \d+)? address '([^']+)'"
+        r"^set interfaces (?:ethernet eth(\d+)(?: vif \d+)?|vti (vti\d+)) address '([^']+)'"
     )
     expected: dict[str, set[str]] = {}
     for command in config_commands(path):
         match = pattern.match(command)
         if match:
-            number, address = match.groups()
-            expected.setdefault(number, set()).add(address)
+            number, tunnel, address = match.groups()
+            expected.setdefault(tunnel or number, set()).add(address)
     return expected
 
 
@@ -241,16 +286,27 @@ def apply_router_config(
     firewall_commands: list[str] | None = None,
 ) -> RouterResult:
     """Log in to a router's console and apply its configuration script."""
-    script_commands = config_commands(script)
-    commands = [
-        command for command in script_commands if command not in {"commit", "save"}
-    ]
-    commands += firewall_commands or []
-    commands += ["commit", "save"]
-    expected = expected_interfaces(script)
     result = RouterResult(node=script.stem)
-
+    secret_values: set[str] = set()
     try:
+        script_commands = config_commands(script)
+        secret_values = {
+            value
+            for command in script_commands
+            for name in SECRET_REFERENCE.findall(command)
+            if (value := os.environ.get(name))
+        }
+        commands = _secret_commands(
+            [
+                command
+                for command in script_commands
+                if command not in {"commit", "save"}
+            ]
+        )
+        commands += firewall_commands or []
+        commands += ["commit", "save"]
+        expected = expected_interfaces(script)
+        ipsec = any(command.startswith("set vpn ipsec ") for command in script_commands)
         with Console(host, port, boot_timeout) as console:
             buffer = console.login(username, password)
             console.send("show configuration commands")
@@ -271,6 +327,15 @@ def apply_router_config(
                 # returns a prompt, so the read-back below is what confirms the
                 # configuration actually took.
                 buffer = console.expect(CONFIG_PROMPT, CONFIG_TIMEOUT, clear=True)
+                if command.startswith("set ") and any(
+                    marker in buffer.lower()
+                    for marker in (
+                        b"invalid command",
+                        b"set failed",
+                        b"configuration path is not valid",
+                    )
+                ):
+                    raise RouterError("router rejected a configuration command")
                 if command == "commit" and any(
                     marker in buffer.lower()
                     for marker in (b"commit failed", b"configuration error")
@@ -283,13 +348,15 @@ def apply_router_config(
             console.send("run show interfaces")
             output = console.expect(CONFIG_PROMPT, CONFIG_TIMEOUT, clear=True)
             firewall_output = b""
-            if firewall_commands is not None or legacy_deletes:
+            if firewall_commands is not None or legacy_deletes or ipsec:
                 console.send("run show configuration commands")
                 firewall_output = console.expect(
                     CONFIG_PROMPT, CONFIG_TIMEOUT, clear=True
                 )
-    except RouterError as exc:
+    except (OSError, RouterError) as exc:
         result.error = str(exc)
+        for value in sorted(secret_values, key=len, reverse=True):
+            result.error = result.error.replace(value, "[REDACTED]")
         return result
 
     result.applied = True
@@ -297,8 +364,40 @@ def apply_router_config(
     for number, addresses in sorted(expected.items()):
         for address in sorted(addresses):
             if address not in text:
-                result.missing.append(f"eth{number} {address}")
+                interface = number if number.startswith("vti") else f"eth{number}"
+                result.missing.append(f"{interface} {address}")
     configured = firewall_output.decode("utf-8", errors="replace")
+    if ipsec:
+        try:
+            actual = {
+                tuple(shlex.split(line.strip()))
+                for line in configured.splitlines()
+                if line.strip().startswith("set ")
+            }
+        except ValueError:
+            result.error = "router configuration readback could not be parsed"
+            return result
+        for command in commands:
+            tokens = tuple(shlex.split(command))
+            if command.startswith(
+                (
+                    "set vpn ipsec ",
+                    "set interfaces vti ",
+                    "set protocols ospf ",
+                    "set protocols bfd ",
+                )
+            ):
+                if "pre-shared-secret" in tokens:
+                    if not any(row[:-1] == tokens[:-1] for row in actual):
+                        result.missing.append(
+                            "IPsec pre-shared-secret setting is absent"
+                        )
+                elif tokens not in actual:
+                    result.missing.append(command)
+            elif (
+                command.startswith("delete ") and tuple(["set", *tokens[1:]]) in actual
+            ):
+                result.missing.append(f"obsolete configuration remains: {command}")
     for command in legacy_static_deletes(script, configured):
         result.missing.append(f"legacy static route remains: {command}")
     if firewall_commands is not None:
@@ -333,6 +432,13 @@ def configure_project_routers(
     than skipped silently.
     """
     results: list[RouterResult] = []
+    try:
+        validate_router_secrets(routers)
+    except RouterError as exc:
+        return [
+            RouterResult(node=name, error=f"configuration preflight failed: {exc}")
+            for name in sorted(routers)
+        ]
     nodes = {node["name"]: node for node in client.project_nodes(project_id)}
     for name, script_path in sorted(routers.items()):
         node = nodes.get(name)

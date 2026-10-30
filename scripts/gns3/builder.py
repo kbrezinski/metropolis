@@ -45,7 +45,7 @@ def protocol_environment_drift(planned, existing: dict) -> bool:
     expected = {
         key: str(value)
         for key, value in planned.environment.items()
-        if key.startswith(("MQTT_", "DNP3_", "COAP_"))
+        if key.startswith(("MQTT_", "DNP3_", "COAP_", "SNMP_", "TELEMETRY_"))
     }
     if not expected:
         return False
@@ -82,7 +82,7 @@ def ensure_nodes(
             result.reused_nodes.append(planned.name)
             if protocol_environment_drift(planned, found):
                 result.skipped.append(
-                    f"{planned.name}: stale MQTT/DNP3/CoAP environment; refresh or recreate the GNS3 node"
+                    f"{planned.name}: stale MQTT/DNP3/CoAP/SNMP/telemetry environment; refresh or recreate the GNS3 node"
                 )
             continue
         template_id = template_ids.get(planned.template_name)

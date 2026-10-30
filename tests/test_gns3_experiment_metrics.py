@@ -377,10 +377,29 @@ def test_cli_passes_metric_settings_to_run(
         "load_documents",
         lambda _path: ({"testbed_id": "custom"}, {}, {}, {"links": []}),
     )
+    tunnels = [
+        {
+            "link_id": "custom-site-vpn",
+            "endpoints": [
+                {
+                    "node": "edge-a",
+                    "interface": "vti7",
+                    "underlay_interface": "eth2",
+                    "underlay_address": "192.0.2.1",
+                },
+                {
+                    "node": "site-b",
+                    "interface": "vti9",
+                    "underlay_interface": "eth3",
+                    "underlay_address": "192.0.2.2",
+                },
+            ],
+        }
+    ]
     monkeypatch.setattr(
         experiment_run,
         "compile_policy",
-        lambda *_args: ({}, {"attack_exceptions": []}),
+        lambda *_args: ({}, {"attack_exceptions": [], "ipsec_tunnels": tunnels}),
     )
     project = SimpleNamespace(project_id="project-a", name="custom-project")
     monkeypatch.setattr(
@@ -393,6 +412,7 @@ def test_cli_passes_metric_settings_to_run(
     def run(*_args, **kwargs):
         assert kwargs["metrics_enabled"] is (not disabled)
         assert kwargs["metrics_interval"] == 2.5
+        assert kwargs["metadata"]["ipsec_tunnels"] == tunnels
         assert (kwargs["baseline"] is not None) is baseline_present
         if baseline_present:
             assert kwargs["baseline"]["path"] == str(
@@ -403,6 +423,51 @@ def test_cli_passes_metric_settings_to_run(
 
     monkeypatch.setattr(experiment_run, "run_experiment", run)
     assert experiment_run.main() == 0
+
+
+def test_cli_rejects_logical_capture_before_connecting_or_starting_lab(
+    tmp_path, monkeypatch, capsys
+):
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "experiment_run",
+            "--dataset",
+            str(tmp_path),
+            "--start-lab",
+            "--links",
+            "site-vpn",
+        ],
+    )
+    monkeypatch.setattr(
+        experiment_run,
+        "load_documents",
+        lambda _path: (
+            {"testbed_id": "custom"},
+            {},
+            {},
+            {"links": [{"id": "site-vpn", "kind": "overlay"}]},
+        ),
+    )
+    monkeypatch.setattr(
+        experiment_run, "compile_policy", lambda *_args: ({}, {"attack_exceptions": []})
+    )
+    monkeypatch.setattr(
+        experiment_run, "connect", lambda _args: pytest.fail("unexpected GNS3 access")
+    )
+    monkeypatch.setattr(
+        experiment_run,
+        "run_experiment",
+        lambda *_args, **_kwargs: pytest.fail("unexpected lab startup"),
+    )
+    with pytest.raises(SystemExit) as caught:
+        experiment_run.main()
+    assert caught.value.code == 2
+    assert (
+        "logical IPsec overlays are not GNS3 capture links: site-vpn"
+        in capsys.readouterr().err
+    )
 
 
 def test_real_collector_and_reports_form_a_schema_valid_run(run_fixture):

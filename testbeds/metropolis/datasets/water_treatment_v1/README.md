@@ -8,7 +8,7 @@ Run commands from the repository root.
 | File | Defines |
 |---|---|
 | [topology/address-plan.yaml](topology/address-plan.yaml) | Sites, VLANs, subnets, and gateways |
-| [topology/links.yaml](topology/links.yaml) | Declared cabling and capture-point IDs |
+| [topology/links.yaml](topology/links.yaml) | Physical cabling/capture-point IDs and logical IPsec overlays |
 | [topology/firewall-policy.yaml](topology/firewall-policy.yaml) | Permitted routed flows by network/CIDR, protocol, and port |
 | [topology/resource-baseline.yaml](topology/resource-baseline.yaml) | Optional shared container CPU, RAM, and explicit swap limits, with model/image overrides |
 | [device_instances/initial_devices.yaml](device_instances/initial_devices.yaml) | Device names, addresses, images, and environments |
@@ -20,9 +20,18 @@ dataset's `scenarios/` and `metadata/` directories are reserved; the active
 [attack catalog](../../../../scripts/attacks/scenarios/v1.json) is shared
 under `scripts/attacks/`.
 
-Router scripts configure OSPF, BFD, SNMP, and syslog. The simulated WAN is an
-untrusted underlay with no site-to-site IPsec. Same-VLAN traffic bypasses the
-routed firewall policy.
+Router scripts configure OSPF, BFD, SNMP, syslog, and IKEv2/IPsec. `MET-OT-WAN`
+remains the edge firewall and tunnel hub for both remote sites. The untrusted
+WAN carries IPsec; inter-site OSPF/BFD and application flows use the VTI
+overlays. See [IPsec setup](../../../../scripts/gns3/README.md#site-to-site-ipsec)
+for controller-side keys and live verification steps. Same-VLAN traffic
+bypasses the routed firewall policy.
+
+The DMZ telemetry relay receives selected SCADA status over mutual TLS; the
+enterprise reporting client reads it over HTTPS. Both use the existing subnets
+and TCP 443 permissions in the firewall policy. Peer names and roles are in the
+inventory; the builder resolves their addresses. See the
+[setup and capture points](../../../../scripts/gns3/README.md#dmz-and-enterprise-data-path).
 
 The resource baseline is applied only by the explicit
 [`configure_baseline --apply` setup command](../../../../scripts/gns3/README.md#container-resource-baseline).
