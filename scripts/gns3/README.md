@@ -52,8 +52,8 @@ rejected. Repeat `--docker-host` for multiple computes.
 Clone the repository onto every compute that will host its images. Run the
 following commands from the repository root **on that compute**.
 
-Generate the telemetry certificate bundle before building SCADA, the DMZ relay,
-or the enterprise client:
+Generate the telemetry certificate bundle before building SCADA, the DMZ
+RDP/relay, or the enterprise client:
 
 ```bash
 uv run python scripts/gen_lab_certificates.py --service telemetry \
@@ -61,8 +61,8 @@ uv run python scripts/gen_lab_certificates.py --service telemetry \
 ```
 
 Use the same ignored `certs/telemetry/` bundle on all hosting computes. The
-relay image receives its server key; SCADA receives only the writer key; the
-enterprise client receives only the reader key. All three receive the CA
+DMZ RDP/relay image receives its server key; SCADA receives only the writer key;
+the enterprise client receives only the reader key. All three receive the CA
 certificate. The CA key is never saved. Keep these lab images private. Changing
 node names, the relay address, or certificates requires rebuilding these images
 from a newly shared bundle and refreshing the affected GNS3 nodes.
@@ -93,12 +93,12 @@ docker build -f "$DEVICES/field/level_instrument/Dockerfile" -t metropolis/level
 docker build -f "$DEVICES/field/sensors/Dockerfile" -t metropolis/mqtt-sensor:dev .
 docker build -f "$DEVICES/services/mqtt_broker/Dockerfile" -t metropolis/mqtt-broker:dev .
 docker build -f "$DEVICES/operations/scada/Dockerfile" -t metropolis/scada:dev .
-docker build -f "$DEVICES/services/telemetry_relay/Dockerfile" -t metropolis/telemetry-relay:dev .
 docker build -f "$DEVICES/operations/enterprise_client/Dockerfile" -t metropolis/enterprise-client:dev .
 docker build -f "$DEVICES/operations/hmi/Dockerfile" -t metropolis/hmi:dev .
 docker build -f "$DEVICES/operations/historian/Dockerfile" -t metropolis/historian:dev .
 docker build -f "$DEVICES/operations/engineering_workstation/Dockerfile" -t metropolis/engineering:dev .
 docker build -f "$DEVICES/operations/rdp_server/Dockerfile" -t metropolis/rdp-server:dev .
+docker build --target rdp-relay -f "$DEVICES/operations/rdp_server/Dockerfile" -t metropolis/rdp-relay:dev .
 docker build -f "$DEVICES/operations/rdp_client/Dockerfile" -t metropolis/rdp-client:dev .
 docker build -f "$DEVICES/operations/control_client/Dockerfile" -t metropolis/control-client:dev .
 docker build -f "$DEVICES/field/legacy_gateway/Dockerfile" -t metropolis/legacy-gateway:dev .
@@ -118,6 +118,11 @@ docker build -f "$DEVICES/attack/merlin/agent/Dockerfile" -t metropolis/merlin-a
 This builds the bundled image set. For a changed inventory, build every image
 it names and add a template registry entry for any new image. The offline
 registry check compares declarations; it does not inspect Docker images.
+
+The RDP Dockerfile's default `rdp-server` target serves the engineering node
+without telemetry certificates. Its `rdp-relay` target adds the HTTPS service
+and server credentials for the DMZ node. The two services use separate TLS keys:
+xrdp generates its own identity, while HTTPS uses the telemetry bundle.
 
 ## 3. Validate, register, and build
 
@@ -174,8 +179,8 @@ service startup in your GNS3 environment. Offline checks validate declarations.
 
 ### DMZ and enterprise data path
 
-The reference dataset adds `MET-TELEMETRY-RELAY-01` (`10.20.40.30`) in the DMZ
-and `MET-ENTERPRISE-REPORTING-01` (`10.30.10.10`) on the enterprise switch.
+The relay runs on `MET-RDP-DMZ-01` (`10.20.40.20`) alongside its RDP service.
+`MET-ENTERPRISE-REPORTING-01` (`10.30.10.10`) reads it from the enterprise network.
 SCADA posts one selected status/alarm snapshot after each polling cycle; the
 enterprise client reads the latest snapshot every ten seconds. Both connections
 terminate at the relay on TCP 443. The policy permits SCADA and enterprise
@@ -185,11 +190,14 @@ drop. It adds no enterprise-to-controller permission.
 Mutual TLS identifies the writer and reader separately. The reader can only
 read; it cannot publish or issue control commands. The builder derives peer
 URLs from `TELEMETRY_RELAY_NODE` in the selected inventory and reports stale
-`TELEMETRY_` settings on reused nodes. Rebuild and recreate/refresh existing
-SCADA nodes to activate the new image and environment; name reuse alone does
-not update either.
+`TELEMETRY_` settings on reused nodes. Name reuse does not update images or
+environments. When migrating from the dedicated relay, regenerate the shared
+certificate bundle for the new host/address, rebuild SCADA, DMZ RDP/relay, and
+enterprise images, and recreate/refresh those nodes. Remove the retired
+`MET-TELEMETRY-RELAY-01` node and its cable from an existing GNS3 project manually;
+the builder keeps undeclared nodes by default.
 
-Capture `attach-scada`, `attach-telemetry-relay`, `attach-enterprise-reporting`,
+Capture `attach-scada`, `attach-rdp-dmz`, `attach-enterprise-reporting`,
 `link-core-dmz`, `link-dmz-switch`, and `link-enterprise-switch` to observe the
 reference paths. Default all-link capture includes these points. HTTPS PCAPs
 show encrypted exchanges and timing; they do not expose the JSON payloads.
@@ -197,9 +205,10 @@ Relay/client stdout records receipt, authorization failures, and transport
 errors as container diagnostics in the usual run logs. Those logs are not
 network-delivered syslog. A successful container start does not prove delivery.
 
-For live checks, confirm the enterprise client receives current snapshots,
-rejects an untrusted relay certificate, and cannot publish with its reader
-identity. Stop the relay and confirm SCADA keeps polling, then restart it and
+For live checks, confirm RDP and HTTPS work concurrently and the enterprise
+client receives current snapshots, rejects an untrusted relay certificate,
+and cannot publish with its reader
+identity. Stop the DMZ host and confirm SCADA keeps polling, then restart it and
 check recovery. See the [device settings and limits](../../testbeds/metropolis/devices/README.md#dmz-telemetry-relay-and-enterprise-reader).
 
 To give containers shared CPU/RAM limits, apply the optional

@@ -66,7 +66,7 @@ python scripts/attacks/run.py network_recon_scan --dry-run
 4. Check service targets, protocols, and startup/readiness. Run `render_firewall --check` for routed flows; change permissions only as needed.
 5. Check capture points and log attribution, run applicable tests/validation, and update owning docs and `PLANS.md` when scope/status changes.
 
-- SCADA exports selected status/alarms to a mutually authenticated HTTPS relay in the DMZ; an enterprise reader polls that relay. Resolve peers from inventory and generate role certificates before building the three images; see the GNS3 guide.
+- SCADA exports selected status/alarms to a mutually authenticated HTTPS relay on the DMZ RDP host; an enterprise reader polls it. Resolve peers from inventory and generate role certificates before building SCADA, the DMZ RDP/relay variant, and the enterprise image; see the GNS3 guide.
 
 The builder reuses nodes by name without reconciling changed images or environments; it reports stale MQTT/DNP3/CoAP/SNMP/telemetry environment settings.
 

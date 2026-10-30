@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Start the lab's xrdp desktop and separate synthetic UDP responder."""
+"""Supervise xrdp, synthetic UDP and an optional cohosted HTTPS relay."""
 
 from __future__ import annotations
 
@@ -117,30 +117,42 @@ def configure_xrdp(certificate: Path, key: Path) -> None:
 
 
 def main() -> int:
-    children: list[subprocess.Popen] = []
+    children: list[tuple[str, subprocess.Popen]] = []
     interrupted = False
 
     def stop(_signum, _frame) -> None:
         nonlocal interrupted
         interrupted = True
 
-    signal.signal(signal.SIGTERM, stop)
-    signal.signal(signal.SIGINT, stop)
+    previous_signals = {
+        signum: signal.signal(signum, stop)
+        for signum in (signal.SIGTERM, signal.SIGINT)
+    }
     try:
+        relay_mode = os.getenv("TELEMETRY_ENABLED", "false").strip().lower()
+        if relay_mode not in {"true", "1", "yes", "on", "false", "0", "no", "off", ""}:
+            raise ValueError("TELEMETRY_ENABLED must be a boolean")
+        relay_enabled = relay_mode in {"true", "1", "yes", "on"}
         setup_account()
         certificate, key = setup_certificate()
         configure_xrdp(certificate, key)
         Path("/run/xrdp").mkdir(parents=True, exist_ok=True)
-        children.append(subprocess.Popen(["/usr/sbin/xrdp-sesman", "--nodaemon"]))
-        children.append(
-            subprocess.Popen(["python3", "-u", "/opt/metropolis/rdp_udp.py", "serve"])
-        )
-        children.append(subprocess.Popen(["/usr/sbin/xrdp", "--nodaemon"]))
+        services = [
+            ("xrdp-sesman", ["/usr/sbin/xrdp-sesman", "--nodaemon"]),
+            ("synthetic-udp", ["python3", "-u", "/opt/metropolis/rdp_udp.py", "serve"]),
+            ("xrdp", ["/usr/sbin/xrdp", "--nodaemon"]),
+        ]
+        if relay_enabled:
+            services.append(
+                ("telemetry-relay", ["python3", "-u", "/opt/metropolis/relay.py"])
+            )
+        for name, command in services:
+            children.append((name, subprocess.Popen(command)))
         emit("rdp_service_starting", tcp_port=3389, udp_port=3389, udp_kind="synthetic")
         while not interrupted:
-            for child in children:
+            for name, child in children:
                 if child.poll() is not None:
-                    emit("rdp_service_failed", exit_code=child.returncode)
+                    emit("rdp_service_failed", service=name, exit_code=child.returncode)
                     return 1
             time.sleep(0.5)
         return 0
@@ -148,15 +160,23 @@ def main() -> int:
         emit("rdp_service_failed", error=type(exc).__name__)
         return 1
     finally:
-        for child in reversed(children):
+        for _name, child in reversed(children):
             if child.poll() is None:
-                child.terminate()
-        for child in reversed(children):
+                try:
+                    child.terminate()
+                except ProcessLookupError:
+                    pass  # It exited between the poll and termination.
+        for _name, child in reversed(children):
             try:
                 child.wait(timeout=5)
             except subprocess.TimeoutExpired:
-                child.kill()
+                try:
+                    child.kill()
+                except ProcessLookupError:
+                    pass
                 child.wait()
+        for signum, handler in previous_signals.items():
+            signal.signal(signum, handler)
 
 
 if __name__ == "__main__":

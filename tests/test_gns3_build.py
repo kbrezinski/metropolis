@@ -599,7 +599,7 @@ def test_startup_order_enforces_infrastructure_and_service_dependencies():
         "rdp-server": "metropolis/rdp-server:dev",
         "ops-client": "metropolis/rdp-client:dev",
         "engineer": "metropolis/engineering:dev",
-        "dmz-relay": "metropolis/telemetry-relay:dev",
+        "dmz-relay": "metropolis/rdp-relay:dev",
         "enterprise-reader": "metropolis/enterprise-client:dev",
     }
     order = startup_order(nodes, kinds, images)

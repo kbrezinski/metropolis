@@ -663,7 +663,7 @@ links:
 
   - id: attach-rdp-dmz
     kind: access
-    description: RDP administration endpoint on the OT DMZ segment
+    description: RDP administration and HTTPS telemetry relay on the OT DMZ segment
     network_id: ot-dmz
     cidr: 10.20.40.0/24
     endpoints:
@@ -731,16 +731,6 @@ links:
       - node: MET-MERLIN-CNC-01
       - node: sw-attack-test
         port_role: attack-host-2
-
-  - id: attach-telemetry-relay
-    kind: access
-    description: HTTPS status relay on the OT DMZ segment
-    network_id: ot-dmz
-    cidr: 10.20.40.0/24
-    endpoints:
-      - node: MET-TELEMETRY-RELAY-01
-      - node: sw-dmz
-        port_role: telemetry-relay
 
   - id: attach-enterprise-reporting
     kind: access

@@ -13,6 +13,12 @@ def compile_telemetry(inventory: dict) -> dict[str, dict[str, str]]:
         protocols = device.get("protocols", [])
         environment = device.get("environment", {})
         if "telemetry-relay" in protocols:
+            if "rdp" in protocols and environment.get(
+                "TELEMETRY_ENABLED", ""
+            ).strip().lower() not in {"true", "1", "yes", "on"}:
+                raise ValueError(
+                    f"{device['name']}: cohosted relay requires TELEMETRY_ENABLED=true"
+                )
             try:
                 port = int(environment.get("TELEMETRY_PORT", "443"))
                 if not 1 <= port <= 65535:

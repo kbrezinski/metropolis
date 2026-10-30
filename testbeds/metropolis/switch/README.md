@@ -57,9 +57,8 @@ Layer 2 segment for OT DMZ hosts.
 | Port | Role | Mode | VLANs | Far end |
 |---|---|---|---|---|
 | 0 | `router-uplink` | access | untagged | `MET-OT-DMZ` eth1 — OT/DMZ router to the DMZ switch |
-| 1 | `dmz-host-1` | access | untagged | `MET-RDP-DMZ-01` — RDP administration endpoint on the OT DMZ segment |
+| 1 | `dmz-host-1` | access | untagged | `MET-RDP-DMZ-01` — RDP administration and HTTPS telemetry relay on the OT DMZ segment |
 | 2 | `dmz-host-2` | spare | — | nothing cabled |
-| 3 | `telemetry-relay` | access | untagged | `MET-TELEMETRY-RELAY-01` — HTTPS status relay on the OT DMZ segment |
 
 ## `sw-enterprise`
 

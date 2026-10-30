@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import socket
+import subprocess
 import sys
 import threading
 import time
@@ -232,3 +233,162 @@ def test_xrdp_requires_credentials_and_tls(tmp_path, monkeypatch):
     assert "require_credentials=true" in text
     assert "autorun=Xorg" in text
     assert f"certificate={tmp_path / 'cert.pem'}" in text
+
+
+@pytest.fixture
+def supervisor(monkeypatch, tmp_path):
+    server = load("rdp_supervisor_test", DEVICES / "rdp_server/start_rdp.py")
+    monkeypatch.delenv("TELEMETRY_ENABLED", raising=False)
+    monkeypatch.setattr(server, "setup_account", lambda: None)
+    monkeypatch.setattr(
+        server,
+        "setup_certificate",
+        lambda: (tmp_path / "rdp-cert.pem", tmp_path / "rdp-key.pem"),
+    )
+    monkeypatch.setattr(server, "configure_xrdp", lambda *_args: None)
+    monkeypatch.setattr(server, "Path", lambda _value: tmp_path)
+    handlers = {}
+    previous = {
+        server.signal.SIGTERM: "previous-term",
+        server.signal.SIGINT: "previous-int",
+    }
+
+    def register(signum, handler):
+        old = handlers.get(signum, previous[signum])
+        handlers[signum] = handler
+        return old
+
+    monkeypatch.setattr(server.signal, "signal", register)
+    return server, handlers, previous
+
+
+class SupervisedProcess:
+    def __init__(self, command, *, exit_code=None, stubborn=False):
+        self.command = command
+        self.returncode = exit_code
+        self.stubborn = stubborn
+        self.terminated = self.killed = self.waited = False
+
+    def poll(self):
+        return self.returncode
+
+    def terminate(self):
+        self.terminated = True
+        if not self.stubborn:
+            self.returncode = 0
+
+    def wait(self, timeout=None):
+        if self.stubborn and not self.killed:
+            raise subprocess.TimeoutExpired(self.command, timeout)
+        self.waited = True
+        return self.returncode
+
+    def kill(self):
+        self.killed = True
+        self.returncode = -9
+
+
+@pytest.mark.parametrize("relay_enabled", [False, True])
+def test_rdp_supervisor_stops_all_selected_services_on_signal(
+    supervisor, monkeypatch, relay_enabled
+):
+    server, handlers, previous = supervisor
+    if relay_enabled:
+        monkeypatch.setenv("TELEMETRY_ENABLED", "true")
+    children = []
+
+    def start(command):
+        process = SupervisedProcess(command, stubborn=len(children) == 1)
+        children.append(process)
+        return process
+
+    monkeypatch.setattr(server.subprocess, "Popen", start)
+    monkeypatch.setattr(
+        server.time,
+        "sleep",
+        lambda _seconds: handlers[server.signal.SIGTERM](server.signal.SIGTERM, None),
+    )
+    assert server.main() == 0
+    assert len(children) == (4 if relay_enabled else 3)
+    assert (
+        any("/opt/metropolis/relay.py" in child.command for child in children)
+        is relay_enabled
+    )
+    assert all(child.terminated and child.waited for child in children)
+    assert children[1].killed
+    assert handlers == previous
+
+
+@pytest.mark.parametrize(
+    ("exited_service", "exit_code"),
+    [("/opt/metropolis/relay.py", 1), ("/usr/sbin/xrdp", 0)],
+)
+def test_rdp_supervisor_reports_unexpected_exit_and_cleans_siblings(
+    supervisor, monkeypatch, capsys, exited_service, exit_code
+):
+    server, handlers, previous = supervisor
+    monkeypatch.setenv("TELEMETRY_ENABLED", "true")
+    children = []
+
+    def start(command):
+        # A clean child exit also means the requested long-running service is lost.
+        process = SupervisedProcess(
+            command, exit_code=exit_code if exited_service in command else None
+        )
+        children.append(process)
+        return process
+
+    monkeypatch.setattr(server.subprocess, "Popen", start)
+    assert server.main() == 1
+    assert len(children) == 4
+    assert all(child.waited for child in children)
+    assert all(
+        child.terminated for child in children if exited_service not in child.command
+    )
+    failed = next(
+        json.loads(line)
+        for line in capsys.readouterr().out.splitlines()
+        if '"event": "rdp_service_failed"' in line
+    )
+    assert failed["service"] == (
+        "telemetry-relay" if exited_service.endswith("relay.py") else "xrdp"
+    )
+    assert failed["exit_code"] == exit_code
+    assert handlers == previous
+
+
+def test_relay_spawn_failure_cleans_existing_rdp_services(
+    supervisor, monkeypatch, capsys
+):
+    server, handlers, previous = supervisor
+    monkeypatch.setenv("TELEMETRY_ENABLED", "true")
+    children = []
+
+    def start(command):
+        if "/opt/metropolis/relay.py" in command:
+            raise OSError("relay could not start")
+        child = SupervisedProcess(command)
+        children.append(child)
+        return child
+
+    monkeypatch.setattr(server.subprocess, "Popen", start)
+    assert server.main() == 1
+    assert len(children) == 3
+    assert all(child.terminated and child.waited for child in children)
+    assert json.loads(capsys.readouterr().out)["error"] == "OSError"
+    assert handlers == previous
+
+
+def test_invalid_relay_selection_fails_before_starting_rdp(
+    supervisor, monkeypatch, capsys
+):
+    server, handlers, previous = supervisor
+    monkeypatch.setenv("TELEMETRY_ENABLED", "perhaps")
+    monkeypatch.setattr(
+        server.subprocess,
+        "Popen",
+        lambda *_args: pytest.fail("invalid config started a service"),
+    )
+    assert server.main() == 1
+    assert json.loads(capsys.readouterr().out)["error"] == "ValueError"
+    assert handlers == previous

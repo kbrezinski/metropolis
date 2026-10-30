@@ -326,7 +326,9 @@ def main() -> int:
         )
         for label, path in written.items():
             print(f"  {label}: {path}")
-        print("Rebuild relay, SCADA, and enterprise client with this same bundle.")
+        print(
+            "Rebuild DMZ RDP/relay, SCADA, and enterprise client with this same bundle."
+        )
         return 0
 
     if args.service == "merlin":

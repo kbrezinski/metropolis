@@ -1,4 +1,4 @@
-FROM debian:trixie-slim
+FROM debian:trixie-slim AS rdp-base
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
@@ -18,3 +18,16 @@ RUN chmod +x /usr/local/bin/metropolis-entrypoint
 ENTRYPOINT ["/usr/local/bin/metropolis-entrypoint"]
 CMD ["python3", "/opt/metropolis/start_rdp.py"]
 EXPOSE 3389/tcp 3389/udp
+
+FROM rdp-base AS rdp-relay
+ARG TELEMETRY_CERT_DIR=certs/telemetry
+ENV TELEMETRY_ENABLED=true
+COPY testbeds/metropolis/devices/services/telemetry_relay/relay.py /opt/metropolis/relay.py
+COPY ${TELEMETRY_CERT_DIR}/ca.crt /certs/ca.crt
+COPY ${TELEMETRY_CERT_DIR}/server.crt /certs/server.crt
+COPY ${TELEMETRY_CERT_DIR}/server.key /certs/server.key
+RUN chmod 600 /certs/server.key
+EXPOSE 443/tcp
+
+# The default build has no relay credentials, including in its image layers.
+FROM rdp-base AS rdp-server

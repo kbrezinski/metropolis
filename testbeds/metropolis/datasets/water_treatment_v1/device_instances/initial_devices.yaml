@@ -411,7 +411,7 @@ devices:
     protocols: [modbus-tcp, mqtt, dnp3-master, https, telemetry-publisher]
     environment:
       NODE_HOSTNAME: MET-SCADA-01
-      TELEMETRY_RELAY_NODE: MET-TELEMETRY-RELAY-01
+      TELEMETRY_RELAY_NODE: MET-RDP-DMZ-01
       TELEMETRY_CA_FILE: /certs/ca.crt
       TELEMETRY_CERT_FILE: /certs/client.crt
       TELEMETRY_KEY_FILE: /certs/client.key
@@ -426,25 +426,6 @@ devices:
       MQTT_USERNAME: scada
       MQTT_PASSWORD: LabOnly_SCADA_2026
 
-  - name: MET-TELEMETRY-RELAY-01
-    model: testbeds/metropolis/devices/services/telemetry_relay
-    image: metropolis/telemetry-relay:dev
-    site: treatment_plant
-    subnet: 10.20.40.0/24
-    address: 10.20.40.30/24
-    gateway: 10.20.40.1
-    protocols: [https, telemetry-relay]
-    environment:
-      NODE_HOSTNAME: MET-TELEMETRY-RELAY-01
-      NODE_IP: 10.20.40.30/24
-      NODE_GATEWAY: 10.20.40.1
-      TELEMETRY_WRITER_NODE: MET-SCADA-01
-      TELEMETRY_READER_NODE: MET-ENTERPRISE-REPORTING-01
-      TELEMETRY_PORT: "443"
-      TELEMETRY_CA_FILE: /certs/ca.crt
-      TELEMETRY_CERT_FILE: /certs/server.crt
-      TELEMETRY_KEY_FILE: /certs/server.key
-
   - name: MET-ENTERPRISE-REPORTING-01
     model: testbeds/metropolis/devices/operations/enterprise_client
     image: metropolis/enterprise-client:dev
@@ -457,7 +438,7 @@ devices:
       NODE_HOSTNAME: MET-ENTERPRISE-REPORTING-01
       NODE_IP: 10.30.10.10/24
       NODE_GATEWAY: 10.30.10.1
-      TELEMETRY_RELAY_NODE: MET-TELEMETRY-RELAY-01
+      TELEMETRY_RELAY_NODE: MET-RDP-DMZ-01
       TELEMETRY_INTERVAL: "10"
       TELEMETRY_CA_FILE: /certs/ca.crt
       TELEMETRY_CERT_FILE: /certs/client.crt
@@ -724,14 +705,21 @@ devices:
 
   - name: MET-RDP-DMZ-01
     model: testbeds/metropolis/devices/operations/rdp_server
-    image: metropolis/rdp-server:dev
+    image: metropolis/rdp-relay:dev
     site: treatment_plant
     subnet: 10.20.40.0/24
     address: 10.20.40.20/24
     gateway: 10.20.40.1
-    protocols: [rdp, rdp-udp-synthetic]
+    protocols: [rdp, rdp-udp-synthetic, https, telemetry-relay]
     environment:
       NODE_HOSTNAME: MET-RDP-DMZ-01
+      TELEMETRY_ENABLED: "true"
+      TELEMETRY_WRITER_NODE: MET-SCADA-01
+      TELEMETRY_READER_NODE: MET-ENTERPRISE-REPORTING-01
+      TELEMETRY_PORT: "443"
+      TELEMETRY_CA_FILE: /certs/ca.crt
+      TELEMETRY_CERT_FILE: /certs/server.crt
+      TELEMETRY_KEY_FILE: /certs/server.key
       NODE_IP: 10.20.40.20/24
       NODE_GATEWAY: 10.20.40.1
       RDP_USERNAME: rdpadmin

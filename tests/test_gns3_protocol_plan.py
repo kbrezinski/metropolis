@@ -91,11 +91,12 @@ def telemetry_inventory():
                 "image": "relay:image",
                 "address": "198.51.100.30/24",
                 "subnet": "198.51.100.0/24",
-                "protocols": ["telemetry-relay"],
+                "protocols": ["rdp", "rdp-udp-synthetic", "https", "telemetry-relay"],
                 "environment": {
                     "TELEMETRY_WRITER_NODE": "plant-publisher",
                     "TELEMETRY_READER_NODE": "office-reader",
                     "TELEMETRY_PORT": "8443",
+                    "TELEMETRY_ENABLED": "true",
                 },
             },
             {
@@ -138,6 +139,7 @@ def test_telemetry_plan_resolves_selected_relay_and_certificate_source():
         (0, "TELEMETRY_RELAY_NODE", "missing", "must name"),
         (1, "TELEMETRY_READER_NODE", "plant-publisher", "telemetry-consumer"),
         (1, "TELEMETRY_PORT", "65536", "invalid TELEMETRY_PORT"),
+        (1, "TELEMETRY_ENABLED", "false", "cohosted relay requires"),
         (2, "TELEMETRY_RELAY_URL", "http://198.51.100.30/v1/status", "disagrees"),
     ],
 )

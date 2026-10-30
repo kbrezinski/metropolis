@@ -27,8 +27,9 @@ overlays. See [IPsec setup](../../../../scripts/gns3/README.md#site-to-site-ipse
 for controller-side keys and live verification steps. Same-VLAN traffic
 bypasses the routed firewall policy.
 
-The DMZ telemetry relay receives selected SCADA status over mutual TLS; the
-enterprise reporting client reads it over HTTPS. Both use the existing subnets
+The DMZ RDP host also runs the telemetry relay and receives selected SCADA
+status over mutual TLS; the enterprise reporting client reads it over HTTPS.
+Both use the existing subnets
 and TCP 443 permissions in the firewall policy. Peer names and roles are in the
 inventory; the builder resolves their addresses. See the
 [setup and capture points](../../../../scripts/gns3/README.md#dmz-and-enterprise-data-path).

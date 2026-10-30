@@ -17,21 +17,21 @@ import gen_lab_certificates as certificates
 def inventory(tmp_path):
     devices = [
         {
-            "name": "relay-custom",
-            "address": "192.0.2.33/24",
-            "protocols": ["telemetry-relay"],
+            "name": "admin-gateway-custom",
+            "address": "198.51.100.74/27",
+            "protocols": ["rdp", "rdp-udp-synthetic", "https", "telemetry-relay"],
             "environment": {
-                "TELEMETRY_WRITER_NODE": "publisher-custom",
-                "TELEMETRY_READER_NODE": "consumer-custom",
+                "TELEMETRY_WRITER_NODE": "plant-scada-custom",
+                "TELEMETRY_READER_NODE": "enterprise-custom",
             },
         },
     ]
     devices.extend(
         {
             "name": name,
-            "environment": {"TELEMETRY_RELAY_NODE": "relay-custom"},
+            "environment": {"TELEMETRY_RELAY_NODE": "admin-gateway-custom"},
         }
-        for name in ("publisher-custom", "consumer-custom")
+        for name in ("plant-scada-custom", "enterprise-custom")
     )
     directory = tmp_path / "renamed-v9" / "device_instances"
     directory.mkdir(parents=True)
@@ -40,19 +40,22 @@ def inventory(tmp_path):
     return directory.parent, path, devices
 
 
-def test_certificate_roles_and_server_san_follow_selected_inventory(tmp_path):
+def test_certificate_roles_and_server_san_follow_selected_cohost_inventory(tmp_path):
     dataset, _, _ = inventory(tmp_path)
     identities = certificates.telemetry_identities(dataset)
     written = certificates.generate_telemetry(tmp_path / "bundle", identities)
     server = x509.load_pem_x509_certificate(written["server"].read_bytes())
     san = server.extensions.get_extension_for_class(x509.SubjectAlternativeName).value
-    assert san.get_values_for_type(x509.DNSName) == ["relay-custom"]
+    assert san.get_values_for_type(x509.DNSName) == ["admin-gateway-custom"]
     assert [str(address) for address in san.get_values_for_type(x509.IPAddress)] == [
-        "192.0.2.33"
+        "198.51.100.74"
     ]
+    assert list(
+        server.extensions.get_extension_for_class(x509.ExtendedKeyUsage).value
+    ) == [ExtendedKeyUsageOID.SERVER_AUTH]
     for role, subject in (
-        ("writer", "publisher-custom"),
-        ("reader", "consumer-custom"),
+        ("writer", "plant-scada-custom"),
+        ("reader", "enterprise-custom"),
     ):
         certificate = x509.load_pem_x509_certificate(written[role].read_bytes())
         assert (
@@ -81,7 +84,7 @@ def test_bad_role_references_cannot_produce_a_misleading_bundle(tmp_path, defect
     if defect == "missing":
         devices[0]["environment"]["TELEMETRY_WRITER_NODE"] = "absent"
     elif defect == "same-role":
-        devices[0]["environment"]["TELEMETRY_READER_NODE"] = "publisher-custom"
+        devices[0]["environment"]["TELEMETRY_READER_NODE"] = "plant-scada-custom"
     else:
         devices[1]["environment"]["TELEMETRY_RELAY_NODE"] = "another-relay"
     path.write_text(yaml.safe_dump({"devices": devices}), encoding="utf-8")

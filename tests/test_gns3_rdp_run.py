@@ -36,8 +36,8 @@ def _inventory():
             {
                 "name": "DESKTOP-SERVER",
                 "address": "192.168.40.7/24",
-                "image": "example/rdp-server:v2",
-                "protocols": ["rdp", "rdp-udp-synthetic"],
+                "image": "example/rdp-relay:v3",
+                "protocols": ["rdp", "rdp-udp-synthetic", "https", "telemetry-relay"],
             },
         ]
     }
@@ -93,7 +93,7 @@ def _gns3_nodes():
             "status": "started",
             "compute_id": "remote-compute",
             "properties": {
-                "image": "example/rdp-server:v2",
+                "image": "example/rdp-relay:v3",
                 "container_id": "server-container",
             },
         },
@@ -210,7 +210,7 @@ def test_run_uses_remote_compute_and_records_actual_capture_coverage():
         "DESKTOP-SERVER",
     ]
     assert all(item[1] == "ssh://operator@gns3-compute.example" for item in calls)
-    assert calls[0][3] == "example/rdp-server:v2"
+    assert calls[0][3] == "example/rdp-relay:v3"
     assert calls[2][2][2:4] == ["--target-host", "192.168.40.7"]
     assert "do-not-record" not in json.dumps(result)
     assert "do-not-record" not in json.dumps(calls)

@@ -119,9 +119,9 @@ TEMPLATES: tuple[ImageTemplate, ...] = (
         description="MQTT subscriber that logs received events",
     ),
     spec(
-        "Metropolis telemetry relay",
-        "metropolis/telemetry-relay:dev",
-        description="Mutually authenticated HTTPS status relay in the OT DMZ",
+        "Metropolis RDP and telemetry relay",
+        "metropolis/rdp-relay:dev",
+        description="RDP administration host with mutually authenticated HTTPS status relay",
     ),
     spec(
         "Metropolis enterprise reporting client",

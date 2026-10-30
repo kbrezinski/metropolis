@@ -24,10 +24,9 @@ Paths below are relative to this directory.
 | SCADA | `operations/scada/` | Controller polling and HMI command/readback |
 | HMI | `operations/hmi/` | Authenticated HTTP panel using MQTT |
 | Historian | `operations/historian/` | MQTT subscription and console records |
-| DMZ telemetry relay | `services/telemetry_relay/` | Latest selected SCADA status over mutually authenticated HTTPS |
 | Enterprise reader | `operations/enterprise_client/` | Periodic read-only HTTPS requests to the DMZ relay |
 | Engineering workstation | `operations/engineering_workstation/` | OpenSSH shell and SFTP; routed FreeRDP client during captures |
-| RDP server | `operations/rdp_server/` | Linux xrdp desktop on TCP 3389 plus a separate synthetic UDP 3389 responder |
+| RDP server | `operations/rdp_server/` | Linux xrdp desktop and synthetic UDP 3389 responder; DMZ build also hosts the HTTPS telemetry relay |
 | RDP client | `operations/rdp_client/` | Headless FreeRDP sessions initiated by experiment runs |
 | Control client | `operations/control_client/` | Routine DNS, NTP, Modbus, and SNMP traffic |
 | Legacy gateway | `field/legacy_gateway/` | BusyBox Telnet with a lab root login |
@@ -219,6 +218,13 @@ persist that directory separately per node if stable host identity is needed.
 
 ## DMZ telemetry relay and enterprise reader
 
+The DMZ RDP host also runs the relay implementation in
+`services/telemetry_relay/relay.py`. Its `rdp-relay` image target includes the
+HTTPS server key and public CA. The regular engineering RDP image does not
+contain those files. `TELEMETRY_ENABLED=true` starts the relay alongside the
+RDP services; all children are supervised and stopped together on interruption
+or a service failure. xrdp and HTTPS use independent certificates and keys.
+
 SCADA sends a snapshot after each controller polling cycle, with a five-second
 pause between cycles by default. It contains source and UTC time, then each
 cell's ID, event time, quality, alarms, and optional heartbeat. Export uses an explicit field list;
@@ -237,6 +243,7 @@ This is a small status relay, not a persistent historian or reporting UI.
 
 | Setting | Meaning |
 |---|---|
+| `TELEMETRY_ENABLED` | Start the relay with RDP when true; enabled in the DMZ image and inventory |
 | `TELEMETRY_RELAY_NODE` | Inventoried relay name on SCADA/reader; builder derives its HTTPS URL |
 | `TELEMETRY_WRITER_NODE`, `TELEMETRY_READER_NODE` | Distinct inventoried certificate identities accepted by the relay |
 | `TELEMETRY_PORT` | Relay listening port, default 443; align firewall policy when changed |
@@ -247,7 +254,8 @@ Omitting the relay URL disables export in a standalone SCADA container. An
 explicitly enabled exporter requires valid certificate files. Certificate
 generation and image builds are in the
 [GNS3 guide](../../../scripts/gns3/README.md#2-build-the-images-on-the-compute).
-The existing MQTT historian remains a separate subscriber.
+The existing MQTT historian remains a separate subscriber. HTTPS and RDP share
+one host and capture attachment; their events are attributed to that host.
 
 ## Routine traffic, Telnet, DNS, and time
 

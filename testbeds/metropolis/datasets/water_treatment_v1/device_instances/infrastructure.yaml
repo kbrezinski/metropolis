@@ -157,7 +157,6 @@ switches:
       - router-uplink
       - dmz-host-1
       - dmz-host-2
-      - telemetry-relay
 
   - name: sw-enterprise
     kind: ethernet-switch

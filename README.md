@@ -134,7 +134,7 @@ These ranges belong to Metropolis. Future testbeds can use the same schema with
 different CIDRs, or reuse an allocation pattern deliberately when two
 environments need to be comparable.
 
-The reference topology declares 75 GNS3 nodes across four plant cells—intake,
+The reference topology declares 74 GNS3 nodes across four plant cells—intake,
 dosing, filtration, and disinfection—and two remote RTU sites. It covers a
 treatment plant, a raw-water lift station, and a
 reservoir/booster station, with routers and switches organised by backbone and
@@ -148,8 +148,8 @@ repo-owned switch image. Router scripts configure OSPF, BFD, read-only SNMP,
 central syslog forwarding, and site-to-site IPsec on the WAN edge and remote
 routers.
 
-A DMZ telemetry relay accepts selected SCADA status and alarms over mutually
-authenticated HTTPS. An enterprise reporting client reads those snapshots,
+A telemetry relay on the DMZ RDP host accepts selected SCADA status and alarms
+over mutually authenticated HTTPS. An enterprise reporting client reads those snapshots,
 adding regular traffic across the IT/OT boundary through specific TCP 443
 permissions. See the [data-path guide](scripts/gns3/README.md#dmz-and-enterprise-data-path).
 
@@ -192,7 +192,7 @@ routing and IPsec/IKEv2 traffic. A separate UDP 3389 service is synthetic lab tr
 | SCADA | Polls four plant PLCs and two remote RTUs over Modbus TCP; polls remote RTU DNP3 events; publishes MQTT status and plant-PLC setpoint readback acknowledgements |
 | HMI | Authenticated HTTP panel on TCP 8080; shows telemetry and controller status, and sends a command only after an operator submits a setpoint |
 | Historian | Subscribes to MQTT topics and logs what it receives |
-| DMZ telemetry relay / enterprise reader | Separate writer/reader identities exchange selected SCADA status over HTTPS on TCP 443 |
+| DMZ RDP host / enterprise reader | The DMZ host also serves selected SCADA status over HTTPS on TCP 443, with separate writer/reader identities |
 | Engineering workstation | OpenSSH shell and SFTP on TCP 22 |
 | Routine control client | Resolves the PLC via DNS, samples NTP, makes bounded periodic Modbus reads and writes, polls router uptime over read-only SNMP, and reads the sensor's CoAP status |
 | VyOS routers | Exchange OSPF and BFD control traffic on routed peer links; answer the control client's SNMP polls |
