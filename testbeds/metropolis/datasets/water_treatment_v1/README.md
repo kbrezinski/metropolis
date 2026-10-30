@@ -34,6 +34,12 @@ and TCP 443 permissions in the firewall policy. Peer names and roles are in the
 inventory; the builder resolves their addresses. See the
 [setup and capture points](../../../../scripts/gns3/README.md#dmz-and-enterprise-data-path).
 
+The existing historian also subscribes to SCADA over OPC UA on TCP 4840,
+alongside MQTT. Reciprocal inventoried peer names determine application
+identities and the endpoint. Signed and encrypted sessions are the default;
+plaintext requires explicit matching settings on both peers. See the
+[OPC UA guide](../../../../scripts/gns3/README.md#opc-ua-between-scada-and-the-historian).
+
 The resource baseline is applied only by the explicit
 [`configure_baseline --apply` setup command](../../../../scripts/gns3/README.md#container-resource-baseline).
 The bundled starting limits are 1 CPU core and 512 MiB RAM, with no additional

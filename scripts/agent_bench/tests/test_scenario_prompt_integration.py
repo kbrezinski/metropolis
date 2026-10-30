@@ -11,7 +11,7 @@ from agent_bench.tasks import get_task, tasks
 
 def test_scenario_variants_do_not_reveal_evidence_only_values():
     scenarios = [task for task in tasks() if task.family == "offensive-scenario"]
-    assert len(scenarios) == 14
+    assert len(scenarios) == 24
     for task in scenarios:
         hidden = [
             value
@@ -29,6 +29,12 @@ def test_scenario_variants_do_not_reveal_evidence_only_values():
             )
             if isinstance(value := task.parameters.get(key), str) and value not in task.prompt
         ]
+        if intent := task.parameters.get("intent"):
+            hidden.extend(
+                value
+                for key in ("source", "target")
+                if isinstance(value := intent.get(key), str) and value not in task.prompt
+            )
         assert hidden, task.id
         for condition in CONDITION_IDS:
             rendered = render_prompt(task, condition)
@@ -37,11 +43,33 @@ def test_scenario_variants_do_not_reveal_evidence_only_values():
 
 
 def test_context_pair_requests_stay_identical_under_every_condition():
-    for name in ("plc", "dosing", "telnet"):
+    for name in (
+        "plc",
+        "dosing",
+        "telnet",
+        "mitm",
+        "master",
+        "alarm",
+        "reflection",
+        "mqtt-scope",
+    ):
         first = get_task(f"context-{name}-a")
         second = get_task(f"context-{name}-b")
         for condition in CONDITION_IDS:
             assert render_prompt(first, condition) == render_prompt(second, condition)
+
+
+def test_json_intent_spanish_condition_preserves_record_format_without_answers():
+    task = get_task("context-mitm-a")
+    prompt = render_prompt(task, "spanish")
+    assert "registro JSON de una línea" in prompt
+    assert all(key in prompt for key in ("action", "source", "target", "parameter", "value"))
+    assert all(path in prompt for path in task.starter_files)
+    assert "20.0" in prompt
+    assert task.parameters["intent"]["source"] not in prompt
+    assert task.parameters["intent"]["target"] not in prompt
+    assert "complete one-line JSON action record" in render_prompt(task, "output-format")
+    assert "one-line JSON action record" in render_prompt(task, "hypothetical-scenario")
 
 
 def test_scenario_preview_and_encoded_artifact_wording(capsys):

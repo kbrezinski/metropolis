@@ -12,6 +12,7 @@ import signal
 import threading
 import time
 from collections import OrderedDict
+from contextlib import ExitStack
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from uuid import UUID
@@ -29,6 +30,7 @@ sys.path.insert(0, str(Path("/opt/metropolis")))
 from tls_config import TlsConfig, apply_to  # noqa: E402,F401
 from alarms import ALARM_NAMES  # noqa: E402
 from telemetry_export import TelemetryExporter  # noqa: E402
+from opcua_runtime import OpcUaServerWorker  # noqa: E402
 
 
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
@@ -375,7 +377,7 @@ class CommandBridge:
         return acknowledgement
 
 
-def main() -> None:
+def _collect(cleanup: ExitStack) -> None:
     name = os.getenv("DEVICE_NAME", "MET-SCADA-01")
     exporter = TelemetryExporter.from_environment(name)
     targets = configured_targets(
@@ -391,6 +393,12 @@ def main() -> None:
     heartbeat_monitor = ControllerHeartbeatMonitor(
         float(os.getenv("PLC_STALE_SECONDS", "15"))
     )
+    opcua = OpcUaServerWorker.from_environment(
+        name, [decode_registers(target, [0] * 6) for target in targets]
+    )
+    if opcua is not None:
+        cleanup.callback(opcua.close)
+        opcua.start()
     stop_dnp3 = threading.Event()
     dnp3_thread = None
     if dnp3_encoded := os.getenv("DNP3_TARGETS_B64"):
@@ -399,8 +407,12 @@ def main() -> None:
 
         dnp3_targets = configured_dnp3_targets(dnp3_encoded)
         dnp3_thread = start_master(dnp3_targets, stop_dnp3)
+        cleanup.callback(dnp3_thread.join, timeout=4)
+        cleanup.callback(stop_dnp3.set)
 
     publisher = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id=f"{name}-mqtt")
+    cleanup.callback(publisher.disconnect)
+    cleanup.callback(publisher.loop_stop)
     publisher.username_pw_set(
         os.environ["MQTT_USERNAME"],
         os.environ["MQTT_PASSWORD"],
@@ -459,15 +471,14 @@ def main() -> None:
     publisher.loop_start()
     command_worker = threading.Thread(target=process_commands, daemon=True)
     command_worker.start()
+    cleanup.callback(command_worker.join, timeout=2)
+    cleanup.callback(stop_commands.set)
     log.info("%s polling %s Modbus cells", name, len(targets))
     poll_ok: dict[str, bool] = {}
     poll_stale: dict[str, bool] = {}
 
-    def terminate(signum, frame) -> None:
-        raise KeyboardInterrupt
-
-    previous_term = signal.signal(signal.SIGTERM, terminate)
     if exporter is not None:
+        cleanup.callback(exporter.close)
         exporter.start()
 
     try:
@@ -521,22 +532,34 @@ def main() -> None:
                     poll_ok[target.cell] = False
                     poll_stale[target.cell] = False
                     heartbeat_monitor.forget(target.cell)
+                if opcua is not None:
+                    try:
+                        opcua.submit(statuses[-1])
+                    except Exception as exc:
+                        log.warning(
+                            "OPC UA update failed cell=%s error=%s",
+                            target.cell,
+                            type(exc).__name__,
+                        )
             if exporter is not None:
                 exporter.submit(statuses)
             time.sleep(interval)
     except KeyboardInterrupt:
         pass
+
+
+def main() -> None:
+    def terminate(signum, frame) -> None:
+        raise KeyboardInterrupt
+
+    previous_term = signal.signal(signal.SIGTERM, terminate)
+    try:
+        with ExitStack() as cleanup:
+            _collect(cleanup)
+    except KeyboardInterrupt:
+        pass
     finally:
         signal.signal(signal.SIGTERM, previous_term)
-        if exporter is not None:
-            exporter.close()
-        stop_dnp3.set()
-        if dnp3_thread is not None:
-            dnp3_thread.join(timeout=4)
-        stop_commands.set()
-        command_worker.join(timeout=2)
-        publisher.loop_stop()
-        publisher.disconnect()
 
 
 if __name__ == "__main__":

@@ -15,6 +15,7 @@ flows:
   - {id: intake-mqtt, source: plant-intake, destination: mqtt, protocol: tcp, port: 1883}
   - {id: scada-mqtt, source: scada, destination: mqtt, protocol: tcp, port: 1883}
   - {id: historian-mqtt, source: historian, destination: mqtt, protocol: tcp, port: 1883}
+  - {id: historian-opcua, source: historian, destination: scada, protocol: tcp, port: 4840}
   - {id: scada-telemetry-relay, source: scada, destination: ot-dmz, protocol: tcp, port: 443}
   - {id: enterprise-telemetry-read, source: enterprise, destination: ot-dmz, protocol: tcp, port: 443}
   - id: hmi-mqtt

@@ -67,6 +67,20 @@ certificate. The CA key is never saved. Keep these lab images private. Changing
 node names, the relay address, or certificates requires rebuilding these images
 from a newly shared bundle and refreshing the affected GNS3 nodes.
 
+Generate a separate OPC UA bundle before building SCADA and the historian:
+
+```bash
+uv run python scripts/gen_lab_certificates.py --service opcua \
+  --dataset testbeds/metropolis/datasets/water_treatment_v1
+```
+
+Share the same ignored `certs/opcua/` bundle across their hosting computes.
+The generator expects one configured server/client pair in the selected dataset.
+Each image receives its own private key and the peer's public certificate.
+The certificates include the selected nodes' OPC UA application URIs and
+addresses. Regenerate this bundle and rebuild both images after changing those
+identities. Existing HTTPS certificates cannot substitute for these identities.
+
 Before building the two Merlin images, generate their lab certificate bundle
 from the selected dataset:
 
@@ -214,6 +228,41 @@ check recovery. See the [device settings and limits](../../testbeds/metropolis/d
 To give containers shared CPU/RAM limits, apply the optional
 [resource baseline](#container-resource-baseline) after startup and before
 selecting an experiment profile.
+
+### OPC UA between SCADA and the historian
+
+The existing historian (`10.20.22.10`, VLAN 22) connects to the existing SCADA
+(`10.20.20.10`, VLAN 20) on TCP 4840. SCADA exposes read-only cells from its
+configured targets; the historian subscribes alongside its MQTT feed. The
+baseline policy permits historian-subnet to SCADA-subnet TCP 4840. No new nodes
+or routes are required.
+
+The builder resolves `OPCUA_SERVER_NODE` and reciprocal `OPCUA_CLIENT_NODE`
+references from the selected inventory, deriving the endpoint, application
+URIs, and peer addresses. Refresh/recreate existing SCADA and historian nodes
+after rebuilding their images; the builder reports stale `OPCUA_` settings but
+does not replace images or stored environments. SCADA starts before the
+historian, whose client retries while the endpoint is unavailable.
+
+The default is `Basic256Sha256` with `SignAndEncrypt`, pinned peer certificates,
+and the historian's X.509 user identity. To study readable application packets,
+explicitly set `OPCUA_SECURITY_MODE: "None"` on **both** inventoried peers and
+refresh their node environments. This selects anonymous read-only lab access.
+Mismatched modes fail validation; neither peer automatically downgrades.
+
+Capture `attach-scada`, `attach-historian`, `link-ops-scada-uplink`,
+`link-ops-historian-uplink`, and `link-ops-switch`. Default all-link capture
+includes these points. Secure captures show connection/session traffic, timing,
+and encrypted exchanges; plaintext mode makes the application fields readable.
+The publishing interval defaults to 1,000 ms; values change with existing SCADA
+polling, with a five-second pause between controller polling cycles. Received
+values and connection failures appear in container diagnostics in the normal
+run logs. See the [device protocol limits](../../testbeds/metropolis/devices/README.md#opc-ua-data-access).
+
+For live verification, confirm OPC UA and MQTT both deliver updates, reject
+remote writes and an untrusted certificate, then restart SCADA and observe
+resumed notifications. The offline and loopback tests do not establish GNS3
+packet timing or firewall enforcement.
 
 ## 5. Collect an experiment
 

@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import logging
 import os
+import signal
 import time
+from contextlib import ExitStack
 from datetime import datetime, timezone
 
 import paho.mqtt.client as mqtt
@@ -17,18 +19,24 @@ from pathlib import Path
 # to /opt/metropolis.
 sys.path.insert(0, str(Path("/opt/metropolis")))
 from tls_config import TlsConfig, apply_to  # noqa: E402,F401
+from opcua_runtime import OpcUaHistorianWorker  # noqa: E402
 
 
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"), format="%(message)s")
 log = logging.getLogger("metropolis.historian")
 
 
-def main() -> None:
+def _collect(cleanup: ExitStack) -> None:
     name = os.getenv("DEVICE_NAME", "MET-HISTORIAN-01")
     broker = os.getenv("MQTT_HOST", "10.20.23.10")
     port = int(os.getenv("MQTT_PORT", "1883"))
     topic = os.getenv("MQTT_TOPIC", "metropolis/#")
+    opcua = OpcUaHistorianWorker.from_environment(name)
+    if opcua is not None:
+        cleanup.callback(opcua.close)
+        opcua.start()
     client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id=name)
+    cleanup.callback(client.disconnect)
     client.username_pw_set(
         os.environ["MQTT_USERNAME"],
         os.environ["MQTT_PASSWORD"],
@@ -64,6 +72,20 @@ def main() -> None:
             time.sleep(5)
     log.info("%s subscribing to %s at %s:%s", name, topic, broker, port)
     client.loop_forever()
+
+
+def main() -> None:
+    def terminate(signum, frame) -> None:
+        raise KeyboardInterrupt
+
+    previous_term = signal.signal(signal.SIGTERM, terminate)
+    try:
+        with ExitStack() as cleanup:
+            _collect(cleanup)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        signal.signal(signal.SIGTERM, previous_term)
 
 
 if __name__ == "__main__":

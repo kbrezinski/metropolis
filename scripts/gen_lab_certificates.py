@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate lab TLS certificates for MQTT, synthetic Merlin, or telemetry.
+"""Generate lab application certificates for MQTT, Merlin, telemetry, or OPC UA.
 
 The Metropolis lab needs a CA and a server certificate for TLS services.
 Generating them here means the lab does not depend on a public certificate for a
@@ -15,12 +15,14 @@ dataset so the certificate covers that dataset's C&C address. Generate a
 separate bundle before building the Merlin images.
 Telemetry also uses the selected dataset, with distinct writer and reader
 client certificates in one shared bundle for its three images.
+OPC UA uses a separate bundle with application URI and role-specific usages.
 
 Usage::
 
     uv run python scripts/gen_lab_certificates.py --out-dir certs
     uv run python scripts/gen_lab_certificates.py --service merlin --dataset DATASET
     uv run python scripts/gen_lab_certificates.py --service telemetry --dataset DATASET
+    uv run python scripts/gen_lab_certificates.py --service opcua --dataset DATASET
     uv run python scripts/gen_lab_certificates.py --help
 """
 
@@ -158,6 +160,128 @@ def build_client_certificate(ca_key, ca_certificate, common_name: str):
     return key, certificate
 
 
+def build_opcua_certificate(
+    ca_key, ca_certificate, name: str, address: str, application_uri: str, role: str
+):
+    """Issue an OPC UA application identity, distinct from HTTPS identities."""
+    from cryptography import x509
+    from cryptography.hazmat.primitives import hashes
+    from cryptography.hazmat.primitives.asymmetric import rsa
+    from cryptography.x509.oid import ExtendedKeyUsageOID, NameOID
+
+    if role not in {"server", "client"}:
+        raise ValueError("OPC UA certificate role must be server or client")
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    now = datetime.datetime.now(datetime.timezone.utc)
+    certificate = (
+        x509.CertificateBuilder()
+        .subject_name(x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, name)]))
+        .issuer_name(ca_certificate.subject)
+        .public_key(key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(now - datetime.timedelta(minutes=5))
+        .not_valid_after(now + datetime.timedelta(days=CERT_VALID_DAYS))
+        .add_extension(x509.BasicConstraints(ca=False, path_length=None), critical=True)
+        .add_extension(
+            x509.SubjectAlternativeName(
+                [
+                    x509.DNSName(name),
+                    x509.IPAddress(ipaddress.ip_address(address)),
+                    x509.UniformResourceIdentifier(application_uri),
+                ]
+            ),
+            critical=False,
+        )
+        .add_extension(
+            x509.KeyUsage(
+                digital_signature=True,
+                content_commitment=True,
+                key_encipherment=True,
+                data_encipherment=True,
+                key_agreement=False,
+                key_cert_sign=False,
+                crl_sign=False,
+                encipher_only=False,
+                decipher_only=False,
+            ),
+            critical=True,
+        )
+        .add_extension(
+            x509.ExtendedKeyUsage(
+                [
+                    ExtendedKeyUsageOID.SERVER_AUTH
+                    if role == "server"
+                    else ExtendedKeyUsageOID.CLIENT_AUTH
+                ]
+            ),
+            critical=False,
+        )
+        .sign(ca_key, hashes.SHA256())
+    )
+    return key, certificate
+
+
+def opcua_identities(dataset: Path) -> dict[str, dict[str, str]]:
+    """Find the configured OPC UA pair and validate it through the builder rules."""
+    from gns3.opcua_config import compile_opcua
+
+    path = dataset / "device_instances" / "initial_devices.yaml"
+    inventory = yaml.safe_load(path.read_text(encoding="utf-8"))
+    configured = compile_opcua(inventory)
+    devices = {device["name"]: device for device in inventory["devices"]}
+    servers = [
+        device
+        for device in devices.values()
+        if "opcua-server" in device.get("protocols", [])
+    ]
+    if len(servers) != 1:
+        raise ValueError(f"Expected one OPC UA server in {path}; found {len(servers)}")
+    server = servers[0]
+    client = devices[server["environment"]["OPCUA_CLIENT_NODE"]]
+    return {
+        role: {
+            "name": node["name"],
+            "address": str(ipaddress.ip_interface(node["address"]).ip),
+            "application_uri": configured[node["name"]]["OPCUA_APPLICATION_URI"],
+        }
+        for role, node in (("server", server), ("client", client))
+    }
+
+
+def generate_opcua(
+    out_dir: Path, identities: dict[str, dict[str, str]]
+) -> dict[str, Path]:
+    """Write application key pairs and public peer certificates; keep the CA key ephemeral."""
+    from cryptography.hazmat.primitives import serialization
+
+    out_dir.mkdir(parents=True, exist_ok=True)
+    ca_key, ca_certificate = build_ca("Metropolis OPC UA CA")
+    written = {"ca": out_dir / "ca.crt"}
+    write_pem(written["ca"], ca_certificate)
+    for role in ("server", "client"):
+        identity = identities[role]
+        key, certificate = build_opcua_certificate(
+            ca_key,
+            ca_certificate,
+            identity["name"],
+            identity["address"],
+            identity["application_uri"],
+            role,
+        )
+        cert_path, key_path = out_dir / f"{role}.crt", out_dir / f"{role}.key"
+        write_pem(cert_path, certificate)
+        key_path.write_bytes(
+            key.private_bytes(
+                serialization.Encoding.PEM,
+                serialization.PrivateFormat.PKCS8,
+                serialization.NoEncryption(),
+            )
+        )
+        key_path.chmod(0o600)
+        written[role], written[f"{role}_key"] = cert_path, key_path
+    return written
+
+
 def telemetry_identities(dataset: Path) -> dict[str, str]:
     """Resolve relay and client certificate identities from selected inventory."""
     inventory_path = dataset / "device_instances" / "initial_devices.yaml"
@@ -286,14 +410,14 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     parser.add_argument(
         "--service",
-        choices=("mqtt", "merlin", "telemetry"),
+        choices=("mqtt", "merlin", "telemetry", "opcua"),
         default="mqtt",
         help="Certificate identity to generate (default: mqtt)",
     )
     parser.add_argument(
         "--dataset",
         type=Path,
-        help="Selected dataset directory (required for merlin/telemetry)",
+        help="Selected dataset directory (required for merlin/telemetry/opcua)",
     )
     parser.add_argument(
         "--out-dir",
@@ -313,6 +437,19 @@ def main() -> int:
         help="Extra IP address the certificate must be valid for",
     )
     args = parser.parse_args()
+
+    if args.service == "opcua":
+        if args.dataset is None:
+            parser.error("--dataset is required for --service opcua")
+        if args.names or args.addresses:
+            parser.error("OPC UA identities come from --dataset")
+        written = generate_opcua(
+            args.out_dir or Path("certs/opcua"), opcua_identities(args.dataset)
+        )
+        for label, path in written.items():
+            print(f"  {label}: {path}")
+        print("Rebuild SCADA and historian with this same OPC UA bundle.")
+        return 0
 
     if args.service == "telemetry":
         if args.dataset is None:

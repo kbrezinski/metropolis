@@ -187,6 +187,117 @@ def test_telemetry_validator_checks_firewall_direction_and_port():
     assert _validate_service_flows(inventory["devices"], [], policy) == []
 
 
+def opcua_inventory():
+    return {
+        "devices": [
+            {
+                "name": "supervisor-west",
+                "image": "supervisor:image",
+                "address": "192.0.2.25/24",
+                "subnet": "192.0.2.0/24",
+                "protocols": ["opcua-server"],
+                "environment": {
+                    "OPCUA_ENABLED": "true",
+                    "OPCUA_CLIENT_NODE": "archive-east",
+                },
+            },
+            {
+                "name": "archive-east",
+                "image": "archive:image",
+                "address": "198.51.100.90/24",
+                "subnet": "198.51.100.0/24",
+                "protocols": ["opcua-client"],
+                "environment": {
+                    "OPCUA_ENABLED": "true",
+                    "OPCUA_SERVER_NODE": "supervisor-west",
+                },
+            },
+        ]
+    }
+
+
+@pytest.mark.parametrize("security", [None, "None"])
+def test_opcua_plan_derives_selected_endpoint_and_application_identities(security):
+    inventory = opcua_inventory()
+    inventory["devices"][0]["address"] = "192.0.2.81/24"
+    if security is not None:
+        for device in inventory["devices"]:
+            device["environment"]["OPCUA_SECURITY_MODE"] = security
+    plan = build_plan(
+        inventory,
+        {"routers": [], "switches": [], "segments": []},
+        {"links": []},
+        {device["image"]: device["image"] for device in inventory["devices"]},
+    )
+    nodes = {node.name: node for node in plan.nodes}
+    client = nodes["archive-east"].environment
+    assert client["OPCUA_ENDPOINT_URL"] == "opc.tcp://192.0.2.81:4840/metropolis/"
+    assert client["OPCUA_APPLICATION_URI"] == "urn:metropolis:opcua:archive-east"
+    assert (
+        client["OPCUA_PEER_APPLICATION_URI"] == "urn:metropolis:opcua:supervisor-west"
+    )
+    assert client["OPCUA_PEER_ADDRESS"] == "192.0.2.81"
+    assert client["OPCUA_SECURITY_MODE"] == (security or "SignAndEncrypt")
+    assert client["OPCUA_PUBLISH_INTERVAL_MS"] == "1000"
+    assert nodes["supervisor-west"].environment["OPCUA_PEER_ADDRESS"] == "198.51.100.90"
+    assert nodes["supervisor-west"].environment["DEVICE_NAME"] == "supervisor-west"
+    assert "OPCUA_ENDPOINT_URL" not in inventory["devices"][1]["environment"]
+
+
+@pytest.mark.parametrize(
+    "node,key,value,diagnostic",
+    [
+        (1, "OPCUA_SERVER_NODE", "missing", "OPCUA_SERVER_NODE"),
+        (0, "OPCUA_CLIENT_NODE", "supervisor-west", "must name"),
+        (1, "OPCUA_SECURITY_MODE", "None", "differs from peer"),
+        (1, "OPCUA_PUBLISH_INTERVAL_MS", "nan", "finite and positive"),
+        (0, "OPCUA_PORT", "0", "invalid OPCUA_PORT"),
+        (1, "OPCUA_ENDPOINT_URL", "opc.tcp://192.0.2.99:4840/metropolis/", "disagrees"),
+        (0, "OPCUA_ENABLED", "false", "requires OPCUA_ENABLED=true"),
+    ],
+)
+def test_opcua_plan_rejects_inconsistent_or_unusable_configuration(
+    node, key, value, diagnostic
+):
+    from opcua_config import compile_opcua
+
+    inventory = opcua_inventory()
+    inventory["devices"][node]["environment"][key] = value
+    with pytest.raises(ValueError, match=diagnostic):
+        compile_opcua(inventory)
+
+
+def test_opcua_validator_requires_client_to_server_firewall_path():
+    sys.path.insert(0, str(GNS3.parent))
+    from validate_metropolis_topology import (
+        _validate_device_targets,
+        _validate_service_flows,
+    )
+
+    devices = opcua_inventory()["devices"]
+    assert _validate_device_targets(devices) == []
+    policy = {
+        "flows": [
+            {
+                "source": "192.0.2.0/24",
+                "destination": "198.51.100.0/24",
+                "protocol": "tcp",
+                "port": 4840,
+            }
+        ]
+    }
+    assert _validate_service_flows(devices, [], policy) == [
+        "archive-east: no TCP/4840 firewall flow to OPC UA server supervisor-west"
+    ]
+    policy["flows"][0].update(source="198.51.100.0/24", destination="192.0.2.0/24")
+    assert _validate_service_flows(devices, [], policy) == []
+    devices[0]["link_policy"] = "intentionally_uncabled"
+    assert any(
+        "OPC UA peers require physical links" in problem
+        for problem in _validate_device_targets(devices)
+    )
+
+
 @pytest.mark.parametrize(
     "key,expected,previous,private_key",
     [
@@ -197,6 +308,12 @@ def test_telemetry_validator_checks_firewall_direction_and_port():
             "https://192.0.2.5:443/v1/status",
             "https://198.51.100.6:443/v1/status",
             "TELEMETRY_KEY_FILE",
+        ),
+        (
+            "OPCUA_ENDPOINT_URL",
+            "opc.tcp://192.0.2.8:4840/metropolis/",
+            "opc.tcp://198.51.100.6:4840/metropolis/",
+            "OPCUA_KEY_FILE",
         ),
     ],
 )
@@ -231,6 +348,6 @@ def test_reused_node_protocol_drift_is_detected_without_disclosing_values(
     stale_environment = current["properties"]["environment"]
     _, result = ensure_nodes(Client(), "project", topology, {})
     assert len(result.skipped) == 1
-    assert "stale MQTT/DNP3/CoAP/SNMP/telemetry environment" in result.skipped[0]
+    assert "stale MQTT/DNP3/CoAP/SNMP/telemetry/OPC-UA environment" in result.skipped[0]
     assert "private-lab-value" not in result.skipped[0]
     assert current["properties"]["environment"] == stale_environment

@@ -105,12 +105,14 @@ def _device_nodes(
 ) -> tuple[list[PlannedNode], list[str]]:
     from mqtt_acl import compile_mqtt_access
     from telemetry_config import compile_telemetry
+    from opcua_config import compile_opcua
 
     nodes: list[PlannedNode] = []
     missing: list[str] = []
     devices = {device["name"]: device for device in inventory["devices"]}
     broker_access = compile_mqtt_access(inventory)
     telemetry = compile_telemetry(inventory)
+    opcua = compile_opcua(inventory)
     for device in inventory["devices"]:
         template_name = templates.get(device["image"])
         if template_name is None:
@@ -120,6 +122,7 @@ def _device_nodes(
             continue
         environment = dict(device.get("environment", {}))
         environment.update(telemetry.get(device["name"], {}))
+        environment.update(opcua.get(device["name"], {}))
         if "MQTT_OPERATOR_USERNAME" in environment:
             environment.update(broker_access)
         if peer_names := environment.get("DNP3_PEER_NODES"):

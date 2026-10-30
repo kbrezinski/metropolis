@@ -43,6 +43,7 @@ SERVER_IMAGES = (
     "metropolis/rdp-relay:dev",
 )
 PRODUCER_IMAGES = (
+    "metropolis/scada:dev",
     "metropolis/mqtt-sensor:dev",
     "metropolis/hmi:dev",
     "metropolis/dns:dev",

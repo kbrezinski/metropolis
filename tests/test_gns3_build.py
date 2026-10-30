@@ -579,6 +579,7 @@ def test_startup_order_enforces_infrastructure_and_service_dependencies():
         {"name": "engineer"},
         {"name": "dmz-relay"},
         {"name": "enterprise-reader"},
+        {"name": "historian"},
     ]
     kinds = {
         "sw-plant-aggregation": "switch",
@@ -601,10 +602,12 @@ def test_startup_order_enforces_infrastructure_and_service_dependencies():
         "engineer": "metropolis/engineering:dev",
         "dmz-relay": "metropolis/rdp-relay:dev",
         "enterprise-reader": "metropolis/enterprise-client:dev",
+        "historian": "metropolis/historian:dev",
     }
     order = startup_order(nodes, kinds, images)
     assert order[:2] == ["sw-plant-aggregation", "MET-PLANT"]
     assert order.index("MET-MQTT-BROKER-01") < order.index("MET-SCADA-01")
+    assert order.index("MET-SCADA-01") < order.index("historian")
     assert order.index("dmz-relay") < min(
         order.index(name) for name in ("MET-SCADA-01", "enterprise-reader")
     )

@@ -55,6 +55,7 @@ python scripts/attacks/run.py network_recon_scan --dry-run
 | Reservoir and raw-water (each) | RTU; Modbus level instrument; cyclic pump drive |
 
 - Central SCADA polls four PLCs and two RTUs over Modbus and polls remote RTU alarm events over DNP3; HMI setpoint readback covers plant cells. The control client reads the intake sensor's CoAP status. These are lab protocol models, not vendor profiles or physical process simulation.
+- SCADA also exposes existing values read-only over OPC UA to the historian alongside MQTT. Peers and application identities come from inventory; generate the separate OPC UA certificate bundle before image builds. Secure sessions are default; plaintext requires explicit matching peer settings.
 - Router scripts in `testbeds/metropolis/router/` use OSPF area 0. Firewall policy permits selected LANs/CIDRs by protocol/port and drops other routed traffic; same-VLAN traffic bypasses it.
 - The WAN is an untrusted public-network underlay. `MET-OT-WAN` is the edge firewall and IKEv2/IPsec hub; inter-site OSPF/BFD and operational traffic use VTI overlays. Controller-side PSKs are required for router configuration; never commit or report their values. Logical overlays are not GNS3 cables or capture points. Live tunnel behavior remains user-verified. VyOS is imported separately; `scripts/gns3/switch_config.py` configures the repo-owned Open vSwitch image.
 
@@ -68,7 +69,7 @@ python scripts/attacks/run.py network_recon_scan --dry-run
 
 - SCADA exports selected status/alarms to a mutually authenticated HTTPS relay on the DMZ RDP host; an enterprise reader polls it. Resolve peers from inventory and generate role certificates before building SCADA, the DMZ RDP/relay variant, and the enterprise image; see the GNS3 guide.
 
-The builder reuses nodes by name without reconciling changed images or environments; it reports stale MQTT/DNP3/CoAP/SNMP/telemetry environment settings.
+The builder reuses nodes by name without reconciling changed images or environments; it reports stale MQTT/DNP3/CoAP/SNMP/telemetry/OPC UA environment settings.
 
 ## Runs, attacks, and documentation
 

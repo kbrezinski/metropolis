@@ -99,7 +99,7 @@ def test_export_is_optional_and_explicit_tls_configuration_fails_early(monkeypat
             exports.TelemetryExporter("SCADA-X", url, None)
 
 
-def test_poll_loop_exports_each_outage_cycle_and_recovery_and_closes(monkeypatch):
+def test_poll_loop_keeps_mqtt_and_polling_during_opcua_failure(monkeypatch, caplog):
     spec = importlib.util.spec_from_file_location(
         "telemetry_scada_loop", DEVICES / "operations/scada/scada_collector.py"
     )
@@ -109,6 +109,29 @@ def test_poll_loop_exports_each_outage_cycle_and_recovery_and_closes(monkeypatch
     spec.loader.exec_module(scada)
     events = []
     outgoing = []
+    opcua_updates = []
+    initial_cells = []
+
+    class OpcUa:
+        def start(self):
+            events.append("opcua_started")
+
+        def submit(self, payload):
+            opcua_updates.append(payload.copy())
+            if len(opcua_updates) == 3:
+                raise RuntimeError("private transport details")
+
+        def close(self):
+            events.append("opcua_closed")
+
+    def opcua_worker(name, templates):
+        assert name == "SCADA-X"
+        initial_cells.extend(templates)
+        return OpcUa()
+
+    monkeypatch.setattr(
+        scada, "OpcUaServerWorker", SimpleNamespace(from_environment=opcua_worker)
+    )
 
     class Exporter:
         def start(self):
@@ -131,7 +154,7 @@ def test_poll_loop_exports_each_outage_cycle_and_recovery_and_closes(monkeypatch
             pass
 
         def connect(self, *args, **kwargs):
-            pass
+            assert "opcua_started" in events
 
         def loop_start(self):
             pass
@@ -176,24 +199,115 @@ def test_poll_loop_exports_each_outage_cycle_and_recovery_and_closes(monkeypatch
         polls.append(target.cell)
         if len(polls) < 3:
             raise ConnectionError("offline")
-        return cell()
+        return cell(2 if len(polls) == 5 else 1)
 
     def sleep(interval):
-        if len(polls) == 3:
+        if len(polls) == 5:
             scada.signal.getsignal(scada.signal.SIGTERM)(scada.signal.SIGTERM, None)
 
     monkeypatch.setattr(scada, "poll_target", poll)
     monkeypatch.setattr(scada.time, "sleep", sleep)
+    ticks = iter([0, 16, 17])
+    monkeypatch.setattr(scada.time, "monotonic", lambda: next(ticks))
     scada.main()
     snapshots = [event for event in events if isinstance(event, list)]
     assert [snapshot[0]["quality"] for snapshot in snapshots] == [
         "unavailable",
         "unavailable",
         "good",
+        "stale",
+        "good",
     ]
     assert snapshots[0][0]["alarms"] == ["controller_unreachable"]
     assert snapshots[2][0]["transition"] == "poll_recovered"
-    assert [record["quality"] for record in outgoing] == ["unavailable", "good"]
-    assert events[0] == "started"
-    assert events[-2:] == ["closed", "disconnected"]
+    assert [record["quality"] for record in outgoing] == [
+        "unavailable",
+        "good",
+        "stale",
+        "good",
+    ]
+    assert [record["quality"] for record in opcua_updates] == [
+        "unavailable",
+        "unavailable",
+        "good",
+        "stale",
+        "good",
+    ]
+    assert initial_cells[0]["cell"] == "custom-cell"
+    assert initial_cells[0]["level_percent"] == 0.0
+    assert len(polls) == 5
+    assert events[0] == "opcua_started"
+    assert events[-3:] == ["closed", "disconnected", "opcua_closed"]
+    assert "OPC UA update failed cell=custom-cell error=RuntimeError" in caplog.text
+    assert "private transport details" not in caplog.text
+    assert scada.signal.getsignal(scada.signal.SIGTERM) == previous_term
+
+
+@pytest.mark.parametrize("startup_failure", [False, True])
+def test_scada_closes_opcua_on_interrupted_broker_retry_or_startup_error(
+    monkeypatch, startup_failure
+):
+    spec = importlib.util.spec_from_file_location(
+        "opcua_scada_startup", DEVICES / "operations/scada/scada_collector.py"
+    )
+    scada = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = scada
+    spec.loader.exec_module(scada)
+    events = []
+
+    class OpcUa:
+        def start(self):
+            events.append("started")
+
+        def close(self):
+            events.append("closed")
+
+    class Publisher:
+        def __init__(self, *args, **kwargs):
+            assert events == ["started"]
+            if startup_failure:
+                raise ValueError("bad broker configuration")
+
+        def username_pw_set(self, *args):
+            pass
+
+        def reconnect_delay_set(self, **kwargs):
+            pass
+
+        def connect(self, *args, **kwargs):
+            raise OSError("broker unavailable")
+
+        def disconnect(self):
+            events.append("disconnected")
+
+        def loop_stop(self):
+            pass
+
+    monkeypatch.setattr(
+        scada,
+        "OpcUaServerWorker",
+        SimpleNamespace(from_environment=lambda name, templates: OpcUa()),
+    )
+    monkeypatch.setattr(
+        scada, "TelemetryExporter", SimpleNamespace(from_environment=lambda name: None)
+    )
+    monkeypatch.setattr(scada.mqtt, "Client", Publisher)
+    monkeypatch.setattr(scada, "apply_to", lambda client: None)
+    monkeypatch.setenv("MQTT_USERNAME", "test")
+    monkeypatch.setenv("MQTT_PASSWORD", "synthetic")
+    for key in ("DNP3_TARGETS_B64", "SCADA_TARGETS"):
+        monkeypatch.delenv(key, raising=False)
+
+    def interrupt(_):
+        scada.signal.getsignal(scada.signal.SIGTERM)(scada.signal.SIGTERM, None)
+
+    monkeypatch.setattr(scada.time, "sleep", interrupt)
+    previous_term = scada.signal.getsignal(scada.signal.SIGTERM)
+    if startup_failure:
+        with pytest.raises(ValueError, match="bad broker"):
+            scada.main()
+        assert events == ["started", "closed"]
+    else:
+        scada.main()
+        assert events == ["started", "disconnected", "closed"]
     assert scada.signal.getsignal(scada.signal.SIGTERM) == previous_term

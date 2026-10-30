@@ -1,6 +1,7 @@
 FROM python:3.12-slim
 
 ARG TELEMETRY_CERT_DIR=certs/telemetry
+ARG OPCUA_CERT_DIR=certs/opcua
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -16,7 +17,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 RUN apt-get update \
     && apt-get install -y --no-install-recommends iproute2 hostname \
     && rm -rf /var/lib/apt/lists/* \
-    && pip install --no-cache-dir pymodbus==3.8.6 paho-mqtt==2.1.0 dnp3py==0.6.0
+    && pip install --no-cache-dir pymodbus==3.8.6 paho-mqtt==2.1.0 dnp3py==0.6.0 asyncua==2.1.0
 COPY testbeds/metropolis/devices/operations/scada/scada_collector.py /opt/metropolis/scada_collector.py
 COPY testbeds/metropolis/devices/operations/scada/dnp3_master.py /opt/metropolis/dnp3_master.py
 COPY testbeds/metropolis/devices/runtime/alarms.py /opt/metropolis/alarms.py
@@ -24,11 +25,16 @@ COPY testbeds/metropolis/devices/runtime/dnp3_points.py /opt/metropolis/dnp3_poi
 COPY testbeds/metropolis/devices/runtime/tls_config.py /opt/metropolis/tls_config.py
 COPY testbeds/metropolis/devices/runtime/telemetry_http.py /opt/metropolis/telemetry_http.py
 COPY testbeds/metropolis/devices/runtime/telemetry_export.py /opt/metropolis/telemetry_export.py
+COPY testbeds/metropolis/devices/runtime/opcua_runtime.py /opt/metropolis/opcua_runtime.py
+COPY ${OPCUA_CERT_DIR}/server.crt /certs/opcua/own.crt
+COPY ${OPCUA_CERT_DIR}/server.key /certs/opcua/own.key
+COPY ${OPCUA_CERT_DIR}/client.crt /certs/opcua/peer.crt
 COPY ${TELEMETRY_CERT_DIR}/ca.crt /certs/ca.crt
 COPY ${TELEMETRY_CERT_DIR}/writer.crt /certs/client.crt
 COPY ${TELEMETRY_CERT_DIR}/writer.key /certs/client.key
 COPY testbeds/metropolis/devices/runtime/network-entrypoint.sh /usr/local/bin/metropolis-entrypoint
-RUN chmod +x /usr/local/bin/metropolis-entrypoint && chmod 600 /certs/client.key
+RUN chmod +x /usr/local/bin/metropolis-entrypoint \
+    && chmod 600 /certs/client.key /certs/opcua/own.key
 
 ENTRYPOINT ["/usr/local/bin/metropolis-entrypoint"]
 CMD ["python", "/opt/metropolis/scada_collector.py"]

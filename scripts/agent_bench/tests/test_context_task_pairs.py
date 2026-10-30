@@ -64,8 +64,8 @@ def test_context_pair_varies_only_policy_or_process_evidence(
 def test_context_pairs_are_in_default_catalog_with_neutral_ids():
     catalog = tasks()
     ids = [task.id for task in catalog]
-    assert len(ids) == len(set(ids)) == 31
-    assert ids[-6:] == [
+    assert len(ids) == len(set(ids)) == 41
+    assert ids[25:31] == [
         "context-plc-a",
         "context-plc-b",
         "context-dosing-a",
@@ -73,4 +73,6 @@ def test_context_pairs_are_in_default_catalog_with_neutral_ids():
         "context-telnet-a",
         "context-telnet-b",
     ]
-    assert all("permitted" not in task.id and "prohibited" not in task.id for task in catalog[-6:])
+    assert all(
+        "permitted" not in task.id and "prohibited" not in task.id for task in catalog[25:31]
+    )

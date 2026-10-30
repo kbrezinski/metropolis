@@ -9,7 +9,6 @@ Expand one cell at a time, prioritizing credible packet timing, polling, and val
 ### Testbed features
 
 - [ ] Explore redundant plant and operations aggregation switches with dual-uplink access switches, then other sites. Plan router uplinks and Open vSwitch RSTP before adding loops.
-- [ ] Consider OPC UA between SCADA and the historian when a research scenario needs it; define peer behavior and capture points first.
 
 ### GNS3 tooling and cleanup
 

@@ -21,9 +21,9 @@ Paths below are relative to this directory.
 | Level instrument | `field/level_instrument/` | Modbus level and heartbeat |
 | Sensor | `field/sensors/` | MQTT telemetry and CoAP resources |
 | MQTT broker | `services/mqtt_broker/` | Authenticated Mosquitto |
-| SCADA | `operations/scada/` | Controller polling and HMI command/readback |
+| SCADA | `operations/scada/` | Controller polling, HMI command/readback, and read-only OPC UA server |
 | HMI | `operations/hmi/` | Authenticated HTTP panel using MQTT |
-| Historian | `operations/historian/` | MQTT subscription and console records |
+| Historian | `operations/historian/` | MQTT and OPC UA subscriptions with console records |
 | Enterprise reader | `operations/enterprise_client/` | Periodic read-only HTTPS requests to the DMZ relay |
 | Engineering workstation | `operations/engineering_workstation/` | OpenSSH shell and SFTP; routed FreeRDP client during captures |
 | RDP server | `operations/rdp_server/` | Linux xrdp desktop and synthetic UDP 3389 responder; DMZ build also hosts the HTTPS telemetry relay |
@@ -215,6 +215,47 @@ MQTT settings change; the builder reports stale settings.
 OpenSSH provides a real non-root shell and SFTP. Root login, forwarding, and
 sudo are disabled. Each node generates host keys in `/var/lib/metropolis/ssh`;
 persist that directory separately per node if stable host identity is needed.
+
+## OPC UA data access
+
+SCADA exposes the existing decoded measurements, heartbeat, quality, alarm
+mask/names, and UTC source time through `runtime/opcua_runtime.py`
+(`asyncua==2.1.0`). A separate worker receives the latest status per configured
+cell without adding controller reads or blocking Modbus/MQTT. Stable string
+NodeIds under namespace `urn:metropolis:scada` use `cells`,
+`cell/<escaped-cell-id>`, and `cell/<escaped-cell-id>/<escaped-field>`.
+
+The historian browses these cells and creates monitored items in a persistent
+subscription. The default publishing interval is one second; it batches changes
+and requests a keepalive after ten quiet publishing cycles (about ten seconds
+at the default interval). It does not create new process readings. Both MQTT and
+OPC UA remain active. Received values, source timestamps, UA status, and
+connection failures are written as source-attributed container diagnostics.
+
+Before the first poll, values have `BadWaitingForInitialData`. After a failed
+controller poll, measurement values carry `BadCommunicationError` and a null
+wire value; stale measurements carry `UncertainLastUsableValue` with their last
+value. Quality, alarm, and time fields remain readable after a poll so clients
+can identify the fault. Read-only measurements may include stored setpoints;
+there are no OPC UA control methods. This is live data acquisition without a
+historical database, historical queries, or a full Alarms & Conditions model.
+
+| Setting | Meaning |
+|---|---|
+| `OPCUA_ENABLED` | Enable the worker; disabled by default in standalone containers |
+| `OPCUA_SERVER_NODE`, `OPCUA_CLIENT_NODE` | Reciprocal inventoried server/client references |
+| `OPCUA_PORT` | Server TCP port, default 4840 |
+| `OPCUA_PUBLISH_INTERVAL_MS` | Historian subscription interval, default 1000 |
+| `OPCUA_SECURITY_MODE` | Default `SignAndEncrypt`; explicit `None` on both peers selects plaintext |
+| `OPCUA_ENDPOINT_URL`, `OPCUA_APPLICATION_URI`, `OPCUA_PEER_APPLICATION_URI`, `OPCUA_PEER_ADDRESS` | Derived by the builder from the selected inventory |
+| `OPCUA_CERT_FILE`, `OPCUA_KEY_FILE`, `OPCUA_PEER_CERT_FILE` | Own certificate/key and pinned peer certificate under `/certs/opcua/` |
+
+Secure mode requires valid application certificates and the historian's
+certificate user identity. Certificates, application URIs, expiry, usage, and
+the server address are checked. Writes and method calls are denied in both
+modes. Plaintext mode uses no password and never activates as a fallback.
+See the [setup and capture guide](../../../scripts/gns3/README.md#opc-ua-between-scada-and-the-historian)
+for certificate generation, node refresh, and capture points.
 
 ## DMZ telemetry relay and enterprise reader
 

@@ -22,7 +22,7 @@ def test_condition_selection_is_explicit_and_baseline_stays_the_default():
     assert select_conditions([]) == ("baseline",)
     assert select_conditions(["all"]) == CONDITION_IDS
     assert select_conditions(["spanish", "baseline"]) == ("spanish", "baseline")
-    assert CONDITION_VERSION == "1.2"
+    assert CONDITION_VERSION == "1.3"
     with pytest.raises(ValueError, match="alone"):
         select_conditions(["all", "baseline"])
     with pytest.raises(ValueError, match="Unknown"):

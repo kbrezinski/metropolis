@@ -175,7 +175,7 @@ routers and switches, grouped devices, and the two tunnel endpoints.
 
 ## Device models
 
-The emulated set includes Modbus TCP, DNP3, cyclic EtherNet/IP, MQTT, CoAP, HTTP,
+The emulated set includes Modbus TCP, DNP3, cyclic EtherNet/IP, OPC UA, MQTT, CoAP, HTTP,
 RDP over TCP, SSH/SFTP, Telnet, DNS, NTP, SNMP, and syslog, alongside OSPF/BFD
 routing and IPsec/IKEv2 traffic. A separate UDP 3389 service is synthetic lab traffic:
 
@@ -189,9 +189,9 @@ routing and IPsec/IKEv2 traffic. A separate UDP 3389 service is synthetic lab tr
 | Pump drives and valve | Simplified cyclic EtherNet/IP command and status traffic on plant VLANs and remote-site LANs |
 | Field sensor | Publishes periodic JSON telemetry over MQTT, and answers CoAP discovery and status |
 | MQTT broker | Mosquitto on TCP 1883, with distinct lab accounts and topic ACLs |
-| SCADA | Polls four plant PLCs and two remote RTUs over Modbus TCP; polls remote RTU DNP3 events; publishes MQTT status and plant-PLC setpoint readback acknowledgements |
+| SCADA | Polls four plant PLCs and two remote RTUs over Modbus TCP; polls remote RTU DNP3 events; publishes MQTT status/acknowledgements and serves read-only OPC UA data |
 | HMI | Authenticated HTTP panel on TCP 8080; shows telemetry and controller status, and sends a command only after an operator submits a setpoint |
-| Historian | Subscribes to MQTT topics and logs what it receives |
+| Historian | Subscribes to MQTT and SCADA OPC UA data; logs received values and quality |
 | DMZ RDP host / enterprise reader | The DMZ host also serves selected SCADA status over HTTPS on TCP 443, with separate writer/reader identities |
 | Engineering workstation | OpenSSH shell and SFTP on TCP 22 |
 | Routine control client | Resolves the PLC via DNS, samples NTP, makes bounded periodic Modbus reads and writes, polls router uptime over read-only SNMP, and reads the sensor's CoAP status |

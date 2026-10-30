@@ -408,9 +408,16 @@ devices:
     subnet: 10.20.20.0/24
     address: 10.20.20.10/24
     gateway: 10.20.20.1
-    protocols: [modbus-tcp, mqtt, dnp3-master, https, telemetry-publisher]
+    protocols: [modbus-tcp, mqtt, dnp3-master, https, telemetry-publisher, opcua-server]
     environment:
       NODE_HOSTNAME: MET-SCADA-01
+      OPCUA_ENABLED: "true"
+      OPCUA_CLIENT_NODE: MET-HISTORIAN-01
+      OPCUA_PORT: "4840"
+      OPCUA_SECURITY_MODE: SignAndEncrypt
+      OPCUA_CERT_FILE: /certs/opcua/own.crt
+      OPCUA_KEY_FILE: /certs/opcua/own.key
+      OPCUA_PEER_CERT_FILE: /certs/opcua/peer.crt
       TELEMETRY_RELAY_NODE: MET-RDP-DMZ-01
       TELEMETRY_CA_FILE: /certs/ca.crt
       TELEMETRY_CERT_FILE: /certs/client.crt
@@ -451,9 +458,16 @@ devices:
     subnet: 10.20.22.0/24
     address: 10.20.22.10/24
     gateway: 10.20.22.1
-    protocols: [mqtt]
+    protocols: [mqtt, opcua-client]
     environment:
       NODE_HOSTNAME: MET-HISTORIAN-01
+      OPCUA_ENABLED: "true"
+      OPCUA_SERVER_NODE: MET-SCADA-01
+      OPCUA_SECURITY_MODE: SignAndEncrypt
+      OPCUA_PUBLISH_INTERVAL_MS: "1000"
+      OPCUA_CERT_FILE: /certs/opcua/own.crt
+      OPCUA_KEY_FILE: /certs/opcua/own.key
+      OPCUA_PEER_CERT_FILE: /certs/opcua/peer.crt
       NODE_IP: 10.20.22.10/24
       NODE_GATEWAY: 10.20.22.1
       MQTT_HOST: 10.20.23.10

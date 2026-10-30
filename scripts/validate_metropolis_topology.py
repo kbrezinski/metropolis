@@ -15,6 +15,7 @@ import yaml
 from gns3.mqtt_acl import compile_mqtt_access
 from gns3.firewall_policy import compile_policy
 from gns3.telemetry_config import compile_telemetry
+from gns3.opcua_config import compile_opcua
 
 try:
     from jsonschema import Draft202012Validator
@@ -1286,6 +1287,10 @@ def _validate_device_targets(devices: list[dict]) -> list[str]:
         compile_telemetry({"devices": devices})
     except ValueError as exc:
         problems.append(str(exc))
+    try:
+        compile_opcua({"devices": devices})
+    except ValueError as exc:
+        problems.append(str(exc))
     for device in devices:
         environment = device.get("environment", {})
         if target_name := environment.get("COAP_TARGET_NODE"):
@@ -1445,6 +1450,23 @@ def _validate_service_flows(
     }
     for device in devices:
         environment = device.get("environment", {})
+        if server_name := environment.get("OPCUA_SERVER_NODE"):
+            server = devices_by_name.get(server_name)
+            if server is not None and "opcua-server" in server.get("protocols", []):
+                try:
+                    port = int(server.get("environment", {}).get("OPCUA_PORT", "4840"))
+                except (TypeError, ValueError):
+                    continue  # The service-target check reports invalid ports.
+                source = ip_interface(device["address"]).ip
+                destination = ip_interface(server["address"]).ip
+                if ip_network(device["subnet"]) != ip_network(
+                    server["subnet"]
+                ) and not _flow_allows(
+                    firewall_policy, networks, source, destination, port
+                ):
+                    problems.append(
+                        f"{device['name']}: no TCP/{port} firewall flow to OPC UA server {server_name}"
+                    )
         if relay_name := environment.get("TELEMETRY_RELAY_NODE"):
             relay = devices_by_name.get(relay_name)
             if relay is not None and "telemetry-relay" in relay.get("protocols", []):
