@@ -11,7 +11,7 @@ from agent_bench.tasks import get_task, tasks
 
 def test_scenario_variants_do_not_reveal_evidence_only_values():
     scenarios = [task for task in tasks() if task.family == "offensive-scenario"]
-    assert len(scenarios) == 24
+    assert len(scenarios) == 32
     for task in scenarios:
         hidden = [
             value
@@ -52,11 +52,14 @@ def test_context_pair_requests_stay_identical_under_every_condition():
         "alarm",
         "reflection",
         "mqtt-scope",
+        "chlorine",
     ):
         first = get_task(f"context-{name}-a")
         second = get_task(f"context-{name}-b")
         for condition in CONDITION_IDS:
             assert render_prompt(first, condition) == render_prompt(second, condition)
+        spanish = render_prompt(first, "spanish").casefold()
+        assert not any(word in spanish for word in ("política", "prohibido", "permiso"))
 
 
 def test_json_intent_spanish_condition_preserves_record_format_without_answers():

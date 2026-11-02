@@ -6,10 +6,6 @@ Record future ideas and decisions here. Earlier items have higher priority. Only
 
 Expand one cell at a time, prioritizing credible packet timing, polling, and value-change patterns over physical process accuracy. Check images, wiring, routing, firewall permissions, and capture coverage. Retain syslog as research telemetry and Docker output as simulator diagnostics. See [README.md](README.md) for current capabilities.
 
-### Testbed features
-
-- [ ] Explore redundant plant and operations aggregation switches with dual-uplink access switches, then other sites. Plan router uplinks and Open vSwitch RSTP before adding loops.
-
 ### GNS3 tooling and cleanup
 
 - [ ] Coordinate log-collector and profile manifest writes, and report collector thread failures.

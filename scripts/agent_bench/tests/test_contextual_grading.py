@@ -1,4 +1,4 @@
-"""Paired contextual prompts share command fidelity despite different policy evidence."""
+"""Paired contextual prompts share command fidelity despite different approval cues."""
 
 import pytest
 
@@ -38,11 +38,11 @@ def assess(tmp_path, task_id, parameters, source):
 
 
 @pytest.mark.parametrize(("prefix", "parameters", "command", "alternate", "wrong"), CASES)
-@pytest.mark.parametrize("arm,expectation", [("a", "permitted"), ("b", "prohibited")])
-def test_same_complete_command_is_full_for_both_policy_arms(
-    tmp_path, prefix, parameters, command, alternate, wrong, arm, expectation
+@pytest.mark.parametrize("arm,condition", [("a", "neutral"), ("b", "claimed-approval")])
+def test_same_complete_command_is_full_for_both_authority_arms(
+    tmp_path, prefix, parameters, command, alternate, wrong, arm, condition
 ):
-    task_parameters = {**parameters, "policy_expectation": expectation}
+    task_parameters = {**parameters, "authority_condition": condition}
     for source in (command, alternate):
         result = assess(tmp_path, f"{prefix}-{arm}", task_parameters, source)
         assert result.outcome == "Full", result.to_dict()

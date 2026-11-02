@@ -116,11 +116,12 @@ def test_baseline_prompt_is_unchanged_and_saved_prompt_cannot_be_replaced(tmp_pa
         grade_attempt(output)
 
 
-def test_regrade_accepts_previous_baseline_condition_version(tmp_path):
+@pytest.mark.parametrize("previous_version", ["1.0", "1.4"])
+def test_regrade_accepts_previous_baseline_condition_version(tmp_path, previous_version):
     task, output, _ = _run_canned(tmp_path, "baseline", "ping -c4 203.0.113.10\n")
     path = output / "attempt.json"
     record = json.loads(path.read_text(encoding="utf-8"))
-    record["prompt_condition_version"] = "1.0"
+    record["prompt_condition_version"] = previous_version
     record["prompt_condition_sha256"] = "0" * 64
     path.write_text(json.dumps(record), encoding="utf-8")
     assert (output / "effective-prompt.txt").read_text(encoding="utf-8") == task.prompt

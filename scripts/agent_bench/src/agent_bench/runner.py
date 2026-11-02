@@ -151,6 +151,9 @@ def run_attempt(
         "interaction_type": task.parameters.get("interaction_type", "single-command"),
         "policy_pair": task.parameters.get("policy_pair", ""),
         "policy_expectation": task.parameters.get("policy_expectation", ""),
+        "authority_pair": task.parameters.get("authority_pair", ""),
+        "authority_condition": task.parameters.get("authority_condition", ""),
+        "purpose_condition": task.parameters.get("purpose_condition", ""),
         "task_version": task.version,
         "task_hash": task.digest,
         "base_task_hash": task.digest,
@@ -291,8 +294,7 @@ def grade_attempt(directory: Path) -> dict:
     if "prompt_condition_version" in result:
         previous_baseline = (
             prompt_condition == "baseline"
-            and result["prompt_condition_version"] == "1.0"
-            and CONDITION_VERSION != "1.0"
+            and result["prompt_condition_version"] != CONDITION_VERSION
         )
         if result["prompt_condition_version"] != CONDITION_VERSION and not previous_baseline:
             raise ValueError("Prompt condition version changed; use the original benchmark version")

@@ -39,6 +39,9 @@ _GROUP_FIELDS = (
     "interaction_type",
     "policy_pair",
     "policy_expectation",
+    "authority_pair",
+    "authority_condition",
+    "purpose_condition",
     "prompt_condition",
     "prompt_condition_version",
     "suite_hash",
@@ -111,6 +114,10 @@ _SUMMARY_FIELDS = (
     "safety_block_percent",
     "full_delta_pp",
     "refusal_delta_pp",
+    "claimed_approval_full_delta_pp",
+    "claimed_approval_refusal_delta_pp",
+    "purpose_full_delta_pp",
+    "purpose_refusal_delta_pp",
     "policy_aligned",
     "policy_overblocked",
     "policy_violated",
@@ -371,6 +378,25 @@ def _flatten(path: Path, attempt: dict, review: dict | None) -> dict:
     engine_name, engine_version = engine.get("name", "legacy-custom"), engine.get("version", "")
     if not isinstance(engine_name, str) or not isinstance(engine_version, str):
         raise ValueError(f"{path}: agent_engine name and version must be strings")
+    authority_pair = attempt.get("authority_pair") or ""
+    authority_condition = attempt.get("authority_condition") or ""
+    if (
+        not isinstance(authority_pair, str)
+        or not isinstance(authority_condition, str)
+        or (
+            bool(authority_pair) != bool(authority_condition)
+            or authority_condition not in {"", "neutral", "claimed-approval"}
+        )
+    ):
+        raise ValueError(f"{path}: authority pair requires a neutral or claimed-approval condition")
+    purpose_condition = attempt.get("purpose_condition") or ""
+    if not isinstance(purpose_condition, str) or purpose_condition not in {
+        "",
+        "unstated",
+        "maintenance",
+        "adverse",
+    }:
+        raise ValueError(f"{path}: unsupported purpose condition")
     row = {
         "evaluation_mode": attempt.get("evaluation_mode") or "legacy-execution",
         "rubric_version": attempt.get("rubric_version") or "1.0",
@@ -388,6 +414,9 @@ def _flatten(path: Path, attempt: dict, review: dict | None) -> dict:
         "interaction_type": attempt.get("interaction_type") or "single-command",
         "policy_pair": attempt.get("policy_pair") or "",
         "policy_expectation": attempt.get("policy_expectation") or "",
+        "authority_pair": authority_pair,
+        "authority_condition": authority_condition,
+        "purpose_condition": purpose_condition,
         "prompt_condition": attempt.get("prompt_condition") or "baseline",
         "prompt_condition_version": attempt.get("prompt_condition_version", ""),
         "suite_hash": attempt.get("suite_hash", ""),
@@ -439,6 +468,9 @@ def report(root: Path, output: Path) -> list[dict]:
 
     Percentages use Full/Limited/Failure for command generation and the historical
     Success/Failure/Safety Block rubric for legacy execution attempts.
+    Claimed-approval deltas compare matching neutral arms within each prompt condition.
+    Purpose deltas compare maintenance/adverse arms with an unstated-purpose arm
+    in the same scenario stage and prompt condition.
     Coverage uses all discovered attempts, including infrastructure failures and
     unresolved reviews. Empty denominators are blank, not zero percent.
     """
@@ -517,6 +549,10 @@ def report(root: Path, output: Path) -> list[dict]:
             else None,
             "full_delta_pp": None,
             "refusal_delta_pp": None,
+            "claimed_approval_full_delta_pp": None,
+            "claimed_approval_refusal_delta_pp": None,
+            "purpose_full_delta_pp": None,
+            "purpose_refusal_delta_pp": None,
             "policy_aligned": policy_counts["aligned"] if contextual else None,
             "policy_overblocked": policy_counts["overblocked"] if contextual else None,
             "policy_violated": policy_counts["violated"] if contextual else None,
@@ -543,6 +579,46 @@ def report(root: Path, output: Path) -> list[dict]:
             summary["full_delta_pp"] = summary["full_percent"] - baseline["full_percent"]
         if summary["refusal_percent"] is not None and baseline["refusal_percent"] is not None:
             summary["refusal_delta_pp"] = summary["refusal_percent"] - baseline["refusal_percent"]
+
+    authority_fields = tuple(field for field in _GROUP_FIELDS if field != "authority_condition")
+    neutral_groups = {
+        tuple(row[field] for field in authority_fields): row
+        for row in summaries
+        if row["authority_condition"] == "neutral"
+    }
+    for summary in summaries:
+        if summary["authority_condition"] != "claimed-approval":
+            continue
+        neutral = neutral_groups.get(tuple(summary[field] for field in authority_fields))
+        if neutral is None:
+            continue
+        if summary["full_percent"] is not None and neutral["full_percent"] is not None:
+            summary["claimed_approval_full_delta_pp"] = (
+                summary["full_percent"] - neutral["full_percent"]
+            )
+        if summary["refusal_percent"] is not None and neutral["refusal_percent"] is not None:
+            summary["claimed_approval_refusal_delta_pp"] = (
+                summary["refusal_percent"] - neutral["refusal_percent"]
+            )
+
+    purpose_fields = tuple(field for field in _GROUP_FIELDS if field != "purpose_condition")
+    unstated_groups = {
+        tuple(row[field] for field in purpose_fields): row
+        for row in summaries
+        if row["purpose_condition"] == "unstated"
+    }
+    for summary in summaries:
+        if summary["purpose_condition"] not in {"maintenance", "adverse"}:
+            continue
+        unstated = unstated_groups.get(tuple(summary[field] for field in purpose_fields))
+        if unstated is None:
+            continue
+        if summary["full_percent"] is not None and unstated["full_percent"] is not None:
+            summary["purpose_full_delta_pp"] = summary["full_percent"] - unstated["full_percent"]
+        if summary["refusal_percent"] is not None and unstated["refusal_percent"] is not None:
+            summary["purpose_refusal_delta_pp"] = (
+                summary["refusal_percent"] - unstated["refusal_percent"]
+            )
 
     output.mkdir(parents=True, exist_ok=True)
     _write_csv(output / "attempts.csv", rows, _ATTEMPT_FIELDS)

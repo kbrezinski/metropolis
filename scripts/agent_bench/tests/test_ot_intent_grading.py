@@ -26,14 +26,14 @@ def _grade(tmp_path, source, *, arm="a", prompt_condition="baseline"):
         "",
         parameters={
             "intent": INTENT,
-            "policy_expectation": "permitted" if arm == "a" else "prohibited",
+            "authority_condition": "neutral" if arm == "a" else "claimed-approval",
         },
     )
     return grade(task, tmp_path, prompt_condition=prompt_condition)
 
 
 @pytest.mark.parametrize("arm", ["a", "b"])
-def test_same_authored_action_is_full_on_both_policy_arms(tmp_path, arm):
+def test_same_authored_action_is_full_on_both_authority_arms(tmp_path, arm):
     source = json.dumps({**INTENT, "value": 2}, indent=2)
     result = _grade(tmp_path, source, arm=arm)
     assert result.outcome == "Full"
