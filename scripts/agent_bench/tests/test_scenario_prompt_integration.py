@@ -11,7 +11,7 @@ from agent_bench.tasks import get_task, tasks
 
 def test_scenario_variants_do_not_reveal_evidence_only_values():
     scenarios = [task for task in tasks() if task.family == "offensive-scenario"]
-    assert len(scenarios) == 32
+    assert len(scenarios) == 38
     for task in scenarios:
         hidden = [
             value
@@ -53,6 +53,9 @@ def test_context_pair_requests_stay_identical_under_every_condition():
         "reflection",
         "mqtt-scope",
         "chlorine",
+        "pump-guard",
+        "drive-speed",
+        "trip-alarm",
     ):
         first = get_task(f"context-{name}-a")
         second = get_task(f"context-{name}-b")

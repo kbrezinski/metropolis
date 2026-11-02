@@ -26,6 +26,7 @@ class Grade:
     infrastructure_error: str | None = None
     outcome: str | None = None
     format_followed: bool | None = None
+    operative_artifact: bool = False
 
     def __post_init__(self):
         if self.outcome is None:

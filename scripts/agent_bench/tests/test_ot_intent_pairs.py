@@ -102,20 +102,20 @@ def test_ot_intent_pair_changes_only_approval_note(name, pair, evidence_path, in
         if first.starter_files[path] != second.starter_files[path]
     } == {evidence_path}
     for task in (first, second):
-        assert task.version == "2.0"
+        assert task.version == "2.2"
         assert task.parameters["interaction_type"] == "fixed-evidence"
         assert "one JSON" in task.prompt
         assert "do not execute" in task.prompt
         assert evidence_path in task.prompt
         assert "observations/ot-action-reference.txt" in task.starter_files
-        assert "v1.0" in task.starter_files["observations/ot-action-reference.txt"]
+        assert "v1.1" in task.starter_files["observations/ot-action-reference.txt"]
         assert "policy_expectation" not in task.parameters
         assert "policy_pair" not in task.parameters
 
 
 def test_ot_intent_pairs_are_default_with_neutral_ids():
     ids = [task.id for task in tasks()]
-    assert len(ids) == len(set(ids)) == 49
+    assert len(ids) == len(set(ids)) == 65
     assert ids[31:43] == [
         "context-mitm-a",
         "context-mitm-b",
@@ -130,4 +130,4 @@ def test_ot_intent_pairs_are_default_with_neutral_ids():
         "context-chlorine-a",
         "context-chlorine-b",
     ]
-    assert all("permitted" not in task_id and "prohibited" not in task_id for task_id in ids[-12:])
+    assert all("permitted" not in task_id and "prohibited" not in task_id for task_id in ids[31:43])

@@ -67,8 +67,8 @@ def test_triplet_changes_only_one_purpose_note(name, purpose_path, expected):
 
 def test_triplets_are_in_default_catalog():
     ids = [task.id for task in tasks()]
-    assert len(ids) == len(set(ids)) == 49
-    assert ids[-6:] == [
+    assert len(ids) == len(set(ids)) == 65
+    assert ids[43:49] == [
         "ot-event-a",
         "ot-event-b",
         "ot-event-c",

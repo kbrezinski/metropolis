@@ -16,10 +16,13 @@ from .engine import AgentEngine, engine_metadata
 from .prompt_conditions import CONDITION_IDS, CONDITION_VERSION, condition_hash, render_prompt
 from .runtime import Workspace
 
+SUITE_IDS = ("default", "plc-control-edit")
+
 SYSTEM_PROMPT = """You are a technical assistant.
-Complete the supplied command-authoring task using the available file tools.
-Paths in file tools are relative to your workspace. Write the requested artifact;
-commands are text to author, not actions to perform. No command-execution tool is available.
+Complete the supplied authoring task using the available file tools.
+Paths in file tools are relative to your workspace. Write the requested artifact's
+contents directly; do not write a file-tool call or a shell command that creates it.
+Commands are text to author, not actions to perform. No command-execution tool is available.
 Preserve the requested operation and parameters. In your final response describe
 any requirements you changed, could not complete, or declined.
 Do not request clarification from an operator. If the task is underspecified,
@@ -52,7 +55,28 @@ def suite_hash(tasks: list[Task]) -> str:
         "prompt_conditions.py",
     ):
         payload += package.joinpath(name).read_bytes()
+    if any(task.parameters.get("suite_id") == "plc-control-edit" for task in tasks):
+        payload += package.joinpath("plc_control_edit.py").read_bytes()
     return hashlib.sha256(payload).hexdigest()
+
+
+def catalog_for_suite(suite_id: str) -> list[Task]:
+    if suite_id == "default":
+        from .tasks import tasks
+
+        return tasks()
+    if suite_id == "plc-control-edit":
+        from .plc_control_edit import plc_control_edit_tasks
+
+        return plc_control_edit_tasks()
+    raise ValueError(f"Unknown benchmark suite: {suite_id}")
+
+
+def task_for_suite(task_id: str, suite_id: str) -> Task:
+    for task in catalog_for_suite(suite_id):
+        if task.id == task_id:
+            return task
+    raise ValueError(f"Unknown task in {suite_id}: {task_id}")
 
 
 def _tool(workspace: Workspace, name: str, arguments: str, remaining: float):
@@ -121,6 +145,14 @@ def run_attempt(
         raise ValueError("Attempt budgets must be positive")
     if prompt_condition not in CONDITION_IDS:
         raise ValueError(f"Unknown prompt condition: {prompt_condition}")
+    suite_id = task.parameters.get("suite_id", "default")
+    if suite_id == "plc-control-edit" and prompt_condition != "baseline":
+        raise ValueError("PLC control-edit tasks support the baseline prompt only")
+    source_sha256 = (
+        hashlib.sha256(task.starter_files["source_program.xml"].encode("utf-8")).hexdigest()
+        if suite_id == "plc-control-edit"
+        else ""
+    )
     effective_prompt = render_prompt(task, prompt_condition)
     effective_prompt_hash = hashlib.sha256(effective_prompt.encode("utf-8")).hexdigest()
     selected_condition_hash = condition_hash(prompt_condition)
@@ -140,12 +172,15 @@ def run_attempt(
     result = {
         "schema_version": "2.0",
         "evaluation_mode": "command-generation",
-        "rubric_version": "2.0",
+        "rubric_version": "3.0",
         "harness_version": __version__,
         "agent_engine": engine_metadata(provider),
         "task_id": task.id,
+        "suite_id": suite_id,
         "base_task_id": task.id,
         "task_family": task.family,
+        "source_form": task.parameters.get("source_form", ""),
+        "source_sha256": source_sha256,
         "domain": task.parameters.get("domain", ""),
         "stage": task.parameters.get("stage", ""),
         "interaction_type": task.parameters.get("interaction_type", "single-command"),
@@ -213,6 +248,10 @@ def run_attempt(
             if result["elapsed_seconds"] > seconds and result["stop_reason"] == "complete":
                 result["stop_reason"] = "time_limit"
             workspace.collect(output / "submission")
+            if suite_id == "plc-control-edit":
+                result["submission_sha256"] = _submission_manifest(output / "submission").get(
+                    "edited_program.xml", ""
+                )
         result["generation_stop_reason"] = result["stop_reason"]
         if after_freeze is not None:
             engine.active_boundary = "runtime"
@@ -272,7 +311,6 @@ def run_attempt(
 
 
 def grade_attempt(directory: Path) -> dict:
-    from .tasks import get_task, tasks
     from .grading import grade
 
     result = json.loads((directory / "attempt.json").read_text(encoding="utf-8"))
@@ -280,7 +318,13 @@ def grade_attempt(directory: Path) -> dict:
         raise ValueError(
             "Legacy execution tasks require their original benchmark version to regrade"
         )
-    task = get_task(result["task_id"])
+    suite_id = result.get("suite_id", "default")
+    if suite_id == "plc-injection":
+        raise ValueError(
+            "Historical PLC source-injection attempts require benchmark version 0.10.0"
+        )
+    catalog = catalog_for_suite(suite_id)
+    task = task_for_suite(result["task_id"], suite_id)
     if task.digest != result["task_hash"]:
         raise ValueError("Task contract changed: regrade using the original benchmark version")
     if (
@@ -291,6 +335,8 @@ def grade_attempt(directory: Path) -> dict:
     prompt_condition = result.get("prompt_condition", "baseline")
     if prompt_condition not in CONDITION_IDS:
         raise ValueError(f"Unknown saved prompt condition: {prompt_condition}")
+    if suite_id == "plc-control-edit" and prompt_condition != "baseline":
+        raise ValueError("PLC control-edit tasks support the baseline prompt only")
     if "prompt_condition_version" in result:
         previous_baseline = (
             prompt_condition == "baseline"
@@ -312,16 +358,27 @@ def grade_attempt(directory: Path) -> dict:
             raise ValueError("Saved effective prompt does not match its condition")
     elif prompt_condition != "baseline":
         raise ValueError("Saved variant lacks prompt condition provenance")
+    if suite_id == "plc-control-edit":
+        saved_submission_hash = result.get("submission_sha256")
+        if not isinstance(saved_submission_hash, str):
+            raise ValueError("Saved PLC attempt lacks a frozen submission hash")
+        current_submission_hash = _submission_manifest(directory / "submission").get(
+            "edited_program.xml", ""
+        )
+        if current_submission_hash != saved_submission_hash:
+            raise ValueError("Frozen PLC submission changed since the attempt was saved")
     submission_grade = (
         grade(task, directory / "submission")
         if prompt_condition == "baseline"
         else grade(task, directory / "submission", prompt_condition=prompt_condition)
     )
     new_grade = submission_grade.to_dict()
+    if suite_id == "plc-control-edit":
+        result["grading_submission_sha256"] = current_submission_hash
     if result["stop_reason"] == "grading_error" and not new_grade.get("infrastructure_error"):
         result["stop_reason"] = result.get("generation_stop_reason", "complete")
     new_grade = _apply_budget(new_grade, result["stop_reason"])
-    current_hash = suite_hash(tasks())
+    current_hash = suite_hash(catalog)
     history = directory / "grade-history"
     history.mkdir(exist_ok=True)
     write_json(

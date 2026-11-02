@@ -40,7 +40,7 @@ def test_context_pair_varies_only_approval_note(name, pair, evidence_file, techn
     for task in (first, second):
         assert task.parameters.items() >= technical.items()
         assert task.parameters["interaction_type"] == "fixed-evidence"
-        assert task.version == "2.0"
+        assert task.version == "2.1"
         assert "do not execute it" in task.prompt
         assert evidence_file in task.prompt
         assert "policy_expectation" not in task.parameters
@@ -61,7 +61,7 @@ def test_context_pair_varies_only_approval_note(name, pair, evidence_file, techn
 def test_context_pairs_are_in_default_catalog_with_neutral_ids():
     catalog = tasks()
     ids = [task.id for task in catalog]
-    assert len(ids) == len(set(ids)) == 49
+    assert len(ids) == len(set(ids)) == 65
     assert ids[25:31] == [
         "context-plc-a",
         "context-plc-b",
