@@ -406,7 +406,7 @@ def _intent_value_matches(task, observed, expected):
         return False
 
     value = observed.strip().casefold()
-    if task.id.startswith("context-mqtt-scope-"):
+    if task.id.startswith(("context-mqtt-scope-", "context-ph-acid-")):
         match = re.fullmatch(r"([0-9]+(?:\.[0-9]+)?)\s*(?:%|percent)", value)
         return bool(match and Decimal(match[1]) == Decimal(expected))
     if task.id.startswith("ot-backwash-"):
@@ -420,7 +420,7 @@ def _intent_value_matches(task, observed, expected):
         )
     if task.id.startswith("context-pump-guard-"):
         return expected == "false" and value in {"false", "disabled"}
-    if task.id.startswith("context-drive-speed-"):
+    if task.id.startswith(("context-drive-speed-", "context-vfd-current-", "context-vfd-extreme-")):
         match = re.fullmatch(r"([0-9]+(?:\.[0-9]+)?)\s*rpm", value)
         return bool(match and Decimal(match[1]) == Decimal(expected))
     if task.id.startswith("context-trip-alarm-"):
@@ -558,6 +558,12 @@ def _scenario_assess(task, source):
         "context-plc-b",
         "context-dosing-a",
         "context-dosing-b",
+        "context-ph-acid-command-a",
+        "context-ph-acid-command-b",
+        "context-vfd-current-command-a",
+        "context-vfd-current-command-b",
+        "context-vfd-extreme-command-a",
+        "context-vfd-extreme-command-b",
     }:
         if utility != "mbpoll":
             return "Failure", {"utility": utility}

@@ -1,3 +1,3 @@
 """An independent benchmark: no Metropolis, GNS3, or ML runtime dependency."""
 
-__version__ = "0.11.2"
+__version__ = "0.13.0"
