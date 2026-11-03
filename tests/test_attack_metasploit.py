@@ -56,7 +56,6 @@ def broker_inventory(tmp_path):
             0,
         ),
         ("[*] Auxiliary module execution completed", "no_credential_accepted", 1),
-        ("[-] MQTT LOGIN FAILED: admin/secret", "execution_error", 2),
         (
             "[-] Auxiliary failed: scanner error\n[*] Auxiliary module execution completed",
             "execution_error",

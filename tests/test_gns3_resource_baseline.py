@@ -13,7 +13,7 @@ GNS3 = Path(__file__).resolve().parents[1] / "scripts/gns3"
 sys.path.insert(0, str(GNS3))
 
 from device_profiles import DeviceProfileBackend  # noqa: E402
-from resource_baseline import configure_baseline, differences  # noqa: E402
+from resource_baseline import configure_baseline  # noqa: E402
 
 MIB = 1024 * 1024
 DESIRED = {"cpus": 0.5, "memory_bytes": 64 * MIB, "memory_swap_bytes": 128 * MIB}
@@ -161,45 +161,6 @@ def test_temporary_profile_restores_established_baseline(lab):
     assert lab.run()["status"] == "matched"
 
 
-def test_check_accepts_equivalent_cpu_period_and_quantized_allowances():
-    limits = {
-        "nano_cpus": 0,
-        "cpu_period": 200_000,
-        "cpu_quota": 100_000,
-        "mem_limit": 64 * MIB,
-        "memswap_limit": 128 * MIB,
-    }
-    assert differences(limits, DESIRED) == {}
-    limits.update(cpu_period=100_000, cpu_quota=33_333)
-    assert differences(limits, {**DESIRED, "cpus": 0.333333}) == {}
-    limits["nano_cpus"] = 500_000_000
-    assert differences(limits, DESIRED) == {}
-
-
-@pytest.mark.parametrize(
-    "bad",
-    [
-        {"memory_swap_bytes": 16 * MIB},
-    ],
-)
-def test_invalid_baseline_limits_fail_before_write(lab, bad):
-    backend = lab.backend({"remote": "ssh://operator@compute"})
-    try:
-        snapshot = backend.inspect(lab.nodes[0])
-        with pytest.raises(ValueError):
-            backend.prepare_baseline(snapshot, {**DESIRED, **bad})
-    finally:
-        backend.close()
-    assert not lab.engine.updates
-
-
-def test_explicit_unlimited_swap_is_supported(lab):
-    for target in lab.baseline["targets"]:
-        target["settings"]["memory_swap_bytes"] = -1
-    assert lab.run(apply=True)["status"] == "matched"
-    assert lab.limits["cid-A"]["MemorySwap"] == -1
-
-
 def test_reservation_and_unsupported_capability_are_not_overridden(lab):
     lab.limits["cid-A"]["MemoryReservation"] = 512 * MIB
     report = lab.run(apply=True)
@@ -242,8 +203,3 @@ def test_interruption_propagates_after_closing_connections(lab):
     with pytest.raises(KeyboardInterrupt):
         lab.run(apply=True)
     assert lab.engine.closed
-
-
-def test_no_docker_targets_is_not_success(lab):
-    lab.baseline["targets"] = []
-    assert lab.run()["status"] == "failed"

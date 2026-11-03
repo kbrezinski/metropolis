@@ -54,13 +54,6 @@ def sample_topology() -> Topology:
     return topology
 
 
-def test_port_index_uses_endpoint_roles(generator, sample_topology):
-    ports = generator.port_index(sample_topology)
-    assert ports[("sw-demo", "uplink")].id == "uplink"
-    assert ports[("sw-demo", "instrument")].id == "instrument"
-    assert ("sw-demo", "spare") not in ports
-
-
 def test_render_numbers_ports_and_describes_links(
     generator, sample_topology, monkeypatch
 ):

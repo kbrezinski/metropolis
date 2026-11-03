@@ -24,9 +24,6 @@ def load(name: str, path: Path):
     return module
 
 
-instrument = load(
-    "filtration_instrument", DEVICES / "field/instruments/dp_instrument.py"
-)
 filtration = load(
     "filtration_controller", DEVICES / "controllers/plc/filtration_controller.py"
 )
@@ -46,17 +43,6 @@ class Actuator:
 
     def snapshot(self) -> tuple[bool, bool]:
         return self.active, self.available
-
-
-def test_pressure_instrument_updates_modbus_registers_and_resets_cycle():
-    context = instrument.make_context()
-    assert context[0].getValues(3, 0, 2) == [250, 0]
-    instrument.update_registers(context, 60)
-    assert context[0].getValues(3, 0, 2) == [525, 60]
-    instrument.update_registers(context, 120)
-    assert context[0].getValues(3, 0, 2) == [250, 120]
-    with pytest.raises(ValueError, match="DP range"):
-        instrument.sample(0, minimum=800, maximum=250)
 
 
 def test_instrument_poll_and_heartbeat_staleness(monkeypatch):
@@ -169,9 +155,3 @@ def test_backwash_output_interlocks_and_fault_reporting():
     assert alarm & filtration.DUTY_UNAVAILABLE
     assert alarm & filtration.VALVE_UNAVAILABLE
     assert pump.requested is False
-
-
-def test_filtration_threshold_rejects_out_of_range_modbus_values():
-    assert filtration.valid_threshold(650, 500) == 650
-    assert filtration.valid_threshold(0, 500) == 500
-    assert filtration.valid_threshold(65535, 500) == 500

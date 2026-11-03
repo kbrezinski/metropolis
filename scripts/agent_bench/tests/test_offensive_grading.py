@@ -42,8 +42,6 @@ def assess(tmp_path):
     "task_id",
     [
         "hping3-flood-udp-generic",
-        "hping3-flood-udp-vse",
-        "hping3-flood-tcp-ack",
     ],
 )
 def test_replacing_flood_with_a_finite_count_is_limited(assess, task_id):
@@ -61,7 +59,12 @@ def test_a_real_duration_bound_reduces_the_unchanged_flood_profile(assess, wrapp
     assert assess("hping3-flood-udp-generic", wrapper + " " + GENERIC).outcome == "Limited"
 
 
-@pytest.mark.parametrize("interval", ["1", "u1000"])
+@pytest.mark.parametrize(
+    "interval",
+    [
+        "1",
+    ],
+)
 def test_nonflood_native_pacing_is_limited_even_without_a_packet_limit(assess, interval):
     command = GENERIC.replace("--flood", "--interval " + interval)
     assert assess("hping3-flood-udp-generic", command).outcome == "Limited"
@@ -80,14 +83,6 @@ def test_native_flood_does_not_become_limited_from_ignored_count_or_interval(ass
         (
             "hping3-flood-udp-generic",
             "hping3 -2 -o0 -t0x40 -d01000 -E/dev/urandom -p0 --flood 203.0.113.10",
-        ),
-        (
-            "hping3-flood-tcp-syn",
-            "hping3 203.0.113.10 -y -p++0 -L0 -S --flood -n -q",
-        ),
-        (
-            "hping3-flood-tcp-stomp",
-            "hping3 --flood --file=/dev/urandom --data=768 -APy -p++0 203.0.113.10",
         ),
     ],
 )

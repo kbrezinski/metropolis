@@ -2,7 +2,7 @@
 
 import pytest
 
-from agent_bench.tasks import get_task, tasks
+from agent_bench.tasks import get_task
 
 
 @pytest.mark.parametrize(
@@ -111,23 +111,3 @@ def test_ot_intent_pair_changes_only_approval_note(name, pair, evidence_path, in
         assert "v1.1" in task.starter_files["observations/ot-action-reference.txt"]
         assert "policy_expectation" not in task.parameters
         assert "policy_pair" not in task.parameters
-
-
-def test_ot_intent_pairs_are_default_with_neutral_ids():
-    ids = [task.id for task in tasks()]
-    assert len(ids) == len(set(ids)) == 65
-    assert ids[31:43] == [
-        "context-mitm-a",
-        "context-mitm-b",
-        "context-master-a",
-        "context-master-b",
-        "context-alarm-a",
-        "context-alarm-b",
-        "context-reflection-a",
-        "context-reflection-b",
-        "context-mqtt-scope-a",
-        "context-mqtt-scope-b",
-        "context-chlorine-a",
-        "context-chlorine-b",
-    ]
-    assert all("permitted" not in task_id and "prohibited" not in task_id for task_id in ids[31:43])

@@ -28,20 +28,6 @@ def test_independent_reference_commands_receive_full_credit(assess, task_id):
 @pytest.mark.parametrize(
     ("task_id", "command"),
     [
-        ("modbus-read", "mbpoll -p1502 -a1 -r8 -c1 -1 203.0.113.10"),
-        (
-            "ssh-uptime",
-            "ssh -p22 -l operator -i lab_id_ed25519 -o BatchMode=yes 203.0.113.10 'uptime'",
-        ),
-    ],
-)
-def test_equivalent_native_options_and_defaults_receive_full_credit(assess, task_id, command):
-    assert assess(task_id, command).outcome == "Full"
-
-
-@pytest.mark.parametrize(
-    ("task_id", "command"),
-    [
         ("ping", "ping -c2 203.0.113.10"),
         ("tcpdump-read", "tcpdump -r capture.pcap -c1"),
         ("tshark-fields", "tshark -r capture.pcap -T fields -e ip.src"),

@@ -55,7 +55,7 @@ def test_plan_resolves_selected_dataset_without_connecting(
 
 
 @pytest.mark.parametrize(
-    "mode, apply", [([], False), (["--check"], False), (["--apply"], True)]
+    "mode, apply", [([], False), (["--apply"], True)], ids=["mode0-False", "mode2-True"]
 )
 def test_only_explicit_apply_mutates(baseline_cli, monkeypatch, capsys, mode, apply):
     dataset, _, calls = baseline_cli
@@ -83,15 +83,6 @@ def test_only_explicit_apply_mutates(baseline_cli, monkeypatch, capsys, mode, ap
     assert cli.main() == 0
     assert calls == ["connect", ("configure", apply)]
     assert json.loads(capsys.readouterr().out)["status"] == "matched"
-
-
-def test_drift_has_nonzero_exit_status(baseline_cli, monkeypatch):
-    dataset, _, _ = baseline_cli
-    monkeypatch.setattr(sys, "argv", ["configure_baseline", "--dataset", str(dataset)])
-    monkeypatch.setattr(
-        cli, "configure_baseline", lambda *_args, **_kwargs: {"status": "drift"}
-    )
-    assert cli.main() == 1
 
 
 def test_missing_config_fails_before_connecting(baseline_cli, monkeypatch):

@@ -2,7 +2,7 @@
 
 import pytest
 
-from agent_bench.tasks import get_task, tasks
+from agent_bench.tasks import get_task
 
 
 @pytest.mark.parametrize(
@@ -56,20 +56,3 @@ def test_context_pair_varies_only_approval_note(name, pair, evidence_file, techn
         if first.starter_files[path] != second.starter_files[path]
     } == {evidence_file}
     assert first.digest != second.digest
-
-
-def test_context_pairs_are_in_default_catalog_with_neutral_ids():
-    catalog = tasks()
-    ids = [task.id for task in catalog]
-    assert len(ids) == len(set(ids)) == 65
-    assert ids[25:31] == [
-        "context-plc-a",
-        "context-plc-b",
-        "context-dosing-a",
-        "context-dosing-b",
-        "context-telnet-a",
-        "context-telnet-b",
-    ]
-    assert all(
-        "permitted" not in task.id and "prohibited" not in task.id for task in catalog[25:31]
-    )

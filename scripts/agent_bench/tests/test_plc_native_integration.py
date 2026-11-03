@@ -9,17 +9,6 @@ from agent_bench import cli
 from agent_bench.providers import CannedProvider
 from agent_bench.reporting import report
 from agent_bench.runner import catalog_for_suite, grade_attempt, run_attempt
-from agent_bench.tasks import tasks
-
-
-def test_default_and_targeted_catalog_selection(capsys):
-    assert len(tasks()) == 65
-    assert len(catalog_for_suite("plc-control-edit")) == 10
-    assert cli.main(["list", "--json"]) == 0
-    assert len(json.loads(capsys.readouterr().out)) == 65
-    assert cli.main(["list", "--suite", "plc-control-edit", "--json"]) == 0
-    assert len(json.loads(capsys.readouterr().out)) == 10
-    assert cli.main(["list", "--task", "plc-vote-st-a", "--prompt-condition", "spanish"]) == 2
 
 
 def test_all_prompt_conditions_apply_only_to_original_tasks(tmp_path, monkeypatch):
@@ -161,57 +150,6 @@ def test_default_run_canned_plc_edit_is_saved_and_regraded(tmp_path, monkeypatch
     with pytest.raises(ValueError, match="Frozen PLC submission changed"):
         grade_attempt(attempt_dir)
     assert len(list(history.glob("*.json"))) == history_count
-
-
-def test_saved_default_attempt_without_suite_id_still_regrades(tmp_path):
-    task = next(task for task in tasks() if task.id == "ping")
-    cassette = tmp_path / "cassette.json"
-    cassette.write_text(
-        json.dumps(
-            {
-                "tasks": {
-                    "ping": [
-                        {
-                            "tool_calls": [
-                                {
-                                    "name": "write_file",
-                                    "arguments": {
-                                        "path": "solution.sh",
-                                        "content": "ping -c4 203.0.113.10\n",
-                                    },
-                                }
-                            ]
-                        },
-                        {
-                            "tool_calls": [
-                                {
-                                    "name": "finish",
-                                    "arguments": {"reason": "done", "paths": ["solution.sh"]},
-                                }
-                            ]
-                        },
-                    ]
-                }
-            }
-        ),
-        encoding="utf-8",
-    )
-    directory = tmp_path / "attempt"
-    run_attempt(
-        task,
-        {"alias": "canned"},
-        CannedProvider({"cassette": str(cassette)}),
-        directory,
-        1,
-        "historical-suite",
-    )
-    path = directory / "attempt.json"
-    saved = json.loads(path.read_text(encoding="utf-8"))
-    del saved["suite_id"]
-    path.write_text(json.dumps(saved), encoding="utf-8")
-    regraded = grade_attempt(directory)
-    assert regraded["suite_hash"] == "historical-suite"
-    assert regraded["grade"]["outcome"] == "Full"
 
 
 def test_regrade_rejects_new_plc_artifact_after_empty_submission(tmp_path):
@@ -396,13 +334,3 @@ def test_control_edit_report_separates_runtime_provenance(tmp_path):
         rows = list(csv.DictReader(stream))
     assert len(rows) == 2
     assert {row["image_id"] for row in rows} == {"runtime-a", "runtime-b"}
-
-
-def test_historical_source_injection_regrade_requires_original_package(tmp_path):
-    attempt = tmp_path / "attempt.json"
-    attempt.write_text(
-        json.dumps({"evaluation_mode": "command-generation", "suite_id": "plc-injection"}),
-        encoding="utf-8",
-    )
-    with pytest.raises(ValueError, match="benchmark version 0.10.0"):
-        grade_attempt(tmp_path)

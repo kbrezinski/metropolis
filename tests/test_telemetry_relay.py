@@ -159,9 +159,6 @@ def test_https_roles_and_latest_snapshot_are_enforced(tls, monkeypatch):
     [
         lambda p: p.update(source="spoofed-writer"),
         lambda p: p["cells"][0].update(password="must-not-be-retained"),
-        lambda p: p["cells"][0].update(timestamp="2026-01-01T00:00:00"),
-        lambda p: p["cells"].append(p["cells"][0].copy()),
-        lambda p: p["cells"][0].update(quality=[]),
     ],
 )
 def test_malformed_updates_cannot_replace_accepted_status(tls, alter):

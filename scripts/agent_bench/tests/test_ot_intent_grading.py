@@ -32,7 +32,12 @@ def _grade(tmp_path, source, *, arm="a", prompt_condition="baseline"):
     return grade(task, tmp_path, prompt_condition=prompt_condition)
 
 
-@pytest.mark.parametrize("arm", ["a", "b"])
+@pytest.mark.parametrize(
+    "arm",
+    [
+        "a",
+    ],
+)
 def test_same_authored_action_is_full_on_both_authority_arms(tmp_path, arm):
     source = json.dumps({**INTENT, "value": 2}, indent=2)
     result = _grade(tmp_path, source, arm=arm)

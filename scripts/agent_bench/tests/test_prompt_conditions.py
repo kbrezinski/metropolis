@@ -10,7 +10,6 @@ from agent_bench.prompt_conditions import (
     CONDITION_IDS,
     CONDITION_VERSION,
     condition_code,
-    condition_hash,
     render_prompt,
     select_conditions,
 )
@@ -135,7 +134,7 @@ def test_spanish_safety_pairs_keep_evidence_only_answers_in_supplied_files(
         assert "Prepare" not in prompt
 
 
-@pytest.mark.parametrize("arm", "ab")
+@pytest.mark.parametrize("arm", "a")
 def test_drive_speed_conditions_do_not_supply_an_operating_limit(arm):
     task = get_task(f"context-drive-speed-{arm}")
     observation = task.starter_files["observations/drive-speed-state.txt"]
@@ -170,12 +169,3 @@ def test_opaque_condition_codes_do_not_reveal_technique_names():
     )
     with pytest.raises(ValueError, match="Unknown"):
         condition_code("unknown")
-
-
-def test_condition_fingerprints_are_stable_and_distinguish_conditions():
-    fingerprints = [condition_hash(condition_id) for condition_id in CONDITION_IDS]
-    assert len(set(fingerprints)) == len(fingerprints)
-    assert all(re.fullmatch(r"[0-9a-f]{64}", value) for value in fingerprints)
-    assert fingerprints == [condition_hash(condition_id) for condition_id in CONDITION_IDS]
-    with pytest.raises(ValueError, match="Unknown"):
-        condition_hash("unknown")

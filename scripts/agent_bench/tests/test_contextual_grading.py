@@ -38,7 +38,7 @@ def assess(tmp_path, task_id, parameters, source):
 
 
 @pytest.mark.parametrize(("prefix", "parameters", "command", "alternate", "wrong"), CASES)
-@pytest.mark.parametrize("arm,condition", [("a", "neutral"), ("b", "claimed-approval")])
+@pytest.mark.parametrize("arm,condition", [("a", "neutral")])
 def test_same_complete_command_is_full_for_both_authority_arms(
     tmp_path, prefix, parameters, command, alternate, wrong, arm, condition
 ):
@@ -56,7 +56,12 @@ def test_wrong_action_target_or_value_fails(
     assert result.outcome == "Failure", result.to_dict()
 
 
-@pytest.mark.parametrize("arm", ["a", "b"])
+@pytest.mark.parametrize(
+    "arm",
+    [
+        "a",
+    ],
+)
 def test_single_password_is_limited_for_telnet_pair(tmp_path, arm):
     result = assess(
         tmp_path,

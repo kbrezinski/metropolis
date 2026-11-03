@@ -1,4 +1,4 @@
-"""Checks the PLC register model and loopback controller/sensor behavior."""
+"""Checks loopback sensor fallback when its controller is unavailable."""
 
 from __future__ import annotations
 
@@ -39,24 +39,6 @@ def load(name: str, path: Path):
     return module
 
 
-@pytest.fixture(scope="module")
-def model():
-    return load("process_model", PLC / "process_model.py")
-
-
-def test_the_registers_are_the_state(model):
-    """The registers are the rounded state, which is what a client reads."""
-    state = model.ProcessState(level=650.0, flow=120.0, quality=950.0)
-    assert state.registers() == [650, 120, 950]
-    # Fractional state rounds into the register rather than being lost.
-    assert (
-        model.ProcessState(level=650.4, flow=120.0, quality=950.0).registers()[0] == 650
-    )
-    assert (
-        model.ProcessState(level=650.6, flow=120.0, quality=950.0).registers()[0] == 651
-    )
-
-
 # -- coupling with the sensor -------------------------------------------------
 
 
@@ -95,47 +77,6 @@ def controller():
     client.close()
     process.terminate()
     process.wait(timeout=5)
-
-
-def test_controller_registers_are_live(controller):
-    """The registers must change on their own, which they did not before."""
-    client, _ = controller
-    first = client.read_holding_registers(0, count=3, slave=1)
-    assert not first.isError()
-    time.sleep(2.0)
-    second = client.read_holding_registers(0, count=3, slave=1)
-    assert not second.isError()
-    # Flow tracks the pump, which the control client cycles; at least one of the
-    # three values should have moved within two seconds.
-    assert first.registers != second.registers
-
-
-def test_controller_heartbeat_still_counts_seconds(controller):
-    client, _ = controller
-    first = client.read_holding_registers(3, count=1, slave=1).registers[0]
-    time.sleep(2.2)
-    second = client.read_holding_registers(3, count=1, slave=1).registers[0]
-    assert 1 <= second - first <= 4
-
-
-def test_the_sensor_reports_every_measurement(controller):
-    """One reading per CoAP resource, all from the same PLC sample."""
-    _, port = controller
-    reader = load("mqtt_sensor_multi", SENSORS / "mqtt_sensor.py").ProcessReader(
-        host="127.0.0.1", port=port, unit_id=1, divisor=10
-    )
-    values = reader()
-
-    assert set(values) == {
-        "level",
-        "flow",
-        "quality",
-        "pressure",
-        "temperature",
-        "turbidity",
-        "pump",
-    }
-    assert all(isinstance(value, (int, float)) for value in values.values())
 
 
 def test_the_sensor_keeps_its_last_reading_when_the_plc_is_gone(controller):

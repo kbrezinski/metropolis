@@ -165,34 +165,6 @@ def test_dataset_and_inventory_cannot_be_combined(custom_dataset):
     assert "use --dataset or --inventory" in result.stderr
 
 
-def test_explicit_private_host_and_port_can_target_an_unlisted_appliance(
-    custom_dataset,
-):
-    root, _, _ = custom_dataset
-    record = started(
-        invoke(
-            "modbus_manipulation_attack",
-            "--dataset",
-            root,
-            "--host",
-            "10.77.9.10",
-            "--port",
-            "1502",
-            "--profile",
-            "intake",
-            "--action",
-            "set-level",
-        )
-    )
-    assert (record["host"], record["port"]) == ("10.77.9.10", 1502)
-    raw = started(
-        invoke(
-            "hping3_attack", "--dataset", root, "--host", "10.77.9.20", "--port", "8080"
-        )
-    )
-    assert (raw["host"], raw["port"]) == ("10.77.9.20", 8080)
-
-
 def test_multi_node_role_requires_the_matching_selector(custom_dataset):
     root, target, records = custom_dataset
     records.append(

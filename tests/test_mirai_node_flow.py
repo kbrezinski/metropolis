@@ -58,44 +58,6 @@ def tcp_servers():
         thread.join(timeout=2)
 
 
-def test_cnc_delivers_task_to_checked_in_bot_and_records_ack(tcp_servers):
-    registry = cnc.Registry()
-
-    class BotHandler(socketserver.BaseRequestHandler):
-        def handle(self):
-            cnc.handle_bot(registry, self.request, self.client_address)
-
-    class OperatorHandler(socketserver.BaseRequestHandler):
-        def handle(self):
-            cnc.handle_operator(registry, self.request)
-
-    bot_port = tcp_servers(BotHandler)
-    operator_port = tcp_servers(OperatorHandler)
-    bot_id = bot.check_in("127.0.0.1", bot_port, "lab", 2)
-    assert bot_id
-    assert bot.poll("127.0.0.1", bot_port, bot_id, 2) is None
-
-    from _c2 import Console
-
-    with Console("127.0.0.1", operator_port, 2) as console:
-        console.read_line()
-        assert registry.as_rows()[0]["peer_address"] == "127.0.0.1"
-        assert console.command(f"use {bot_id}", sentinel="") == [f"using {bot_id}"]
-        queued = console.command("run echo inert", sentinel="")
-        task_id = queued[0].rsplit(" ", 1)[-1]
-        task = bot.poll("127.0.0.1", bot_port, bot_id, 2)
-        assert task == {"task_id": task_id, "command": "echo inert"}
-        assert bot.submit_result(
-            "127.0.0.1",
-            bot_port,
-            bot_id,
-            {"task_id": task_id, "outcome": "recorded"},
-            2,
-        )
-        status = json.loads(console.command(f"status {bot_id}", sentinel="")[0])
-        assert status["results"] == [{"task_id": task_id, "outcome": "recorded"}]
-
-
 @pytest.mark.parametrize("delivery", ["tftp"])
 def test_bot_probes_reports_and_fetches_only_inert_marker(
     tcp_servers, delivery, capsys

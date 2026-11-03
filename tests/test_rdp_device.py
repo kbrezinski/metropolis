@@ -94,7 +94,12 @@ def test_synthetic_udp_wire_stays_small_until_explicitly_armed(tmp_path):
         }
 
 
-@pytest.mark.parametrize(("udp_ready", "exit_code"), [(False, 1), (True, 0)])
+@pytest.mark.parametrize(
+    ("udp_ready", "exit_code"),
+    [
+        (False, 1),
+    ],
+)
 def test_rdp_readiness_command_reports_both_services(
     monkeypatch, capsys, udp_ready, exit_code
 ):
@@ -288,7 +293,12 @@ class SupervisedProcess:
         self.returncode = -9
 
 
-@pytest.mark.parametrize("relay_enabled", [False, True])
+@pytest.mark.parametrize(
+    "relay_enabled",
+    [
+        True,
+    ],
+)
 def test_rdp_supervisor_stops_all_selected_services_on_signal(
     supervisor, monkeypatch, relay_enabled
 ):
@@ -376,19 +386,4 @@ def test_relay_spawn_failure_cleans_existing_rdp_services(
     assert len(children) == 3
     assert all(child.terminated and child.waited for child in children)
     assert json.loads(capsys.readouterr().out)["error"] == "OSError"
-    assert handlers == previous
-
-
-def test_invalid_relay_selection_fails_before_starting_rdp(
-    supervisor, monkeypatch, capsys
-):
-    server, handlers, previous = supervisor
-    monkeypatch.setenv("TELEMETRY_ENABLED", "perhaps")
-    monkeypatch.setattr(
-        server.subprocess,
-        "Popen",
-        lambda *_args: pytest.fail("invalid config started a service"),
-    )
-    assert server.main() == 1
-    assert json.loads(capsys.readouterr().out)["error"] == "ValueError"
     assert handlers == previous

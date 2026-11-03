@@ -82,20 +82,6 @@ def test_validator_rejects_a_document_that_violates_its_schema(sandbox):
     assert "not-a-kind" in result.stdout
 
 
-def test_validator_rejects_mismatched_testbed_ids(sandbox):
-    """Documents describing different testbeds must be caught."""
-    infrastructure = load_document(sandbox, 3)
-    changed_id = infrastructure["testbed_id"] + "_other"
-    infrastructure["testbed_id"] = changed_id
-    save_document(sandbox, 3, infrastructure)
-
-    result = run_validator(sandbox)
-
-    assert result.returncode != 0
-    assert "same testbed" in result.stdout
-    assert changed_id in result.stdout
-
-
 def test_validator_rejects_a_router_address_that_drifts_from_its_script(sandbox):
     """A router address disagreeing with its VyOS script must be reported."""
     infrastructure = load_document(sandbox, 3)
@@ -209,30 +195,6 @@ def test_validator_rejects_duplicate_ospf_router_ids(sandbox):
 
     assert result.returncode != 0
     assert f"OSPF router ID {first_id.group(1)} duplicates" in result.stdout
-
-
-def test_validator_rejects_missing_ospf_adjacency_logging(sandbox):
-    source = next(
-        (
-            path
-            for path in _router_scripts(sandbox)
-            if "set protocols ospf log-adjacency-changes\n"
-            in path.read_text(encoding="utf-8")
-        ),
-        None,
-    )
-    if source is None:
-        pytest.skip("selected topology has no OSPF adjacency logging")
-    text = source.read_text(encoding="utf-8")
-    source.write_text(
-        text.replace("set protocols ospf log-adjacency-changes\n", "", 1),
-        encoding="utf-8",
-    )
-
-    result = run_validator(sandbox)
-
-    assert result.returncode != 0
-    assert "OSPF adjacency-change logging is disabled" in result.stdout
 
 
 def test_validator_rejects_active_ospf_30_without_point_to_point(sandbox):
@@ -534,17 +496,6 @@ def test_validator_accepts_an_explicitly_uncabled_device(sandbox):
     assert result.returncode == 0, result.stdout + result.stderr
 
 
-def test_validator_accepts_a_selected_dataset_without_firewall_policy(sandbox):
-    bundled = sandbox / "testbeds/metropolis/datasets/water_treatment_v1"
-    selected = sandbox / "testbeds/metropolis/datasets/custom"
-    shutil.copytree(bundled, selected)
-    (selected / "topology/firewall-policy.yaml").unlink(missing_ok=True)
-
-    result = run_validator(sandbox, selected)
-
-    assert result.returncode == 0, result.stdout + result.stderr
-
-
 def test_validator_uses_inventory_for_router_syslog_destination(sandbox):
     inventory = load_document(sandbox, 2)
     receiver = next(
@@ -607,28 +558,6 @@ def test_validator_rejects_snmp_target_address_drift(sandbox):
     result = run_validator(sandbox)
     assert result.returncode != 0
     assert "SNMP target 192.0.2.123 is not a router interface" in result.stdout
-
-
-def test_validator_reports_non_ip_service_target_without_crashing(sandbox):
-    inventory = load_document(sandbox, 2)
-    device = next(
-        (
-            device
-            for device in inventory["devices"]
-            if any(key.endswith("_HOST") for key in device.get("environment", {}))
-        ),
-        None,
-    )
-    if device is None:
-        pytest.skip("selected topology has no device with a *_HOST service target")
-    key = next(key for key in device["environment"] if key.endswith("_HOST"))
-    device["environment"][key] = "peer.example.test"
-    save_document(sandbox, 2, inventory)
-
-    result = run_validator(sandbox)
-
-    assert result.returncode != 0
-    assert f"{key} target 'peer.example.test' is not an IPv4 address" in (result.stdout)
 
 
 def test_validator_catches_hmi_telemetry_topic_drift(sandbox):

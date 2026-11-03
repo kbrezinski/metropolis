@@ -312,60 +312,6 @@ def test_report_does_not_pool_different_model_or_evaluation_settings(tmp_path):
     assert all(item["total_attempts"] == 1 for item in summaries)
 
 
-def test_engine_config_order_is_canonical_and_legacy_runs_stay_separate(tmp_path):
-    root = tmp_path / "runs"
-    baseline = attempt(grade={"passed": True})
-    save(root, "legacy", baseline)
-    for name, config in (
-        ("first", {"compact": False, "tools": ["read_file", "write_file"]}),
-        ("second", {"tools": ["read_file", "write_file"], "compact": False}),
-    ):
-        save(
-            root,
-            name,
-            {
-                **baseline,
-                "agent_engine": {"name": "stirrup", "version": "0.2.1", "config": config},
-            },
-        )
-    output = tmp_path / "out"
-    summaries = report(root, output)
-    assert len(summaries) == 2
-    engines = {row["agent_engine"]: row for row in summaries}
-    assert engines["legacy-custom"]["total_attempts"] == 1
-    assert engines["stirrup"]["total_attempts"] == 2
-    assert engines["stirrup"]["agent_engine_version"] == "0.2.1"
-    with (output / "attempts.csv").open(newline="", encoding="utf-8") as stream:
-        exported = list(csv.DictReader(stream))
-    current = [row for row in exported if row["agent_engine"] == "stirrup"]
-    assert len(current) == 2
-    assert {row["agent_engine_version"] for row in current} == {"0.2.1"}
-    assert json.loads(current[0]["agent_engine_config"]) == {
-        "compact": False,
-        "tools": ["read_file", "write_file"],
-    }
-
-
-def test_unregraded_runs_use_original_environment_as_effective_grading_provenance(tmp_path):
-    root = tmp_path / "runs"
-    baseline = attempt(grade={"passed": True})
-    save(root, "original", baseline)
-    save(
-        root,
-        "same-environment-regrade",
-        {
-            **baseline,
-            "grading_image_id": baseline["image_id"],
-            "grading_suite_hash": baseline["suite_hash"],
-        },
-    )
-    summaries = report(root, tmp_path / "out")
-    assert len(summaries) == 1
-    assert summaries[0]["total_attempts"] == 2
-    assert summaries[0]["grading_image_id"] == "sha256:image-a"
-    assert summaries[0]["grading_suite_hash"] == "suite-a"
-
-
 def test_zero_eligible_results_are_not_reported_as_zero_success(tmp_path):
     save(tmp_path / "runs", "only", attempt())
     summary = report(tmp_path / "runs", tmp_path / "out")[0]

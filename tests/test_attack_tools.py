@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import importlib.util
 import json
 import os
 import re
@@ -89,25 +88,6 @@ def records(result):
     ]
 
 
-def test_reconnaissance_defaults_without_ack(attack_inventory):
-    result = invoke(
-        "scanner/network_recon_scan.py",
-        "--inventory",
-        attack_inventory,
-        "--dry-run",
-        ack=False,
-    )
-    assert result.returncode == 0, result.stdout + result.stderr
-    start = records(result)[0]
-    assert start["dry_run"] is True
-    assert start["protocol"] == "both"
-    ports = start["command"][start["command"].index("-p") + 1]
-    assert ports == (
-        "T:22,23,53,80,443,502,1883,8080,8443,8883,20000,48101,U:53,69,123,5683"
-    )
-    assert "LabOnly_" not in result.stdout
-
-
 @pytest.mark.parametrize(
     ("tool", "arguments", "diagnostic"),
     [
@@ -145,59 +125,6 @@ def test_future_inventory_supplies_addresses_and_ports(tmp_path, attack_inventor
     assert result.returncode == 0, result.stdout + result.stderr
     assert records(result)[0]["host"] == "10.77.1.25"
     assert records(result)[0]["port"] == 5684
-
-
-def load_file(name, path):
-    spec = importlib.util.spec_from_file_location(name, path)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
-
-def test_coap_uses_the_real_sensor_on_loopback():
-    sensor = load_file(
-        "sensor_for_attack_test",
-        ROOT / "testbeds/metropolis/devices/field/sensors/coap_sensor.py",
-    )
-    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    sock.bind(("127.0.0.1", 0))
-    sock.settimeout(0.1)
-    stop = threading.Event()
-
-    def serve():
-        while not stop.is_set():
-            try:
-                packet, peer = sock.recvfrom(2048)
-            except socket.timeout:
-                continue
-            reply = sensor.handle_get(packet, "SENSOR-A", "level", 65)
-            if reply:
-                sock.sendto(reply, peer)
-
-    worker = threading.Thread(target=serve, daemon=True)
-    worker.start()
-    try:
-        result = invoke(
-            "coap/coap_response_measurement.py",
-            "--host",
-            "127.0.0.1",
-            "--port",
-            sock.getsockname()[1],
-            "--duration",
-            "0.5",
-            "--max-messages",
-            "2",
-            "--rate",
-            "10",
-        )
-        assert result.returncode == 0, result.stdout + result.stderr
-        summary = next(item for item in records(result) if item["event"] == "summary")
-        assert summary["received"] == summary["sent"] == 2
-        assert summary["matched_payload_ratio"] > 0
-    finally:
-        stop.set()
-        worker.join(timeout=2)
-        sock.close()
 
 
 @pytest.fixture

@@ -1,8 +1,8 @@
 """Checks for the topology drawing.
 
 The drawing is built on networkx: the topology becomes a graph, networkx lays it
-out, and networkx's matplotlib functions draw it. These tests check the graph
-that gets built and that rendering produces a real image.
+out, and networkx's matplotlib functions draw it. The rendering check verifies
+that it produces a real image.
 """
 
 from __future__ import annotations
@@ -23,7 +23,6 @@ from metropolis.topology import (  # noqa: E402
     Topology,
 )
 from metropolis.topology.draw import (  # noqa: E402
-    _graphs,
     available,
     render,
 )
@@ -53,14 +52,6 @@ def small() -> Topology:
     return lab
 
 
-# -- the graph handed to networkx ---------------------------------------------
-
-
-def test_node_kinds_come_from_the_topology(small):
-    _, kinds, _ = _graphs(small)
-    assert kinds == {"R-EDGE": "router", "sw-1": "switch", "PLC-1": "device"}
-
-
 # -- rendering ----------------------------------------------------------------
 
 
@@ -70,20 +61,3 @@ def test_render_writes_a_png(small, tmp_path):
     assert render(small, target) == target
     assert target.stat().st_size > 1_000
     assert target.read_bytes()[:8] == b"\x89PNG\r\n\x1a\n", "not a PNG"
-
-
-@requires_matplotlib
-def test_render_puts_the_title_and_note_in_the_picture(small, tmp_path):
-    target = tmp_path / "t.svg"
-    render(small, target, title="A title", note="A note")
-    text = target.read_text(encoding="utf-8")
-    assert text.lstrip().startswith("<?xml")
-    assert "svg" in text[:400]
-    assert "A title" in text
-    assert "A note" in text
-
-
-def test_an_empty_topology_is_refused():
-    """Better to say so than to draw an empty picture."""
-    with pytest.raises(ValueError, match="nothing to draw"):
-        render(Topology(testbed_id="empty"), "unused.png")

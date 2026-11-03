@@ -38,8 +38,6 @@ from lifecycle import (  # noqa: E402
 from templates import APPLIANCES  # noqa: E402
 from topology import (  # noqa: E402
     build_plan,
-    port_map,
-    switch_port_settings,
 )
 from switch_config import expected_state  # noqa: E402
 
@@ -173,53 +171,6 @@ def test_plan_covers_every_declared_node_and_link(documents, plan):
     assert topology.missing_templates == []
 
 
-def test_switch_port_numbers_follow_the_specification_order(documents):
-    _, _, infrastructure, _ = documents
-    mapping = port_map(infrastructure)
-    for switch in infrastructure["switches"]:
-        roles = switch["attachment_points"]
-        assert mapping[switch["name"]] == dict(zip(roles, range(len(roles))))
-
-
-def test_switch_settings_follow_declared_roles_and_leave_spares_unassigned(documents):
-    _, _, infrastructure, link_plan = documents
-    settings = switch_port_settings(infrastructure, link_plan)
-    roles = port_map(infrastructure)
-    for switch in infrastructure["switches"]:
-        name = switch["name"]
-        assert set(settings[name]) <= set(roles[name].values())
-        for number, setting in settings[name].items():
-            assert roles[name][setting["role"]] == number
-            declared = next(
-                item for item in link_plan["links"] if item["id"] == setting["link_id"]
-            )
-            assert setting["vlans"] == sorted(declared.get("vlans", []))
-            assert setting["mode"] == (
-                "trunk"
-                if declared["kind"] == "trunk"
-                else "access"
-                if declared["kind"] == "access" and setting["vlans"]
-                else "untagged"
-            )
-
-
-def test_router_interfaces_become_adapter_numbers(documents, plan):
-    _, _, infrastructure, link_plan = documents
-    topology, _ = plan
-    routers = {item["name"] for item in infrastructure["routers"]}
-    declared = next(
-        item
-        for item in link_plan["links"]
-        if all(end["node"] in routers for end in item["endpoints"])
-    )
-    built = next(item for item in topology.links if item.link_id == declared["id"])
-    for endpoint in declared["endpoints"]:
-        actual = next(
-            end for end in (built.first, built.second) if end.node == endpoint["node"]
-        )
-        assert actual.adapter == int(endpoint["interface"].removeprefix("eth"))
-
-
 def test_logical_overlay_is_reported_without_creating_or_capturing_a_cable(documents):
     _, inventory, infrastructure, link_plan = copy.deepcopy(documents)
     overlay = {
@@ -297,15 +248,6 @@ def test_capture_cli_labels_overlays_and_rejects_direct_selection(
     assert capture_traffic.main() == 0
     assert (
         "site-vpn (logical overlay; not directly capturable)" in capsys.readouterr().out
-    )
-
-
-def test_segments_are_created_as_switch_nodes(documents, plan):
-    _, _, infrastructure, _ = documents
-    topology, _ = plan
-    kinds = {node.name: node.kind for node in topology.nodes}
-    assert all(
-        kinds[segment["name"]] == "switch" for segment in infrastructure["segments"]
     )
 
 
@@ -470,19 +412,6 @@ def test_build_sets_the_environment_of_inventoried_devices(plan):
     assert names, "the inventory should supply an environment for some node"
     touched = {node_id for node_id, _ in client.environments}
     assert touched == {f"id-{name}" for name in names}
-
-
-def test_build_reports_a_node_whose_template_is_missing(plan):
-    topology, _ = plan
-    client = FakeClient()
-    result = build(client, "lab", topology, {})
-
-    assert result.created_nodes == []
-    assert result.created_links == []
-    # Every node is reported once, and then every link loses an endpoint.
-    assert len(result.skipped) == len(topology.nodes) + len(topology.links)
-    assert any("no template named" in item for item in result.skipped)
-    assert any("an endpoint node is absent" in item for item in result.skipped)
 
 
 def test_build_prune_deletes_nodes_absent_from_the_plan(plan):

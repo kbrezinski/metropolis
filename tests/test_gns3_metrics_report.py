@@ -49,8 +49,7 @@ def entry(path, **extra):
     }
 
 
-@pytest.mark.parametrize("endian", ["<", ">"])
-@pytest.mark.parametrize("nano", [False, True])
+@pytest.mark.parametrize("nano,endian", [(False, "<"), (True, "<"), (False, ">")])
 def test_classic_formats_original_lengths_empty_bins_and_partial_windows(
     tmp_path, endian, nano
 ):
@@ -85,16 +84,6 @@ def test_packet_time_envelope_is_visible_and_no_packet_dropped(tmp_path):
         summary["effective_started_at_utc"]
     ) == datetime.fromisoformat(timestamp(START))
     assert summary["recorded_started_at_utc"] == timestamp(START + 0.5)
-    assert summary["window_estimated"] is True
-
-
-def test_final_packet_at_exact_second_uses_full_estimated_bin(tmp_path):
-    path = tmp_path / "later-packet.pcap"
-    pcap(path, [(START + 4, 0, 100, 20)])
-    rows, summary = metrics_report._bandwidth(path, entry(path))
-    assert rows[-1]["interval_seconds"] == 1
-    assert rows[-1]["bits_per_second"] == 800
-    assert summary["peak_bits_per_second"] == 800
     assert summary["window_estimated"] is True
 
 

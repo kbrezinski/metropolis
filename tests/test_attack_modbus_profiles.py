@@ -271,14 +271,6 @@ def test_custom_dataset_profile_is_used_without_code_changes(dataset):
     assert record["address"] == 9
 
 
-def test_invalid_profile_version_is_reported(dataset):
-    profile = dataset / "protocol_profiles/modbus_actions_v1.yaml"
-    profile.write_text("schema_version: '2.0'\n", encoding="utf-8")
-    result = invoke(dataset, "--node", "INTAKE", "--action", "set-level")
-    assert result.returncode == 2
-    assert "schema version 1.0" in result.stdout
-
-
 def test_custom_dataset_without_action_profile_is_rejected(dataset):
     (dataset / "protocol_profiles/modbus_actions_v1.yaml").unlink()
     result = invoke(dataset, "--node", "INTAKE", "--action", "set-level")

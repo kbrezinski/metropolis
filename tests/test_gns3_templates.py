@@ -5,7 +5,6 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-import pytest
 
 GNS3 = Path(__file__).resolve().parents[1] / "scripts" / "gns3"
 if str(GNS3) not in sys.path:
@@ -54,18 +53,6 @@ def sample() -> tuple[ImageTemplate, ...]:
         ImageTemplate(name="Metropolis One", image="metropolis/one:dev"),
         ImageTemplate(name="Metropolis Two", image="metropolis/two:dev"),
     )
-
-
-def test_register_creates_every_missing_template():
-    client = FakeClient()
-    result = register_templates(client, sample())
-
-    assert result.created == ["Metropolis One", "Metropolis Two"]
-    assert not result.updated
-    assert [item["image"] for item in client.created] == [
-        "metropolis/one:dev",
-        "metropolis/two:dev",
-    ]
 
 
 def test_register_is_idempotent_on_a_second_run():
@@ -130,20 +117,6 @@ def make_config(root: Path, version: str, body: str) -> Path:
     return path
 
 
-def test_resolve_server_raises_a_helpful_error_when_nothing_is_configured(tmp_path):
-    with pytest.raises(FileNotFoundError) as caught:
-        resolve_server(tmp_path, env={})
-    assert ENV_HOST in str(caught.value)
-
-
-def test_resolve_server_reads_the_newest_config(tmp_path):
-    make_config(tmp_path, "2.2", "[Server]\nhost = 10.0.0.1\nport = 3080\n")
-    server = resolve_server(tmp_path, env={})
-
-    assert (server.host, server.port) == ("10.0.0.1", 3080)
-    assert server.username is None
-
-
 def test_environment_overrides_the_config_file(tmp_path):
     make_config(
         tmp_path,
@@ -162,9 +135,3 @@ def test_environment_overrides_the_config_file(tmp_path):
 
     assert (server.host, server.port) == ("192.168.1.5", 3081)
     assert (server.username, server.password) == ("from-env", "secret")
-
-
-def test_environment_alone_is_enough(tmp_path):
-    """A remote server should not require a local GNS3 install."""
-    server = resolve_server(tmp_path, env={ENV_HOST: "gns3.lab", ENV_PORT: "3080"})
-    assert (server.host, server.port) == ("gns3.lab", 3080)

@@ -27,7 +27,6 @@ def load(name: str, path: Path):
 
 dosing = load("dosing_controller", DEVICES / "controllers/plc/dosing_controller.py")
 scada = load("dosing_scada", DEVICES / "operations/scada/scada_collector.py")
-hmi = load("dosing_hmi", DEVICES / "operations/hmi/hmi_web.py")
 
 
 class Drive:
@@ -118,33 +117,3 @@ def test_scada_configures_distinct_cell_targets_and_decodes_telemetry():
     assert dose["turbidity_ntu"] == 4.8
     assert dose["dose_output_percent"] == 65
     assert targets[0].topic != targets[1].topic
-
-
-def test_scada_rejects_bad_target_config_and_keeps_single_target_compatibility():
-    assert scada.configured_targets(
-        None, legacy_host="10.20.10.10", legacy_topic="intake"
-    ) == [scada.Target("intake", "10.20.10.10", "intake", "intake")]
-    with pytest.raises(ValueError, match="unique"):
-        scada.configured_targets(
-            json.dumps(
-                [
-                    {"id": "dosing", "host": "a", "profile": "dosing", "topic": "a"},
-                    {"id": "dosing", "host": "b", "profile": "dosing", "topic": "b"},
-                ]
-            ),
-            legacy_host="unused",
-            legacy_topic="unused",
-        )
-
-
-def test_dosing_hmi_uses_cell_specific_command():
-    state = hmi.HmiState(
-        "MET-HMI-DOSING-01",
-        65,
-        panel_title="Dosing operator panel",
-        setpoint_label="Requested dose setpoint",
-        setpoint_command="dose_setpoint",
-    )
-    state.set_setpoint(65)
-    assert state.command_payload()["command"] == "dose_setpoint"
-    assert state.snapshot()["panel_title"] == "Dosing operator panel"

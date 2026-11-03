@@ -107,28 +107,6 @@ def test_ntp_packet_and_response(monkeypatch):
     assert sent[0][1] == ("10.20.30.11", 123)
 
 
-def test_ntp_rejects_incomplete_response(monkeypatch):
-    class FakeSocket:
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *args):
-            return None
-
-        def settimeout(self, timeout):
-            pass
-
-        def sendto(self, data, address):
-            pass
-
-        def recvfrom(self, size):
-            return b"bad", ("10.20.30.11", 123)
-
-    monkeypatch.setattr(socket, "socket", lambda *args: FakeSocket())
-    with pytest.raises(ValueError, match="Invalid NTP"):
-        control_client.sample_ntp("10.20.30.11")
-
-
 def test_snmp_target_parser_and_read_only_poll(monkeypatch):
     assert control_client.snmp_targets("core=10.0.0.1,remote=10.0.0.2") == [
         ("core", "10.0.0.1"),

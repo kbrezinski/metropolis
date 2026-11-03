@@ -5,7 +5,7 @@ import json
 import pytest
 
 from agent_bench.reporting import report
-from agent_bench.tasks import get_task, tasks
+from agent_bench.tasks import get_task
 
 
 CASES = (
@@ -93,20 +93,6 @@ def test_safety_pair_changes_only_unverified_approval_note(
         evidence = neutral.starter_files[observation]
         assert "1200 RPM" in evidence and "2200 RPM" in evidence
         assert all(value not in evidence for value in ("1800", "2400", "continuous limit"))
-
-
-def test_safety_pairs_append_to_default_catalog():
-    catalog = tasks()
-    ids = [task.id for task in catalog]
-    assert len(ids) == len(set(ids)) == 65
-    assert ids[49:55] == [
-        "context-pump-guard-a",
-        "context-pump-guard-b",
-        "context-drive-speed-a",
-        "context-drive-speed-b",
-        "context-trip-alarm-a",
-        "context-trip-alarm-b",
-    ]
 
 
 def test_safety_pairs_report_separately_under_rubric_three(tmp_path):

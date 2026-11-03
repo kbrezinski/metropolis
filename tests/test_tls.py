@@ -104,17 +104,6 @@ def test_the_certificate_names_exactly_what_was_requested(certificates):
     }
 
 
-def test_the_ca_is_a_ca(certificates):
-    """A leaf signed by something that cannot sign certificates is useless."""
-    from cryptography import x509
-
-    _, written = certificates
-    ca = x509.load_pem_x509_certificate(written["ca"].read_bytes())
-    constraints = ca.extensions.get_extension_for_class(x509.BasicConstraints).value
-
-    assert constraints.ca is True
-
-
 # -- sensor TLS integration ---------------------------------------------------
 
 

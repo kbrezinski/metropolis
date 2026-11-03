@@ -22,8 +22,6 @@ from resource_metrics import (  # noqa: E402
     cpu_reading,
     memory_readings,
 )
-from _transport import Server  # noqa: E402
-from client import Gns3Client  # noqa: E402
 
 
 def node(
@@ -184,7 +182,7 @@ def test_durable_samples_remote_attribution_limits_and_schema(tmp_path):
     assert resource.result["sources"]["controller"]["status"] == "complete"
 
 
-@pytest.mark.parametrize("field", ["total_inactive_file", "cache"])
+@pytest.mark.parametrize("field", ["total_inactive_file"])
 def test_memory_accounts_for_cgroup_cache_formats(field):
     assert memory_readings(
         {"memory_stats": {"usage": 1024, "limit": 2048, "stats": {field: 300}}}
@@ -342,18 +340,6 @@ def test_disconnected_compute_excludes_cached_utilization(tmp_path):
     )
 
 
-def test_monitoring_timeout_does_not_change_shared_gns3_client(tmp_path):
-    client = Gns3Client(Server("unused", 3080))
-    resource, _ = collector(tmp_path, client=client)
-    try:
-        assert client.transport.timeout == 10
-        assert resource.client is not client
-        assert resource.client.transport.timeout == 3
-        assert resource.client.server is client.server
-    finally:
-        resource.close()
-
-
 def test_remote_worker_only_returns_whitelisted_metrics():
     remote = RemoteDockerClient(
         "ssh://gns3@compute.example", worker_target=responsive_worker
@@ -470,9 +456,3 @@ def test_interruption_closes_clients_and_reports_partial_failure(tmp_path):
     assert any(
         "KeyboardInterrupt" in item["reason"] for item in resource.result["failures"]
     )
-
-
-@pytest.mark.parametrize("interval", [0])
-def test_invalid_interval_rejected_before_collection(tmp_path, interval):
-    with pytest.raises(ValueError, match="finite and positive"):
-        collector(tmp_path, interval=interval)

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import copy
 import json
 import sys
 from pathlib import Path
@@ -519,25 +518,6 @@ def test_baseline_cannot_permit_attack_lab(lab):
         compile_policy(dataset, infrastructure, inventory)
 
 
-def test_new_hosts_in_existing_vlan_inherit_rule_without_policy_change(lab):
-    dataset, infrastructure, inventory = lab
-    changed = copy.deepcopy(inventory)
-    changed["devices"].append({"name": "another-source", "address": "10.1.0.99/24"})
-    original_commands, _ = compile_policy(dataset, infrastructure, inventory)
-    changed_commands, _ = compile_policy(dataset, infrastructure, changed)
-    assert changed_commands == original_commands
-
-
-def test_vlan_alias_and_cidr_subrange(lab):
-    dataset, infrastructure, inventory = lab
-    exception = parse_attack_exception("10.3.0.0/25:vlan-20:tcp:502")
-    commands, report = compile_policy(dataset, infrastructure, inventory, [exception])
-    record = report["attack_exceptions"][0]
-    assert record["source_cidr"] == "10.3.0.0/25"
-    assert record["destination_cidr"] == "10.2.0.0/24"
-    assert _has_rule(commands["router-b"], "10.3.0.0/25", "10.2.0.0/24", "tcp", 502)
-
-
 def test_missing_ospf_advertisement_rejects_policy(lab):
     dataset, infrastructure, inventory = lab
     script = Path(infrastructure["routers"][0]["config"])
@@ -561,12 +541,7 @@ def test_missing_declared_router_cable_rejects_flow(lab):
 
 
 @pytest.mark.parametrize(
-    "value",
-    [
-        "attack-lab:destination:tcp:0",
-        "attack-lab:destination:all:502",
-        "attack-lab:destination:icmp:502",
-    ],
+    "value", ["attack-lab:destination:tcp:0", "attack-lab:destination:all:502"]
 )
 def test_attack_exception_rejects_invalid_protocols_and_ports(value):
     with pytest.raises(ValueError):

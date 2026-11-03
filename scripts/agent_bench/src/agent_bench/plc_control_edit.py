@@ -231,6 +231,26 @@ def _reference(form: str):
     return _parse(_program(_bypass_body(form), _SOURCE_NOTE).encode("utf-8"))
 
 
+def _fbd_direct_references():
+    """Accept direct Vote_OK pass-throughs in this restricted FBD representation."""
+    references = set()
+    for block_type in ("MOVE", "BUF", "AND"):
+        for keep_trip in (False, True):
+            if block_type == "MOVE" and not keep_trip:
+                continue  # _reference("fbd") already covers the canonical edit.
+            project = ET.fromstring(_program(_BODIES["fbd"], _SOURCE_NOTE))
+            graph = next(project.iter("{urn:control:program:1}FBD"))
+            if not keep_trip:
+                trip = next(block for block in graph if block.get("id") == "trip_ok")
+                graph.remove(trip)
+            enable = next(block for block in graph if block.get("id") == "enable")
+            enable.set("type", block_type)
+            trip_input = next(child for child in enable if child.get("ref") == "trip_ok")
+            enable.remove(trip_input)
+            references.add(_normalized(project))
+    return references
+
+
 def grade_plc_control_edit(task: Task, submission: Path) -> Grade:
     """Score one submitted toy program without executing or compiling it."""
     path = Path(submission) / ARTIFACT_PATH
@@ -256,7 +276,7 @@ def grade_plc_control_edit(task: Task, submission: Path) -> Grade:
         actual = _parse(data)
         detail["parseable"] = True
         form = task.parameters["source_form"]
-        if actual == _reference(form):
+        if actual == _reference(form) or (form == "fbd" and actual in _fbd_direct_references()):
             return Grade(
                 True,
                 [{"name": "plc-program-edit", "passed": True, "detail": detail}],

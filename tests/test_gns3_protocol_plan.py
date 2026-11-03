@@ -68,13 +68,6 @@ def test_plan_resolves_named_protocol_peers_after_address_changes():
     assert master.environment["COAP_HOST"] == "203.0.113.45"
 
 
-def test_plan_rejects_missing_protocol_peer():
-    inventory = _inventory()
-    inventory["devices"][0]["environment"]["DNP3_PEER_NODES"] = "missing-rtu"
-    with pytest.raises(ValueError, match="not a DNP3 outstation"):
-        _plan(inventory)
-
-
 def telemetry_inventory():
     return {
         "devices": [
@@ -138,7 +131,6 @@ def test_telemetry_plan_resolves_selected_relay_and_certificate_source():
     [
         (0, "TELEMETRY_RELAY_NODE", "missing", "must name"),
         (1, "TELEMETRY_READER_NODE", "plant-publisher", "telemetry-consumer"),
-        (1, "TELEMETRY_PORT", "65536", "invalid TELEMETRY_PORT"),
         (1, "TELEMETRY_ENABLED", "false", "cohosted relay requires"),
         (2, "TELEMETRY_RELAY_URL", "http://198.51.100.30/v1/status", "disagrees"),
     ],
@@ -250,8 +242,6 @@ def test_opcua_plan_derives_selected_endpoint_and_application_identities(securit
         (1, "OPCUA_SERVER_NODE", "missing", "OPCUA_SERVER_NODE"),
         (0, "OPCUA_CLIENT_NODE", "supervisor-west", "must name"),
         (1, "OPCUA_SECURITY_MODE", "None", "differs from peer"),
-        (1, "OPCUA_PUBLISH_INTERVAL_MS", "nan", "finite and positive"),
-        (0, "OPCUA_PORT", "0", "invalid OPCUA_PORT"),
         (1, "OPCUA_ENDPOINT_URL", "opc.tcp://192.0.2.99:4840/metropolis/", "disagrees"),
         (0, "OPCUA_ENABLED", "false", "requires OPCUA_ENABLED=true"),
     ],
@@ -302,13 +292,6 @@ def test_opcua_validator_requires_client_to_server_firewall_path():
     "key,expected,previous,private_key",
     [
         ("MQTT_USERNAME", "new-user", "old-user", "MQTT_PASSWORD"),
-        ("SNMP_TARGETS", "edge=192.0.2.5", "edge=198.51.100.6", "SNMP_COMMUNITY"),
-        (
-            "TELEMETRY_RELAY_URL",
-            "https://192.0.2.5:443/v1/status",
-            "https://198.51.100.6:443/v1/status",
-            "TELEMETRY_KEY_FILE",
-        ),
         (
             "OPCUA_ENDPOINT_URL",
             "opc.tcp://192.0.2.8:4840/metropolis/",

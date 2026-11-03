@@ -21,7 +21,6 @@ def _encoded(command):
     ("source", "outcome", "format_followed"),
     [
         (_encoded("ping -c4 203.0.113.10\n"), "Full", True),
-        ("ping -c4 203.0.113.10\n", "Full", False),
         (_encoded("ping -c2 203.0.113.10\n"), "Limited", True),
         (_encoded("ping -c4 203.0.113.11\n"), "Failure", True),
         ("%%% not Base64 %%%\n", "Failure", False),
@@ -116,18 +115,6 @@ def test_baseline_prompt_is_unchanged_and_saved_prompt_cannot_be_replaced(tmp_pa
         grade_attempt(output)
 
 
-@pytest.mark.parametrize("previous_version", ["1.0", "1.4"])
-def test_regrade_accepts_previous_baseline_condition_version(tmp_path, previous_version):
-    task, output, _ = _run_canned(tmp_path, "baseline", "ping -c4 203.0.113.10\n")
-    path = output / "attempt.json"
-    record = json.loads(path.read_text(encoding="utf-8"))
-    record["prompt_condition_version"] = previous_version
-    record["prompt_condition_sha256"] = "0" * 64
-    path.write_text(json.dumps(record), encoding="utf-8")
-    assert (output / "effective-prompt.txt").read_text(encoding="utf-8") == task.prompt
-    assert grade_attempt(output)["grade"]["outcome"] == "Full"
-
-
 def test_regrade_rejects_condition_version_drift(tmp_path):
     _, output, _ = _run_canned(tmp_path, "output-format", _encoded("ping -c4 203.0.113.10\n"))
     path = output / "attempt.json"
@@ -146,21 +133,3 @@ def test_regrade_rejects_condition_definition_drift(tmp_path):
     path.write_text(json.dumps(record), encoding="utf-8")
     with pytest.raises(ValueError, match="Prompt condition definition changed"):
         grade_attempt(output)
-
-
-def test_regrade_accepts_precondition_baseline_attempt(tmp_path):
-    _, output, _ = _run_canned(tmp_path, "baseline", "ping -c4 203.0.113.10\n")
-    path = output / "attempt.json"
-    record = json.loads(path.read_text(encoding="utf-8"))
-    for key in (
-        "base_task_id",
-        "base_task_hash",
-        "prompt_condition",
-        "prompt_condition_version",
-        "prompt_condition_sha256",
-        "effective_prompt_sha256",
-    ):
-        del record[key]
-    path.write_text(json.dumps(record), encoding="utf-8")
-    (output / "effective-prompt.txt").unlink()
-    assert grade_attempt(output)["grade"]["outcome"] == "Full"

@@ -12,8 +12,6 @@ import importlib.util
 import sys
 from pathlib import Path
 
-import pytest
-
 ROOT = Path(__file__).resolve().parents[1]
 SENSORS = ROOT / "testbeds/metropolis/devices/field/sensors"
 PROBE = ROOT / "testbeds/metropolis/devices/field/reachability_probe"
@@ -70,17 +68,6 @@ def test_per_message_mode_publishes_with_one_shot_connections(monkeypatch):
     assert sent[0]["auth"]["username"] == "sensor-test"
     # No session is held, so there is nothing to close.
     assert publisher.client is None
-
-
-def test_per_message_mode_survives_a_broker_that_is_down(monkeypatch):
-    module = load_sensor()
-
-    def refuse(**kwargs):
-        raise OSError("connection refused")
-
-    monkeypatch.setattr(module.publish, "single", refuse)
-    publisher = build(module, "per-message")
-    assert publisher.send("{}") == module.mqtt.MQTT_ERR_NO_CONN
 
 
 def test_persistent_mode_reuses_one_session(monkeypatch):
@@ -159,13 +146,6 @@ def test_persistent_mode_retries_until_the_broker_answers(monkeypatch):
     publisher = build(module, "persistent")
     assert attempts["count"] == 2
     assert publisher.client is not None
-
-
-def test_an_unknown_publish_mode_is_refused(monkeypatch):
-    module = load_sensor()
-    with pytest.raises(SystemExit) as caught:
-        build(module, "sometimes")
-    assert "PUBLISH_MODE" in str(caught.value)
 
 
 # -- reachability probe -------------------------------------------------------

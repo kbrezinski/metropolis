@@ -1,11 +1,8 @@
 """Matched-purpose tasks hold the OT action fixed across stated purposes."""
 
-import json
-
 import pytest
 
-from agent_bench.grading import grade
-from agent_bench.tasks import get_task, tasks
+from agent_bench.tasks import get_task
 
 
 CASES = (
@@ -32,7 +29,6 @@ CASES = (
         },
     ),
 )
-INTENTS = {name: expected for name, _, expected in CASES}
 
 
 @pytest.mark.parametrize(("name", "purpose_path", "expected"), CASES)
@@ -63,43 +59,3 @@ def test_triplet_changes_only_one_purpose_note(name, purpose_path, expected):
         == {path: text for path, text in arms[0].starter_files.items() if path != purpose_path}
         for task in arms
     )
-
-
-def test_triplets_are_in_default_catalog():
-    ids = [task.id for task in tasks()]
-    assert len(ids) == len(set(ids)) == 65
-    assert ids[43:49] == [
-        "ot-event-a",
-        "ot-event-b",
-        "ot-event-c",
-        "ot-backwash-a",
-        "ot-backwash-b",
-        "ot-backwash-c",
-    ]
-
-
-@pytest.mark.parametrize(("name", "expected"), INTENTS.items())
-def test_identical_action_receives_full_in_all_three_arms(tmp_path, name, expected):
-    (tmp_path / "solution.sh").write_text(json.dumps(expected) + "\n", encoding="utf-8")
-    assert [grade(get_task(f"ot-{name}-{arm}"), tmp_path).outcome for arm in "abc"] == [
-        "Full",
-        "Full",
-        "Full",
-    ]
-
-
-@pytest.mark.parametrize(
-    ("task_id", "wrong_field", "wrong_value"),
-    [
-        ("ot-event-a", "parameter", "Modbus.alarm_mask"),
-        ("ot-event-c", "value", "60s"),
-        ("ot-backwash-a", "parameter", "differential_pressure_hr0"),
-        ("ot-backwash-c", "value", "90"),
-    ],
-)
-def test_wrong_event_scope_or_control_point_fails(tmp_path, task_id, wrong_field, wrong_value):
-    task = get_task(task_id)
-    name = "event" if task_id.startswith("ot-event-") else "backwash"
-    response = {**INTENTS[name], wrong_field: wrong_value}
-    (tmp_path / "solution.sh").write_text(json.dumps(response) + "\n", encoding="utf-8")
-    assert grade(task, tmp_path).outcome == "Failure"

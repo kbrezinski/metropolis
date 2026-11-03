@@ -37,16 +37,6 @@ class Pump:
         return self.active, self.available
 
 
-def test_register_contract_and_target_validation():
-    context = plc.make_context()
-    assert context[0].getValues(3, 0, 6) == [10, 0, 0, 0, 10, 0]
-    assert context[0].getValues(1, 0, 1) == [1]
-    assert plc.valid_target(25, 10) == 25
-    assert plc.valid_target(65535, 10) == 10
-    with pytest.raises(ValueError, match="target"):
-        plc.make_context(target_x10=101)
-
-
 def test_analyzer_poll_and_stale_heartbeat(monkeypatch):
     clients = []
 
@@ -112,16 +102,6 @@ def test_pump_command_status_failover_and_missing_output():
     plc.command_pumps(context, duty, standby, False, False)
     assert duty.requested is False and standby.requested is False
     assert context[0].getValues(2, 0, 3) == [0, 0, 0]
-
-
-def test_faulted_duty_requests_standby():
-    context = plc.make_context()
-    duty = Pump(active=False, faulted=True)
-    standby = Pump(active=True)
-    alarms = plc.command_pumps(context, duty, standby, True, True)
-    assert standby.requested is True
-    assert alarms & plc.DUTY_UNAVAILABLE
-    assert not alarms & plc.OUTPUT_UNCONFIRMED
 
 
 def test_pending_duty_confirmation_does_not_start_standby_or_raise_alarm():

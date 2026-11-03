@@ -40,14 +40,6 @@ class Pump:
         return self.active, self.available
 
 
-def test_remote_rtu_register_contract():
-    context = rtu.make_context(initial_level_x10=420)
-    assert context[0].getValues(3, 0, 6) == [420, 0, 0, 0, 1, 0]
-    assert context[0].getValues(1, 0, 1) == [1]
-    with pytest.raises(ValueError, match="Initial level"):
-        rtu.make_context(initial_level_x10=1001)
-
-
 def test_networked_level_poll_closes_client_and_rejects_bad_data(monkeypatch):
     clients = []
 

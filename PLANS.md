@@ -10,6 +10,7 @@ Expand one cell at a time, prioritizing credible packet timing, polling, and val
 
 - [ ] Coordinate log-collector and profile manifest writes, and report collector thread failures.
 - [ ] Define a normal-traffic and capture-point matrix: endpoints, protocols, polling/cyclic rates, fault traffic, and local/routed links. Distinguish populated networks from declarations without devices.
+- [ ] Investigate OPC UA startup and worker cleanup timeouts under coverage tracing; retain the existing subscription and certificate checks.
 - [ ] Detect image, environment, and adapter drift when the builder reuses nodes; define how to report or reconcile it.
 - [ ] Make the builder and lifecycle commands honor the selected `--dataset` consistently.
 - [ ] Extend `protocol_profiles/` with register maps, MQTT topics, EtherNet/IP assemblies, service settings, and timing defaults. Validate against inventory and simulators; keep per-cell SCADA polling rates stable as targets grow.

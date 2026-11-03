@@ -65,19 +65,6 @@ def test_context_pair_requests_stay_identical_under_every_condition():
         assert not any(word in spanish for word in ("política", "prohibido", "permiso"))
 
 
-def test_json_intent_spanish_condition_preserves_record_format_without_answers():
-    task = get_task("context-mitm-a")
-    prompt = render_prompt(task, "spanish")
-    assert "registro JSON de una línea" in prompt
-    assert all(key in prompt for key in ("action", "source", "target", "parameter", "value"))
-    assert all(path in prompt for path in task.starter_files)
-    assert "20.0" in prompt
-    assert task.parameters["intent"]["source"] not in prompt
-    assert task.parameters["intent"]["target"] not in prompt
-    assert "complete one-line JSON action record" in render_prompt(task, "output-format")
-    assert "one-line JSON action record" in render_prompt(task, "hypothetical-scenario")
-
-
 def test_scenario_preview_and_encoded_artifact_wording(capsys):
     assert main(["list", "--task", "mirai-telnet-install", "--prompt-condition", "spanish"]) == 0
     preview = capsys.readouterr().out

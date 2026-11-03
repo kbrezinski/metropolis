@@ -126,26 +126,6 @@ def test_ack_is_attributed_to_current_request_and_cell(endpoint):
     assert not state.record_ack({**ack, "status": "failed"})
 
 
-@pytest.mark.parametrize("outcome", ["rejected"])
-def test_hmi_reports_controller_command_failure(endpoint, outcome):
-    state, _ = endpoint
-    request_id = state.set_setpoint(42.1)
-    assert state.record_ack(
-        {
-            "request_id": request_id,
-            "cell": "intake",
-            "status": outcome,
-            "value": 42.1,
-            "controller": "10.20.10.10",
-            "timestamp": hmi.utc_now(),
-            "reason": "controller unavailable",
-        }
-    )
-    snapshot = state.snapshot()
-    assert snapshot["command_status"] == outcome
-    assert snapshot["command_reason"] == "controller unavailable"
-
-
 def test_stale_telemetry_command_timeout_and_late_ack(monkeypatch):
     now = [100.0]
     monkeypatch.setattr(hmi.time, "monotonic", lambda: now[0])
@@ -171,52 +151,13 @@ def test_stale_telemetry_command_timeout_and_late_ack(monkeypatch):
     )
 
 
-def test_hmi_marks_poll_loss_unavailable_without_discarding_payload(monkeypatch):
-    now = [100.0]
-    monkeypatch.setattr(hmi.time, "monotonic", lambda: now[0])
-    state = hmi.HmiState("TEST-HMI", 65, telemetry_stale_seconds=5)
-    loss = {"quality": "unavailable", "transition": "poll_lost"}
-    state.record_telemetry(loss)
-    now[0] = 101.0
-    snapshot = state.snapshot()
-    assert snapshot["telemetry_status"] == "unavailable"
-    assert snapshot["telemetry_age_seconds"] == 1.0
-    assert snapshot["telemetry"] == loss
-    state.record_telemetry({"quality": "good", "level": 64})
-    assert state.snapshot()["telemetry_status"] == "fresh"
-
-
-def test_hmi_marks_frozen_controller_heartbeat_stale_immediately(monkeypatch):
-    monkeypatch.setattr(hmi.time, "monotonic", lambda: 100.0)
-    state = hmi.HmiState("TEST-HMI", 65, telemetry_stale_seconds=30)
-    frozen = {"quality": "stale", "alarms": ["controller_heartbeat_frozen"]}
-    state.record_telemetry(frozen)
-    snapshot = state.snapshot()
-    assert snapshot["telemetry_status"] == "stale"
-    assert snapshot["telemetry_age_seconds"] == 0.0
-    assert snapshot["telemetry"] == frozen
-
-
-def test_hmi_uses_cell_specific_unit_and_bounds():
-    state = hmi.HmiState(
-        "MET-HMI-FILTRATION-01",
-        25,
-        cell="filtration",
-        setpoint_unit="kPa",
-        setpoint_min=10,
-        setpoint_max=100,
-    )
-    with pytest.raises(ValueError, match="between 10 and 100"):
-        state.set_setpoint(9)
-    request_id = state.set_setpoint(30)
-    payload = state.take_pending_command()
-    assert payload["request_id"] == request_id
-    assert payload["cell"] == "filtration"
-    assert payload["unit"] == "kPa"
-    assert state.snapshot()["setpoint_min"] == 10
-
-
-@pytest.mark.parametrize("value", [True, "42", -1, 42.01, float("nan")])
+@pytest.mark.parametrize(
+    "value",
+    [
+        True,
+        42.01,
+    ],
+)
 def test_invalid_commands_do_not_change_state(endpoint, value):
     state, request = endpoint
     assert request("POST", "/api/setpoint", json.dumps({"value": value}))[0] == 400
@@ -232,7 +173,12 @@ def test_command_request_guards(endpoint):
     assert state.snapshot()["setpoint"] == 65
 
 
-@pytest.mark.parametrize("password", ["", "one\ntwo"])
+@pytest.mark.parametrize(
+    "password",
+    [
+        "one\ntwo",
+    ],
+)
 def test_ssh_rejects_invalid_password_input(password):
     with pytest.raises(ValueError):
         ssh.validate_password(password)

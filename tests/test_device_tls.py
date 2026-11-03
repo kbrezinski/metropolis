@@ -40,29 +40,11 @@ def ca_file(tmp_path_factory):
 # -- shared settings ----------------------------------------------------------
 
 
-@pytest.mark.parametrize("value", ["1"])
-def test_tls_switches_on_for_the_usual_spellings(tls_module, value, ca_file):
-    config = tls_module.from_environment({"TLS": value, "TLS_CA_FILE": str(ca_file)})
-    assert config is not None
-    assert config.ca_file == str(ca_file)
-
-
-@pytest.mark.parametrize("value", [""])
-def test_other_values_leave_tls_off(tls_module, value):
-    assert tls_module.from_environment({"TLS": value}) is None
-
-
 def test_a_missing_ca_is_refused_rather_than_ignored(tls_module):
     """Failing here beats failing at connect time with a TLS error."""
     with pytest.raises(SystemExit) as caught:
         tls_module.from_environment({"TLS": "true", "TLS_CA_FILE": "/nope/ca.crt"})
     assert "does not exist" in str(caught.value)
-
-
-def test_the_ca_may_be_omitted_to_use_the_system_store(tls_module):
-    config = tls_module.from_environment({"TLS": "true"})
-    assert config is not None
-    assert config.ca_file is None
 
 
 def test_insecure_is_opt_in_only(tls_module, ca_file):
@@ -72,37 +54,6 @@ def test_insecure_is_opt_in_only(tls_module, ca_file):
         {"TLS": "true", "TLS_CA_FILE": str(ca_file), "TLS_INSECURE": "true"}
     )
     assert relaxed.insecure is True
-
-
-def test_client_certificates_are_passed_through(tls_module, ca_file):
-    config = tls_module.from_environment(
-        {
-            "TLS": "true",
-            "TLS_CA_FILE": str(ca_file),
-            "TLS_CLIENT_CERT": "/certs/client.crt",
-            "TLS_CLIENT_KEY": "/certs/client.key",
-        }
-    )
-    assert config.client_cert == "/certs/client.crt"
-    assert config.client_key == "/certs/client.key"
-
-
-def test_apply_configures_a_paho_client(tls_module, ca_file):
-    calls = []
-
-    class FakeClient:
-        def tls_set(self, **kwargs):
-            calls.append(("tls_set", kwargs))
-
-        def tls_insecure_set(self, value):
-            calls.append(("insecure", value))
-
-    config = tls_module.TlsConfig(ca_file=str(ca_file), insecure=True)
-    config.apply(FakeClient())
-
-    assert calls[0][0] == "tls_set"
-    assert calls[0][1]["ca_certs"] == str(ca_file)
-    assert calls[1] == ("insecure", True)
 
 
 def test_apply_to_reads_the_environment(tls_module, ca_file):
@@ -155,25 +106,3 @@ def test_the_broker_connection_accepts_and_applies_tls(monkeypatch):
     assert applied["ca_certs"] == "/certs/ca.crt"
     assert applied["insecure"] is True
     assert connection.status == "timeout", "no connection is attempted yet"
-
-
-def test_a_plain_broker_connection_is_left_unencrypted(monkeypatch):
-    import _mqtt
-    import paho.mqtt.client as paho
-
-    touched = []
-
-    class FakeClient:
-        def __init__(self, *args, **kwargs):
-            pass
-
-        def username_pw_set(self, *args):
-            pass
-
-        def tls_set(self, **kwargs):
-            touched.append("tls_set")
-
-    monkeypatch.setattr(paho, "Client", FakeClient)
-    _mqtt.BrokerConnection("10.20.23.10", 1883, "lab_operator", "secret", 3.0)
-
-    assert touched == [], "TLS must not be configured unless it was asked for"

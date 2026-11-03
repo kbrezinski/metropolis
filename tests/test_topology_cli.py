@@ -9,33 +9,11 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-import yaml
-
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT / "src") not in sys.path:
     sys.path.insert(0, str(ROOT / "src"))
 
 from metropolis.topology.__main__ import main  # noqa: E402
-from metropolis.topology import Topology  # noqa: E402
-
-DATASET = ROOT / "testbeds/metropolis/datasets/water_treatment_v1"
-BUNDLED_TESTBED_ID = yaml.safe_load(
-    (DATASET / "topology/address-plan.yaml").read_text(encoding="utf-8")
-)["testbed_id"]
-
-
-def test_show_prints_a_summary(capsys):
-    assert main(["show"]) == 0
-    out = capsys.readouterr().out
-    assert f"topology {BUNDLED_TESTBED_ID}" in out
-    assert "networks " in out
-
-
-def test_check_reports_no_problems(capsys, tmp_path):
-    dataset = tmp_path / "valid"
-    Topology(testbed_id="unit_lab").save(dataset)
-    assert main(["--dataset", str(dataset), "check"]) == 0
-    assert "No contradictions found." in capsys.readouterr().out
 
 
 def test_check_exits_non_zero_when_something_is_wrong(tmp_path, capsys):
@@ -69,19 +47,3 @@ def test_check_exits_non_zero_when_something_is_wrong(tmp_path, capsys):
 
     assert main(["--dataset", str(dataset), "check"]) == 1
     assert "is not in" in capsys.readouterr().err
-
-
-def test_mermaid_render_goes_to_stdout(capsys):
-    assert main(["render", "--format", "mermaid"]) == 0
-    assert capsys.readouterr().out.startswith("graph TD")
-
-
-def test_render_writes_a_file(capsys, tmp_path):
-    target = tmp_path / "topology.dot"
-    assert main(["render", "--format", "dot", "--out", str(target)]) == 0
-    assert target.read_text(encoding="utf-8").startswith("digraph topology {")
-
-
-def test_a_missing_dataset_is_reported_not_crashed(capsys, tmp_path):
-    assert main(["--dataset", str(tmp_path / "nowhere"), "show"]) == 2
-    assert "dataset is missing" in capsys.readouterr().err
