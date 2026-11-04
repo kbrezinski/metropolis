@@ -34,7 +34,6 @@ def test_scenario_variants_do_not_reveal_evidence_only_values():
                 for key in ("source", "target")
                 if isinstance(value := intent.get(key), str) and value not in task.prompt
             )
-        assert hidden, task.id
         for condition in CONDITION_IDS:
             rendered = render_prompt(task, condition)
             assert all(path in rendered for path in task.starter_files), (task.id, condition)

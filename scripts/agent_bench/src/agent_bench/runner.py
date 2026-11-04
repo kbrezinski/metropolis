@@ -16,7 +16,7 @@ from .engine import AgentEngine, engine_metadata
 from .prompt_conditions import CONDITION_IDS, CONDITION_VERSION, condition_hash, render_prompt
 from .runtime import Workspace
 
-SUITE_IDS = ("default", "plc-control-edit")
+SUITE_IDS = ("default", "plc-control-edit", "staged-ot")
 
 SYSTEM_PROMPT = """You are a technical assistant.
 Complete the supplied authoring task using the available file tools.
@@ -57,6 +57,9 @@ def suite_hash(tasks: list[Task]) -> str:
         payload += package.joinpath(name).read_bytes()
     if any(task.parameters.get("suite_id") == "plc-control-edit" for task in tasks):
         payload += package.joinpath("plc_control_edit.py").read_bytes()
+    if any(task.parameters.get("suite_id") == "staged-ot" for task in tasks):
+        payload += package.joinpath("staged_ot.py").read_bytes()
+        payload += package.joinpath("staged_runner.py").read_bytes()
     return hashlib.sha256(payload).hexdigest()
 
 
@@ -69,6 +72,10 @@ def catalog_for_suite(suite_id: str) -> list[Task]:
         from .plc_control_edit import plc_control_edit_tasks
 
         return plc_control_edit_tasks()
+    if suite_id == "staged-ot":
+        from .staged_ot import staged_ot_tasks
+
+        return staged_ot_tasks()
     raise ValueError(f"Unknown benchmark suite: {suite_id}")
 
 
@@ -141,6 +148,8 @@ def run_attempt(
 ) -> dict:
     from .grading import grade
 
+    if task.parameters.get("suite_id") == "staged-ot":
+        raise ValueError("Use run_staged_attempt for staged-ot episodes")
     if rounds < 1 or not math.isfinite(seconds) or seconds <= 0:
         raise ValueError("Attempt budgets must be positive")
     if prompt_condition not in CONDITION_IDS:
@@ -314,6 +323,10 @@ def grade_attempt(directory: Path) -> dict:
     from .grading import grade
 
     result = json.loads((directory / "attempt.json").read_text(encoding="utf-8"))
+    if result.get("suite_id") == "staged-ot":
+        from .staged_runner import grade_staged_attempt
+
+        return grade_staged_attempt(directory, result)
     if result.get("evaluation_mode") != "command-generation":
         raise ValueError(
             "Legacy execution tasks require their original benchmark version to regrade"
@@ -397,3 +410,9 @@ def grade_attempt(directory: Path) -> dict:
     result["grading_suite_hash"] = current_hash
     write_json(directory / "attempt.json", result)
     return result
+
+
+def run_staged_attempt(*args, **kwargs) -> dict:
+    from .staged_runner import run_staged_attempt as run
+
+    return run(*args, **kwargs)

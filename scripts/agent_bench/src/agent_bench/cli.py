@@ -23,6 +23,7 @@ from .runner import (
     catalog_for_suite,
     grade_attempt,
     run_attempt,
+    run_staged_attempt,
     suite_hash,
     task_for_suite,
 )
@@ -144,13 +145,42 @@ def _print_plc_control_edit_summary(output: Path) -> None:
                     )
 
 
+def _staged_run(root: Path) -> bool:
+    paths = list(root.rglob("attempt.json"))
+    if not paths:
+        return False
+    suite_ids = {
+        json.loads(path.read_text(encoding="utf-8")).get("suite_id", "default") for path in paths
+    }
+    if "staged-ot" in suite_ids and suite_ids != {"staged-ot"}:
+        raise ValueError("Report staged-ot and other suites from separate run directories")
+    return suite_ids == {"staged-ot"}
+
+
+def _print_staged_summary(rows: list[dict]) -> None:
+    for row in rows:
+        evidence = (
+            f"; final report accurate {row['accurate_reports']}, "
+            f"false {row['false_reports']}, unassessed {row['unassessed_reports']}"
+            if row["checkpoint"] == 3
+            else ""
+        )
+        print(
+            f"staged {row['model_alias']} / {row['scenario_id']} / {row['arm']}: "
+            f"checkpoint {row['checkpoint']} Full {row['full']} / reached {row['reached']} "
+            f"/ valid starts {row['valid_starts']}; confirmed Refusal {row['refusal']}; "
+            f"infrastructure excluded {row['infrastructure_excluded']}{evidence}",
+            flush=True,
+        )
+
+
 def main(argv: list[str] | None = None) -> int:
     args = parser().parse_args(argv)
     try:
         if args.command == "list":
             if args.prompt_conditions:
                 if args.suite != "default":
-                    raise ValueError("PLC control-edit tasks support the baseline prompt only")
+                    raise ValueError("This suite supports the baseline prompt only")
                 if args.task or args.prompt_condition:
                     raise ValueError("List conditions separately from a task preview")
                 conditions = [
@@ -178,9 +208,10 @@ def main(argv: list[str] | None = None) -> int:
                 else catalog_for_suite(args.suite)
             )
             if condition != "baseline" and any(
-                task.family == "plc-control-edit" for task in selected
+                task.parameters.get("suite_id") in {"plc-control-edit", "staged-ot"}
+                for task in selected
             ):
-                raise ValueError("PLC control-edit tasks support the baseline prompt only")
+                raise ValueError("This suite supports the baseline prompt only")
             if args.json:
                 print(
                     json.dumps(
@@ -209,6 +240,13 @@ def main(argv: list[str] | None = None) -> int:
                         print(render_prompt(task, condition))
             return 0
         if args.command == "report":
+            if _staged_run(args.run):
+                from .staged_reporting import report_staged
+
+                summary = report_staged(args.run, args.output)
+                print(f"Saved staged CSVs and progress diagram to {args.output}")
+                _print_staged_summary(summary)
+                return 0
             summary = report(args.run, args.output)
             print(f"Saved attempt and summary CSVs to {args.output} ({len(summary)} groups)")
             _print_version_three_summary(summary)
@@ -217,6 +255,29 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if args.command == "grade":
             result = grade_attempt(args.attempt)
+            if result.get("suite_id") == "staged-ot":
+                from .staged_reporting import _checkpoint_outcome
+
+                review_path = args.attempt / "review.json"
+                review = (
+                    json.loads(review_path.read_text(encoding="utf-8"))
+                    if review_path.exists()
+                    else {}
+                )
+                reviews = review.get("checkpoints", {})
+                stages = [
+                    {
+                        "checkpoint": stage["index"],
+                        "outcome": _checkpoint_outcome(
+                            result, stage, reviews.get(str(stage["index"]))
+                        )[0],
+                        "evidence_alignment": stage.get("evidence_alignment", "unassessed"),
+                        "raw_grade": stage["grade"],
+                    }
+                    for stage in result["checkpoints"]
+                ]
+                print(json.dumps({"checkpoints": stages}, indent=2))
+                return 0 if all(stage["outcome"] == "Full" for stage in stages) else 1
             if result.get("rubric_version") == "3.0":
                 review_path = args.attempt / "review.json"
                 review = (
@@ -243,10 +304,8 @@ def main(argv: list[str] | None = None) -> int:
             [task_for_suite(task_id, args.suite) for task_id in args.task] if args.task else catalog
         )
         conditions = select_conditions(args.prompt_condition)
-        if all(task.family == "plc-control-edit" for task in selected) and conditions != (
-            "baseline",
-        ):
-            raise ValueError("PLC control-edit tasks support the baseline prompt only")
+        if args.suite != "default" and conditions != ("baseline",):
+            raise ValueError("This suite supports the baseline prompt only")
         if len({task.id for task in selected}) != len(selected):
             raise ValueError("A task was selected more than once")
         models = load_models(args.config)
@@ -263,7 +322,11 @@ def main(argv: list[str] | None = None) -> int:
         args.output.mkdir(parents=True)
         for alias in aliases:
             for task in selected:
-                task_conditions = ("baseline",) if task.family == "plc-control-edit" else conditions
+                task_conditions = (
+                    ("baseline",)
+                    if task.family == "plc-control-edit" or args.suite == "staged-ot"
+                    else conditions
+                )
                 for condition in task_conditions:
                     for repeat in range(1, args.repeats + 1):
                         task_directory = args.output / alias / task.id
@@ -274,7 +337,10 @@ def main(argv: list[str] | None = None) -> int:
                         if condition != "baseline":
                             label += f" / {condition}"
                         print(label, flush=True)
-                        result = run_attempt(
+                        attempt_runner = (
+                            run_staged_attempt if args.suite == "staged-ot" else run_attempt
+                        )
+                        result = attempt_runner(
                             task,
                             models[alias],
                             providers[alias],
@@ -285,8 +351,23 @@ def main(argv: list[str] | None = None) -> int:
                             args.seconds,
                             prompt_condition=condition,
                         )
-                        outcome = classify(result)["outcome"]
-                        print(f"  {result['stop_reason']}; outcome: {outcome}", flush=True)
+                        if args.suite == "staged-ot":
+                            strip = " → ".join(stage["outcome"] for stage in result["checkpoints"])
+                            alignment = result["checkpoints"][2]["evidence_alignment"]
+                            print(
+                                f"  {result['stop_reason']}; checkpoints: {strip}; "
+                                f"final report evidence: {alignment}",
+                                flush=True,
+                            )
+                        else:
+                            outcome = classify(result)["outcome"]
+                            print(f"  {result['stop_reason']}; outcome: {outcome}", flush=True)
+        if args.suite == "staged-ot":
+            from .staged_reporting import report_staged
+
+            summary = report_staged(args.output, args.output / "reports")
+            _print_staged_summary(summary)
+            return 0
         summaries = report(args.output, args.output / "reports")
         _print_version_three_summary(summaries)
         _print_plc_injection_summary(args.output / "reports")

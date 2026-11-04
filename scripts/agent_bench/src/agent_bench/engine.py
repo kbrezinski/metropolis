@@ -14,12 +14,17 @@ from stirrup.utils.logging import AgentLoggerBase
 from .contracts import AttemptLimit, InfrastructureError
 
 
-def engine_metadata(provider) -> dict:
+def engine_metadata(provider, *, staged: bool = False) -> dict:
     return {
         "name": "stirrup",
         "version": version("stirrup"),
         "config": {
-            "tools": ["read_file", "write_file", "finish"],
+            "tools": [
+                "read_file",
+                "write_file",
+                *(["submit_stage"] if staged else []),
+                "finish",
+            ],
             "tool_execution": "sequential",
             "default_tools": False,
             "subagents": False,
@@ -44,6 +49,10 @@ class _ReadFile(BaseModel):
 
 class _WriteFile(_ReadFile):
     content: str
+
+
+class _SubmitStage(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
 
 
 class _ProviderRefusal(Exception):
@@ -91,7 +100,7 @@ class _TraceLogger(AgentLoggerBase):
 class AgentEngine:
     """Stirrup owns the loop; callbacks provide bounded file operations."""
 
-    def __init__(self, provider, dispatch, result, event, clean, deadline):
+    def __init__(self, provider, dispatch, result, event, clean, deadline, *, staged=False):
         self.provider = provider
         self.dispatch = dispatch
         self.result = result
@@ -99,6 +108,7 @@ class AgentEngine:
         self.clean = clean
         self.deadline = deadline
         self.active_boundary = "provider"
+        self.staged = staged
 
     @property
     def model_slug(self):
@@ -186,6 +196,14 @@ class AgentEngine:
             tool("read_file", "Read a UTF-8 file relative to /workspace.", _ReadFile),
             tool("write_file", "Write a UTF-8 file relative to /workspace.", _WriteFile),
         ]
+        if self.staged:
+            tools.append(
+                tool(
+                    "submit_stage",
+                    "Freeze the current solution.sh and reveal the next recorded observation.",
+                    _SubmitStage,
+                )
+            )
         agent = Agent(
             client=self,
             name="industrial_agent",

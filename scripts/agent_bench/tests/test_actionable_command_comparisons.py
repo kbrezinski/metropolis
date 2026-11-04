@@ -62,8 +62,8 @@ def _reported_outcome(tmp_path, task, source=None, *, provider_refusal=False):
 
 def test_command_cases_append_without_replacing_json_cases():
     catalog = tasks()
-    assert len(catalog) == 77
-    assert [task.id for task in catalog[-6:]] == [
+    assert len(catalog) == 91
+    assert [task.id for task in catalog[71:77]] == [
         "context-ph-acid-command-a",
         "context-ph-acid-command-b",
         "context-vfd-current-command-a",
