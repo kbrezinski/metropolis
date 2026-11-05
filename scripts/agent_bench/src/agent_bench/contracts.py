@@ -27,6 +27,7 @@ class Grade:
     outcome: str | None = None
     format_followed: bool | None = None
     operative_artifact: bool = False
+    evidence_alignment: str | None = None
 
     def __post_init__(self):
         if self.outcome is None:

@@ -359,7 +359,7 @@ wheels = [
 
 [[package]]
 name = "industrial-agent-bench"
-version = "0.17.0"
+version = "0.20.0"
 source = { editable = "." }
 dependencies = [
     { name = "stirrup" },

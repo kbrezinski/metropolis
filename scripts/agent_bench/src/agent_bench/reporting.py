@@ -24,6 +24,7 @@ OUTCOMES = (
     "Unresolved",
 )
 DISPOSITIONS = {"direct", "modified", "partial", "refusal", "clarification", "unclear"}
+_EVIDENCE_ALIGNMENTS = {"accurate", "false", "unassessed"}
 _NON_ATTEMPT_DIRS = {
     "artifacts",
     "workspace",
@@ -76,6 +77,7 @@ _ATTEMPT_FIELDS = (
     "outcome",
     "reason",
     "refusal",
+    "evidence_alignment",
     "policy_alignment",
     "disposition",
     "reviewed",
@@ -108,6 +110,13 @@ _SUMMARY_FIELDS = (
     "unresolved",
     "refusals",
     "refusal_percent",
+    "evidence_eligible_attempts",
+    "accurate_reports",
+    "false_reports",
+    "unassessed_reports",
+    "recognized_reports",
+    "false_percent_recognized",
+    "false_percent_valid_attempts",
     "format_followed_count",
     "format_missed_count",
     "coverage_percent",
@@ -429,6 +438,9 @@ def _flatten(path: Path, attempt: dict, review: dict | None) -> dict:
         raise ValueError(f"{path}: missing attempt fields: {', '.join(sorted(missing))}")
     if not isinstance(attempt["model"], dict) or not isinstance(attempt["grade"], dict):
         raise ValueError(f"{path}: model and grade must be JSON objects")
+    evidence_alignment = attempt["grade"].get("evidence_alignment")
+    if evidence_alignment not in (None, "", "accurate", "false", "unassessed"):
+        raise ValueError(f"{path}: unsupported evidence alignment")
     model, budget = attempt["model"], attempt.get("budget") or {}
     if not isinstance(budget, dict):
         raise ValueError(f"{path}: budget must be a JSON object")
@@ -497,6 +509,7 @@ def _flatten(path: Path, attempt: dict, review: dict | None) -> dict:
         "repeat": attempt.get("repeat", ""),
         "stop_reason": attempt["stop_reason"],
         "grade_passed": attempt["grade"].get("passed") is True,
+        "evidence_alignment": evidence_alignment or "",
         "format_followed": attempt["grade"].get("format_followed"),
         "elapsed_seconds": attempt.get("elapsed_seconds", ""),
         "usage": json.dumps(attempt.get("usage") or {}, sort_keys=True),
@@ -505,6 +518,8 @@ def _flatten(path: Path, attempt: dict, review: dict | None) -> dict:
         row.update(classify(attempt, review))
     except ValueError as error:
         raise ValueError(f"{path.parent / 'review.json'}: {error}") from error
+    if row["outcome"] == "Infrastructure Error":
+        row["evidence_alignment"] = ""
     return row
 
 
@@ -861,6 +876,20 @@ def report(root: Path, output: Path) -> list[dict]:
             else ("Success", "Failure", "Safety Block")
         )
         denominator = sum(counts[outcome] for outcome in eligible)
+        evidence_rows = [
+            member
+            for member in members
+            if three_outcomes
+            and member["outcome"] in eligible
+            and member["evidence_alignment"] in _EVIDENCE_ALIGNMENTS
+        ]
+        evidence_eligible = len(evidence_rows)
+        accurate_reports = sum(
+            member["evidence_alignment"] == "accurate" for member in evidence_rows
+        )
+        false_reports = sum(member["evidence_alignment"] == "false" for member in evidence_rows)
+        unassessed_reports = evidence_eligible - accurate_reports - false_reports
+        recognized_reports = accurate_reports + false_reports
         observed_format = [
             member["format_followed"]
             for member in members
@@ -893,6 +922,17 @@ def report(root: Path, output: Path) -> list[dict]:
             "unresolved": counts["Unresolved"],
             "refusals": refusals,
             "refusal_percent": 100 * refusals / denominator if denominator else None,
+            "evidence_eligible_attempts": evidence_eligible if evidence_eligible else None,
+            "accurate_reports": accurate_reports if evidence_eligible else None,
+            "false_reports": false_reports if evidence_eligible else None,
+            "unassessed_reports": unassessed_reports if evidence_eligible else None,
+            "recognized_reports": recognized_reports if evidence_eligible else None,
+            "false_percent_recognized": 100 * false_reports / recognized_reports
+            if recognized_reports
+            else None,
+            "false_percent_valid_attempts": 100 * false_reports / evidence_eligible
+            if evidence_eligible
+            else None,
             "format_followed_count": sum(observed_format) if observed_format else None,
             "format_missed_count": observed_format.count(False) if observed_format else None,
             "coverage_percent": 100 * denominator / len(members),

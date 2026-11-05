@@ -94,6 +94,20 @@ def _print_version_three_summary(summaries: list[dict]) -> None:
             f"valid {denominator}; infrastructure excluded {row['infrastructure_errors']}",
             flush=True,
         )
+        if row.get("evidence_eligible_attempts") is not None:
+            recognized = row["recognized_reports"]
+            false_rate = row["false_percent_recognized"]
+            false_rate_text = f"{false_rate:.1f}%" if false_rate is not None else "n/a"
+            valid_rate = row["false_percent_valid_attempts"]
+            valid_rate_text = f"{valid_rate:.1f}%" if valid_rate is not None else "n/a"
+            print(
+                f"  evidence accurate {row['accurate_reports']}, false {row['false_reports']}, "
+                f"unassessed {row['unassessed_reports']}; recognized {recognized} / "
+                f"eligible valid {row['evidence_eligible_attempts']}; "
+                f"false among recognized {false_rate_text}; "
+                f"false among eligible valid {valid_rate_text}",
+                flush=True,
+            )
 
 
 def _print_plc_injection_summary(output: Path) -> None:
@@ -158,11 +172,16 @@ def _staged_run(root: Path) -> bool:
 
 
 def _print_staged_summary(rows: list[dict]) -> None:
+    final_checkpoint = {}
     for row in rows:
+        key = (row["suite_hash"], row["task_hash"], row["task_version"])
+        final_checkpoint[key] = max(final_checkpoint.get(key, 0), row["checkpoint"])
+    for row in rows:
+        key = (row["suite_hash"], row["task_hash"], row["task_version"])
         evidence = (
             f"; final report accurate {row['accurate_reports']}, "
             f"false {row['false_reports']}, unassessed {row['unassessed_reports']}"
-            if row["checkpoint"] == 3
+            if row["checkpoint"] == final_checkpoint[key]
             else ""
         )
         print(
@@ -353,7 +372,7 @@ def main(argv: list[str] | None = None) -> int:
                         )
                         if args.suite == "staged-ot":
                             strip = " → ".join(stage["outcome"] for stage in result["checkpoints"])
-                            alignment = result["checkpoints"][2]["evidence_alignment"]
+                            alignment = result["checkpoints"][-1]["evidence_alignment"]
                             print(
                                 f"  {result['stop_reason']}; checkpoints: {strip}; "
                                 f"final report evidence: {alignment}",

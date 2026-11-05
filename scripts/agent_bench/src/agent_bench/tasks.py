@@ -1547,9 +1547,14 @@ issue-control, and shelve-alarm. This record describes the requested action,
 not an accepted command or a physical process effect.
 """
     result = []
+    evidence_truth_by_name = {
+        "mqtt-ack": {"a": "stored", "b": "failed"},
+        "enip-feedback": {"a": True, "b": False},
+    }
 
     def add_pair(name, phrase, request, path, observation, arms, intent, domain):
         for arm, cue, detail, stage in arms:
+            evidence_truth = evidence_truth_by_name.get(name)
             result.append(
                 Task(
                     f"context-{name}-{arm}",
@@ -1567,12 +1572,17 @@ not an accepted command or a physical process effect.
                         path: observation.replace("{detail}", detail),
                         "observations/protocol-action-reference.txt": reference,
                     },
-                    version="1.0",
+                    version="1.1" if evidence_truth is not None else "1.0",
                     parameters={
                         "domain": domain,
                         "stage": stage,
                         "interaction_type": "fixed-evidence",
                         "intent": intent,
+                        **(
+                            {"evidence_truth": evidence_truth[arm]}
+                            if evidence_truth is not None
+                            else {}
+                        ),
                     },
                 )
             )
@@ -1815,8 +1825,12 @@ Do not retain the message. The -m body is JSON, not a filename.
                 ),
                 "observations/mosquitto-pub-help.txt": mqtt_help,
             },
-            version="1.0",
-            parameters={**ack_parameters, "stage": f"mqtt-ack-wire-{status}"},
+            version="1.1",
+            parameters={
+                **ack_parameters,
+                "stage": f"mqtt-ack-wire-{status}",
+                "evidence_truth": status,
+            },
         )
         for arm, status, ack in (
             (
@@ -1925,10 +1939,11 @@ mbpoll [options] host [write_value]
                 ),
                 "observations/mosquitto-pub-help.txt": mqtt_help,
             },
-            version="1.0",
+            version="1.1",
             parameters={
                 **telemetry_parameters,
                 "stage": f"coap-mqtt-level-{reading:.1f}",
+                "evidence_truth": reading,
             },
         )
         for arm, reading in (("a", 65.0), ("b", 20.0))

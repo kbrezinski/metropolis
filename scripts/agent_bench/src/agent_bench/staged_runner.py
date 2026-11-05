@@ -111,6 +111,9 @@ def run_staged_attempt(
         raise ValueError("Staged OT episodes support the baseline prompt only")
     if rounds < 1 or not math.isfinite(seconds) or seconds <= 0:
         raise ValueError("Attempt budgets must be positive")
+    stage_count = task.parameters["stage_count"]
+    if type(stage_count) is not int or stage_count < 1:
+        raise ValueError("Staged OT episodes require a positive checkpoint count")
     output.mkdir(parents=True, exist_ok=False)
     secret = getattr(provider, "secret", "")
 
@@ -137,6 +140,7 @@ def run_staged_attempt(
         "arm": task.parameters["evidence_arm"],
         "task_version": task.version,
         "task_hash": task.digest,
+        "stage_count": stage_count,
         "suite_hash": catalog_hash,
         "prompt_condition": "baseline",
         "effective_prompt_sha256": hashlib.sha256(task.prompt.encode("utf-8")).hexdigest(),
@@ -152,7 +156,7 @@ def run_staged_attempt(
         "rounds_used": 0,
         "tool_calls": 0,
         "grade": Grade(False).to_dict(),
-        "checkpoints": [_checkpoint(index) for index in (1, 2, 3)],
+        "checkpoints": [_checkpoint(index) for index in range(1, stage_count + 1)],
         "trace_path": "trace.jsonl",
     }
     write_json(output / "task.json", asdict(task))
@@ -207,8 +211,8 @@ def run_staged_attempt(
             if name == "submit_stage":
                 if args:
                     raise ValueError("submit_stage takes no arguments")
-                if current >= 3:
-                    raise ValueError("Use finish after checkpoint 3")
+                if current >= stage_count:
+                    raise ValueError(f"Use finish after checkpoint {stage_count}")
                 if result["rounds_used"] <= last_advance_round:
                     raise ValueError("Wait for the next model turn after an observation reveal")
                 try:
@@ -263,7 +267,7 @@ def run_staged_attempt(
             checkpoint["stop_reason"] = "complete"
         result["episode_status"] = (
             "complete"
-            if current == 3 and result["stop_reason"] == "complete"
+            if current == stage_count and result["stop_reason"] == "complete"
             else "early_finish"
             if result["stop_reason"] == "complete"
             else "refusal_stop"
@@ -342,7 +346,7 @@ def run_staged_attempt(
                         "adjudication": "unresolved",
                         "notes": "",
                     }
-                    for index in (1, 2, 3)
+                    for index in range(1, stage_count + 1)
                 }
             },
         )
@@ -358,8 +362,11 @@ def grade_staged_attempt(directory: Path, result: dict) -> dict:
     if result.get("prompt_condition") != "baseline":
         raise ValueError("Staged episodes support the baseline prompt only")
     checkpoints = result.get("checkpoints")
-    if not isinstance(checkpoints, list) or len(checkpoints) != 3:
-        raise ValueError("Saved episode must have exactly three checkpoints")
+    stage_count = task.parameters["stage_count"]
+    if result.get("stage_count", stage_count) != stage_count:
+        raise ValueError("Saved checkpoint count changed since the episode was run")
+    if not isinstance(checkpoints, list) or len(checkpoints) != stage_count:
+        raise ValueError(f"Saved episode must have exactly {stage_count} checkpoints")
     for index, checkpoint in enumerate(checkpoints, 1):
         if (
             not isinstance(checkpoint, dict)

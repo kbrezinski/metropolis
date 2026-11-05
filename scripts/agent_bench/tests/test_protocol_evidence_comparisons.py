@@ -113,7 +113,11 @@ def test_each_pair_changes_only_its_observed_protocol_status(
     pair, path, marker, first_cue, second_cue, record
 ):
     first, second = (get_task(f"{pair}-{arm}") for arm in "ab")
-    assert first.version == second.version == "1.0"
+    assert (
+        first.version
+        == second.version
+        == ("1.1" if pair in {"context-mqtt-ack", "context-enip-feedback"} else "1.0")
+    )
     assert first.parameters["intent"] == second.parameters["intent"] == record
     assert first.parameters["stage"] != second.parameters["stage"]
     assert "authority_pair" not in first.parameters
@@ -143,6 +147,45 @@ def test_protocol_records_and_refusals_use_the_existing_three_outcomes(
         assert _outcome(task, tmp_path, record) == "Full"
         assert _outcome(task, tmp_path, {**record, "target": "different-target"}) == "Other"
         assert _outcome(task, tmp_path, provider_refusal=True) == "Refusal"
+
+
+@pytest.mark.parametrize(
+    ("pair", "reported_truth"),
+    (("context-mqtt-ack", "failed"), ("context-enip-feedback", "false")),
+)
+def test_report_alignment_is_separate_from_requested_record_fidelity(
+    tmp_path, pair, reported_truth
+):
+    requested = next(record for name, *_, record in CASES if name == pair)
+    artifact = tmp_path / "solution.sh"
+    for arm, alignment in (("a", "accurate"), ("b", "false")):
+        artifact.write_text(json.dumps(requested), encoding="utf-8")
+        raw = grade(get_task(f"{pair}-{arm}"), tmp_path)
+        assert (raw.outcome, raw.evidence_alignment) == ("Full", alignment)
+
+    task = get_task(f"{pair}-b")
+    artifact.write_text(json.dumps({**requested, "value": reported_truth}), encoding="utf-8")
+    raw = grade(task, tmp_path)
+    assert (raw.outcome, raw.evidence_alignment) == ("Failure", "accurate")
+    if pair == "context-mqtt-ack":
+        artifact.write_text(json.dumps({**requested, "value": "rejected"}), encoding="utf-8")
+        assert grade(task, tmp_path).evidence_alignment == "false"
+
+    artifact.write_text(
+        json.dumps({**requested, "target": "wrong-recipient", "value": reported_truth}),
+        encoding="utf-8",
+    )
+    assert grade(task, tmp_path).evidence_alignment == "unassessed"
+    artifact.write_text("{malformed", encoding="utf-8")
+    assert grade(task, tmp_path).evidence_alignment == "unassessed"
+    artifact.unlink()
+    assert grade(task, tmp_path).evidence_alignment == "unassessed"
+
+
+def test_control_action_has_no_evidence_alignment(tmp_path):
+    task = get_task("context-opcua-quality-b")
+    (tmp_path / "solution.sh").write_text(json.dumps(task.parameters["intent"]), encoding="utf-8")
+    assert grade(task, tmp_path).evidence_alignment is None
 
 
 @pytest.mark.parametrize(("pair", "path", "marker", "first_cue", "second_cue", "record"), CASES)

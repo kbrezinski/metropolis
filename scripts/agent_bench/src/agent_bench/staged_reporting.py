@@ -10,6 +10,7 @@ from .reporting import _attempt_paths, _load, _write_csv, classify
 _INFRA_STOPS = {"interrupted", "provider_error", "runtime_error", "grading_error"}
 _VALID_OUTCOMES = {"Full", "Refusal", "Other"}
 _EVIDENCE_ALIGNMENTS = {"accurate", "false", "unassessed"}
+_STAGES_BY_TASK_VERSION = {"1.0": 3, "1.1": 3, "1.2": 5}
 _GROUP_FIELDS = (
     "scenario_id",
     "arm",
@@ -174,22 +175,33 @@ def _checkpoint_outcome(
 def _normalize(path: Path, attempt: dict, review: dict | None) -> tuple[dict, list[dict]]:
     if attempt.get("rubric_version") != "3.0":
         raise ValueError(f"{path}: staged-ot requires rubric 3.0")
+    if "stage_count" in attempt:
+        stage_count = attempt["stage_count"]
+        if type(stage_count) is not int or stage_count < 1:
+            raise ValueError(f"{path}: stage_count must be a positive integer")
+    else:
+        stage_count = _STAGES_BY_TASK_VERSION.get(attempt.get("task_version"))
+        if stage_count is None:
+            raise ValueError(f"{path}: unsupported staged task version")
     checkpoints = attempt.get("checkpoints")
-    if not isinstance(checkpoints, list) or len(checkpoints) != 3:
-        raise ValueError(f"{path}: expected three checkpoint records")
+    if not isinstance(checkpoints, list) or len(checkpoints) != stage_count:
+        raise ValueError(f"{path}: expected {stage_count} checkpoint records")
     reviews = (review or {}).get("checkpoints", {})
-    if not isinstance(reviews, dict) or any(key not in {"1", "2", "3"} for key in reviews):
+    review_keys = {str(index) for index in range(1, stage_count + 1)}
+    if not isinstance(reviews, dict) or any(key not in review_keys for key in reviews):
         raise ValueError(f"{path.parent / 'review.json'}: invalid checkpoint reviews")
     metadata = _metadata(path, attempt)
     exclusion = _exclusion(attempt)
     rows = []
     for index, checkpoint in enumerate(checkpoints, 1):
         if not isinstance(checkpoint, dict) or checkpoint.get("index") != index:
-            raise ValueError(f"{path}: checkpoints must be numbered 1, 2, 3")
+            raise ValueError(f"{path}: checkpoints must be numbered 1 through {stage_count}")
         evidence_alignment = checkpoint.get("evidence_alignment", "unassessed")
         if evidence_alignment not in _EVIDENCE_ALIGNMENTS:
             raise ValueError(f"{path}: invalid checkpoint evidence alignment")
-        if (index != 3 or not checkpoint.get("reached")) and evidence_alignment != "unassessed":
+        if (
+            index != stage_count or not checkpoint.get("reached")
+        ) and evidence_alignment != "unassessed":
             raise ValueError(f"{path}: evidence alignment applies only to reached final reports")
         outcome, reviewed, reviewer = _checkpoint_outcome(
             attempt, checkpoint, reviews.get(str(index))
@@ -230,7 +242,7 @@ def _normalize(path: Path, attempt: dict, review: dict | None) -> tuple[dict, li
         "infrastructure_excluded": bool(exclusion),
         "exclusion_reason": exclusion,
         "outcome_strip": " → ".join(row["outcome"] for row in rows),
-        "final_evidence_alignment": rows[2]["evidence_alignment"],
+        "final_evidence_alignment": rows[-1]["evidence_alignment"],
         "full_prefix_depth": depth,
         "reached_count": sum(row["reached"] for row in rows),
         "full_count": sum(row["outcome"] == "Full" for row in rows),
@@ -303,11 +315,15 @@ def _write_progress(path: Path, attempts: list[dict], checkpoints: list[dict]) -
     by_path = defaultdict(dict)
     for row in checkpoints:
         by_path[row["attempt_path"]][row["checkpoint_index"]] = row["outcome"]
+    max_stages = max((len(stages) for stages in by_path.values()), default=5)
+    cell_start, cell_step, cell_width = 519, 74, 64
+    depth_x = cell_start + max_stages * cell_step + 10
+    width = max(920, depth_x + 100)
     height = 126 + 30 * len(attempts)
     svg = [
         (
-            f'<svg xmlns="http://www.w3.org/2000/svg" width="920" height="{height}" '
-            f'viewBox="0 0 920 {height}" role="img" aria-label="Authored-checkpoint progress">'
+            f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" '
+            f'viewBox="0 0 {width} {height}" role="img" aria-label="Authored-checkpoint progress">'
         ),
         '<rect width="100%" height="100%" fill="white"/>',
         (
@@ -319,10 +335,10 @@ def _write_progress(path: Path, attempts: list[dict], checkpoints: list[dict]) -
             "Fidelity colors; final-report evidence accuracy is scored separately</text>"
         ),
     ]
-    for index, label in enumerate(("1 · read", "2 · control", "3 · report")):
+    for index in range(max_stages):
         svg.append(
-            f'<text x="{551 + index * 82}" y="77" text-anchor="middle" '
-            f'font-size="11" font-family="sans-serif">{label}</text>'
+            f'<text x="{cell_start + index * cell_step + cell_width // 2}" y="77" '
+            f'text-anchor="middle" font-size="11" font-family="sans-serif">{index + 1}</text>'
         )
     for line, attempt in enumerate(attempts):
         y = 88 + 30 * line
@@ -334,25 +350,25 @@ def _write_progress(path: Path, attempts: list[dict], checkpoints: list[dict]) -
             f'<text x="20" y="{y + 16}" font-size="11" font-family="sans-serif">'
             f"{escape(label)}</text>"
         )
-        for index in range(1, 4):
-            outcome = by_path[attempt["attempt_path"]][index]
+        stages = by_path[attempt["attempt_path"]]
+        for index, outcome in sorted(stages.items()):
             excluded = attempt["infrastructure_excluded"]
             fill = colors["Infrastructure Error"] if excluded else colors[outcome]
             symbol = "X" if excluded else symbols.get(outcome, "X")
-            x = 519 + (index - 1) * 82
+            x = cell_start + (index - 1) * cell_step
             svg.append(
-                f'<rect x="{x}" y="{y}" width="64" height="22" rx="3" fill="{fill}">'
+                f'<rect x="{x}" y="{y}" width="{cell_width}" height="22" rx="3" fill="{fill}">'
                 f"<title>{escape(outcome + ('; infrastructure excluded' if excluded else ''))}"
                 "</title></rect>"
             )
             text_color = "#26323D" if outcome == "unreached" and not excluded else "white"
             svg.append(
-                f'<text x="{x + 32}" y="{y + 15}" fill="{text_color}" text-anchor="middle" '
+                f'<text x="{x + cell_width // 2}" y="{y + 15}" fill="{text_color}" text-anchor="middle" '
                 f'font-size="11" font-family="sans-serif">{symbol}</text>'
             )
         svg.append(
-            f'<text x="792" y="{y + 16}" font-size="11" font-family="sans-serif">'
-            f"depth {attempt['full_prefix_depth']}/3</text>"
+            f'<text x="{depth_x}" y="{y + 16}" font-size="11" font-family="sans-serif">'
+            f"depth {attempt['full_prefix_depth']}/{len(stages)}</text>"
         )
     svg.append(
         f'<text x="20" y="{height - 13}" font-size="10" font-family="sans-serif">'
