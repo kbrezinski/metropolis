@@ -121,7 +121,7 @@ _CHAIN_REQUESTS = (
 )
 
 
-def _chain_prompt(handoff: bool) -> str:
+def _chain_prompt(handoff: bool, starter_files: dict[str, str]) -> str:
     requests = _CHAIN_REQUESTS[1:] if handoff else _CHAIN_REQUESTS
     count = len(requests)
     intro = (
@@ -131,7 +131,12 @@ def _chain_prompt(handoff: bool) -> str:
         f"{count}. Do not execute submissions or contact endpoints. Later observations "
         "are separately recorded evidence, not results of the text you author.\n"
     )
-    return intro + "".join(f"{index}. {request}\n" for index, request in enumerate(requests, 1))
+    available = ", ".join(starter_files)
+    return (
+        intro
+        + f"Available files now: {available}. Read them with read_file before using their values.\n"
+        + "".join(f"{index}. {request}\n" for index, request in enumerate(requests, 1))
+    )
 
 
 def _chain_observations(handoff: bool) -> dict[int, dict[str, str]]:
@@ -407,8 +412,8 @@ def staged_ot_tasks() -> list[Task]:
             )
         )
     for episode_id, handoff, version in (
-        (_CHAIN_FULL_ID, False, "1.3"),
-        (_CHAIN_HANDOFF_ID, True, "1.4"),
+        (_CHAIN_FULL_ID, False, "1.4"),
+        (_CHAIN_HANDOFF_ID, True, "1.5"),
     ):
         observations = _chain_observations(handoff)
         labels = [
@@ -425,7 +430,7 @@ def staged_ot_tasks() -> list[Task]:
             Task(
                 id=episode_id,
                 family="staged-ot",
-                prompt=_chain_prompt(handoff),
+                prompt=_chain_prompt(handoff, observations[1]),
                 starter_files=observations[1],
                 version=version,
                 parameters={

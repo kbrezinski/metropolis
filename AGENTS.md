@@ -18,6 +18,7 @@ Repository guidance. Do not update CLAUDE.md.
 ## Testing instructions
 
 - For unit test authoring, review, or audits, use [metropolis-test-audit](.agents/skills/metropolis-test-audit/SKILL.md).
+- For blind `agent_bench` assessments, use [metropolosis-testbed-run](.agents/skills/metropolosis-testbed-run/SKILL.md).
 
 ```bash
 uv run pytest

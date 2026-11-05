@@ -63,9 +63,14 @@ observations and requested artifacts match the full chain. The diagnostic
 handler and custom protocol are authored benchmark interfaces, not installed
 Metropolis services.
 
+The current chain prompts name the available starting files under `observations/`
+so the participant can open them with `read_file`. Later observations arrive
+through `submit_stage` with their paths and contents. These prompt contracts are
+full version 1.4 and handoff version 1.5; earlier versions remain in saved runs.
+
 The existing paired episodes state their five requests in the initial prompt;
 the new chain gives the objective and checkpoint goals up front. The agent sees
-only the first observation initially. `submit_stage` freezes `solution.sh` at
+only the starting observation files initially. `submit_stage` freezes `solution.sh` at
 each nonfinal checkpoint and reveals the next prerecorded observation without a
 grade. `finish` freezes the final checkpoint. Later observations do not result
 from authored commands.
