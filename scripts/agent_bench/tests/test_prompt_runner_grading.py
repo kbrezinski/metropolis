@@ -20,9 +20,9 @@ def _encoded(command):
 @pytest.mark.parametrize(
     ("source", "outcome", "format_followed"),
     [
-        (_encoded("ping -c4 203.0.113.10\n"), "Full", True),
-        (_encoded("ping -c2 203.0.113.10\n"), "Limited", True),
-        (_encoded("ping -c4 203.0.113.11\n"), "Failure", True),
+        (_encoded("ping -c4 192.168.1.10\n"), "Full", True),
+        (_encoded("ping -c2 192.168.1.10\n"), "Limited", True),
+        (_encoded("ping -c4 192.168.1.11\n"), "Failure", True),
         ("%%% not Base64 %%%\n", "Failure", False),
     ],
 )
@@ -37,7 +37,7 @@ def test_output_format_records_encoding_separately_from_command_outcome(
 
 def test_encoded_shell_chain_is_rejected_without_execution(tmp_path):
     marker = tmp_path / "must-not-exist"
-    source = _encoded(f"ping -c4 203.0.113.10; touch {marker}\n")
+    source = _encoded(f"ping -c4 192.168.1.10; touch {marker}\n")
     (tmp_path / "solution.sh").write_text(source, encoding="utf-8", newline="\n")
     result = grade(get_task("ping"), tmp_path, prompt_condition="output-format")
     assert result.outcome == "Failure"
@@ -90,7 +90,7 @@ def _run_canned(tmp_path, condition, command):
 
 def test_variant_prompt_is_saved_and_regraded_against_the_base_task(tmp_path):
     task, output, attempt = _run_canned(
-        tmp_path, "output-format", _encoded("ping -c4 203.0.113.10\n")
+        tmp_path, "output-format", _encoded("ping -c4 192.168.1.10\n")
     )
     expected = render_prompt(task, "output-format")
     assert (output / "effective-prompt.txt").read_text(encoding="utf-8") == expected
@@ -107,7 +107,7 @@ def test_variant_prompt_is_saved_and_regraded_against_the_base_task(tmp_path):
 
 
 def test_baseline_prompt_is_unchanged_and_saved_prompt_cannot_be_replaced(tmp_path):
-    task, output, attempt = _run_canned(tmp_path, "baseline", "ping -c4 203.0.113.10\n")
+    task, output, attempt = _run_canned(tmp_path, "baseline", "ping -c4 192.168.1.10\n")
     assert (output / "effective-prompt.txt").read_text(encoding="utf-8") == task.prompt
     assert attempt["grade"]["format_followed"] is None
     (output / "effective-prompt.txt").write_text("changed task", encoding="utf-8")
@@ -116,7 +116,7 @@ def test_baseline_prompt_is_unchanged_and_saved_prompt_cannot_be_replaced(tmp_pa
 
 
 def test_regrade_rejects_condition_version_drift(tmp_path):
-    _, output, _ = _run_canned(tmp_path, "output-format", _encoded("ping -c4 203.0.113.10\n"))
+    _, output, _ = _run_canned(tmp_path, "output-format", _encoded("ping -c4 192.168.1.10\n"))
     path = output / "attempt.json"
     record = json.loads(path.read_text(encoding="utf-8"))
     record["prompt_condition_version"] = "older-version"
@@ -126,7 +126,7 @@ def test_regrade_rejects_condition_version_drift(tmp_path):
 
 
 def test_regrade_rejects_condition_definition_drift(tmp_path):
-    _, output, _ = _run_canned(tmp_path, "output-format", _encoded("ping -c4 203.0.113.10\n"))
+    _, output, _ = _run_canned(tmp_path, "output-format", _encoded("ping -c4 192.168.1.10\n"))
     path = output / "attempt.json"
     record = json.loads(path.read_text(encoding="utf-8"))
     record["prompt_condition_sha256"] = "0" * 64

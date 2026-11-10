@@ -15,7 +15,7 @@ from .contracts import AttemptLimit, InfrastructureError
 
 
 def engine_metadata(provider, *, staged: bool = False) -> dict:
-    return {
+    metadata = {
         "name": "stirrup",
         "version": version("stirrup"),
         "config": {
@@ -40,6 +40,17 @@ def engine_metadata(provider, *, staged: bool = False) -> dict:
             "dependencies": {name: version(name) for name in ("openai", "httpx", "pydantic")},
         },
     }
+    if provider.config.get("endpoint", "").startswith(("http://", "https://")):
+        metadata["config"]["provider"] = provider.config.get("provider", "openai-compatible")
+        if provider.config.get("upstream_provider"):
+            metadata["config"]["upstream_provider"] = provider.config["upstream_provider"]
+        if provider.config.get("provider") == "openrouter":
+            metadata["config"]["routing"] = {
+                "only": [provider.config["upstream_provider"]],
+                "allow_fallbacks": False,
+                "require_parameters": True,
+            }
+    return metadata
 
 
 class _ReadFile(BaseModel):
@@ -79,9 +90,11 @@ class _TraceLogger(AgentLoggerBase):
     debug = info = warning = error = _ignore
 
     def user_message(self, message):
+        self.engine.history.append(message)
         self.engine.event("engine_message", message=message.model_dump(mode="json"))
 
     def tool_result(self, message):
+        self.engine.history.append(message)
         result = self.engine.result
         result["tool_calls"] += 1
         if message.name != "finish":
@@ -109,6 +122,7 @@ class AgentEngine:
         self.deadline = deadline
         self.active_boundary = "provider"
         self.staged = staged
+        self.history = []
 
     @property
     def model_slug(self):
@@ -130,6 +144,7 @@ class AgentEngine:
 
     async def generate(self, messages, tools):
         self.active_boundary = "provider"
+        self.history = list(messages)
         context = [message.model_dump(mode="json") for message in messages]
         if not self.result["rounds_used"]:
             self.event("initial_context", messages=context, task_hash=self.result["task_hash"])
@@ -153,19 +168,42 @@ class AgentEngine:
                 self.provider.generate(messages, tools), timeout=remaining
             )
         except TimeoutError:
-            self.event("model_error", error="Attempt deadline exceeded")
+            usage = getattr(self.provider, "last_usage", {})
+            metadata = getattr(self.provider, "last_response_metadata", None)
+            self.record_usage(usage)
+            self.record_provider_response(metadata)
+            self.event(
+                "model_error",
+                error="Attempt deadline exceeded",
+                usage=usage,
+                provider_response=metadata,
+            )
             raise AttemptLimit(
                 "Attempt wall-clock budget exhausted during provider request"
             ) from None
         except (AttemptLimit, InfrastructureError) as exc:
             usage = getattr(self.provider, "last_usage", {})
             self.record_usage(usage)
+            self.record_provider_response(getattr(self.provider, "last_response_metadata", None))
+            if getattr(self.provider, "fatal_error", None):
+                self.result["model_error"] = self.clean(self.provider.fatal_error)
             self.event("model_error", error=str(exc), usage=usage)
             raise
-        self.remaining()  # A late response must never dispatch tools.
         reply = AssistantMessage.model_validate_json(self.clean(reply.model_dump_json()))
+        self.record_provider_response(reply.metadata.get("provider_response"))
         usage = reply.metadata.get("usage", reply.token_usage.model_dump())
         self.record_usage(usage)
+        try:
+            self.remaining()  # A late response must never dispatch tools.
+        except AttemptLimit:
+            self.event(
+                "model_error",
+                error="Provider response arrived after the attempt deadline",
+                usage=usage,
+                provider_response=reply.metadata.get("provider_response"),
+            )
+            raise
+        self.history.append(reply)
         refusal = bool(reply.metadata.get("provider_refusal"))
         self.result["provider_refusal"] |= refusal
         self.result["final_response"] = joined_text(reply.blocks)
@@ -181,6 +219,12 @@ class AgentEngine:
         if refusal:
             raise _ProviderRefusal
         return reply
+
+    def record_provider_response(self, metadata):
+        if metadata:
+            self.result.setdefault("provider_responses", []).append(
+                json.loads(self.clean(json.dumps(metadata)))
+            )
 
     async def _run(self, prompt, system_prompt, rounds):
         def tool(name, description, parameters):
@@ -200,7 +244,7 @@ class AgentEngine:
             tools.append(
                 tool(
                     "submit_stage",
-                    "Freeze the current solution.sh and reveal the next recorded observation.",
+                    "Submit the current solution.sh and receive the next observation.",
                     _SubmitStage,
                 )
             )
@@ -221,7 +265,9 @@ class AgentEngine:
         async with agent.session(
             resume=False, cache_on_interrupt=False, clear_cache_on_success=False
         ) as session:
-            finish, _, _ = await session.run(prompt)
+            finish, history, _ = await session.run(prompt)
+            if history:
+                self.history = list(history[-1])
         if finish is None:
             self.result["stop_reason"] = "round_limit"
         else:

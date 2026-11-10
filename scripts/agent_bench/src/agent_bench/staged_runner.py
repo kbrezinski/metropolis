@@ -10,6 +10,7 @@ from pathlib import Path
 
 from . import __version__
 from .contracts import AttemptLimit, Grade, InfrastructureError, Task
+from .decision_summary import api_summary_enabled, collect_api_summary, save_unavailable_summary
 from .engine import AgentEngine, engine_metadata
 from .reporting import classify
 from .runner import SYSTEM_PROMPT, _submission_manifest, suite_hash, utc_now, write_json
@@ -144,7 +145,10 @@ def run_staged_attempt(
         "suite_hash": catalog_hash,
         "prompt_condition": "baseline",
         "effective_prompt_sha256": hashlib.sha256(task.prompt.encode("utf-8")).hexdigest(),
-        "model": {key: model.get(key) for key in ("alias", "id", "endpoint", "reasoning")},
+        "model": {
+            key: model.get(key)
+            for key in ("alias", "id", "endpoint", "reasoning", "provider", "upstream_provider")
+        },
         "repeat": repeat,
         "started_utc": utc_now(),
         "budget": {"rounds": rounds, "seconds": seconds},
@@ -153,6 +157,7 @@ def run_staged_attempt(
         "provider_refusal": False,
         "final_response": "",
         "usage": {},
+        "provider_responses": [],
         "rounds_used": 0,
         "tool_calls": 0,
         "grade": Grade(False).to_dict(),
@@ -279,7 +284,7 @@ def run_staged_attempt(
         source = output / active["submission_path"] / "solution.sh"
         if source.exists():
             (final_submission / "solution.sh").write_bytes(source.read_bytes())
-        if after_freeze is not None:
+        if after_freeze is not None or api_summary_enabled(provider):
             engine.active_boundary = "runtime"
             frozen = {
                 checkpoint["index"]: _submission_manifest(output / checkpoint["submission_path"])
@@ -287,7 +292,38 @@ def run_staged_attempt(
                 if checkpoint["reached"]
             }
             event("submission_frozen", submission_sha256=frozen)
-            after_freeze(final_submission)
+            final_manifest = _submission_manifest(final_submission)
+            if after_freeze is not None:
+                after_freeze(final_submission)
+            else:
+                snapshots = {}
+                for checkpoint in result["checkpoints"]:
+                    artifact = output / checkpoint["submission_path"] / "solution.sh"
+                    snapshots[str(checkpoint["index"])] = (
+                        {
+                            "content": artifact.read_text(encoding="utf-8"),
+                            "sha256": checkpoint["artifact_sha256"],
+                        }
+                        if checkpoint["reached"] and artifact.is_file()
+                        else None
+                    )
+                summary = collect_api_summary(
+                    provider,
+                    engine,
+                    final_submission,
+                    artifact_path="solution.sh",
+                    submission_sha256=final_manifest,
+                    checkpoints=snapshots,
+                )
+                result["decision_summary"] = {
+                    "path": "decision-summary.json",
+                    "status": summary["status"],
+                    "usage": summary["usage"],
+                }
+                if summary.get("model_error"):
+                    result["model_error"] = summary["model_error"]
+            if _submission_manifest(final_submission) != final_manifest:
+                raise InfrastructureError("Frozen final submission changed during collection")
             for checkpoint in result["checkpoints"]:
                 if (
                     checkpoint["reached"]
@@ -319,6 +355,19 @@ def run_staged_attempt(
         ).to_dict()
         raise
     finally:
+        if (
+            api_summary_enabled(provider)
+            and "decision_summary" not in result
+            and not (output / "decision-summary.json").exists()
+        ):
+            summary = save_unavailable_summary(
+                output, "Generation ended before summary collection", secret=secret
+            )
+            result["decision_summary"] = {
+                "path": "decision-summary.json",
+                "status": summary["status"],
+                "usage": {},
+            }
         result.setdefault("elapsed_seconds", round(time.monotonic() - start, 3))
         infrastructure_error = result["grade"].get("infrastructure_error")
         if infrastructure_error:

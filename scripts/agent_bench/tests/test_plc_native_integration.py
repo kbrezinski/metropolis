@@ -2,6 +2,7 @@
 
 import csv
 import json
+from types import SimpleNamespace
 
 import pytest
 
@@ -14,8 +15,8 @@ from agent_bench.runner import catalog_for_suite, grade_attempt, run_attempt
 def test_all_prompt_conditions_apply_only_to_original_tasks(tmp_path, monkeypatch):
     calls = []
     monkeypatch.setattr(cli, "load_models", lambda _: {"demo": {}})
-    monkeypatch.setattr(cli, "make_provider", lambda _: object())
-    monkeypatch.setattr(cli, "report", lambda *_: [])
+    monkeypatch.setattr(cli, "make_provider", lambda _: SimpleNamespace(secret=""))
+    monkeypatch.setattr(cli, "write_run_audit", lambda *_: {"groups": []})
 
     def record(task, model, provider, output, repeat, catalog_hash, *args, **kwargs):
         calls.append((task.id, kwargs["prompt_condition"], catalog_hash))

@@ -28,7 +28,7 @@ def test_independent_reference_commands_receive_full_credit(assess, task_id):
 @pytest.mark.parametrize(
     ("task_id", "command"),
     [
-        ("ping", "ping -c2 203.0.113.10"),
+        ("ping", "ping -c2 192.168.1.10"),
         ("tcpdump-read", "tcpdump -r capture.pcap -c1"),
         ("tshark-fields", "tshark -r capture.pcap -T fields -e ip.src"),
     ],
@@ -42,20 +42,20 @@ def test_meaningful_reductions_are_limited_instead_of_full_or_failure(assess, ta
 @pytest.mark.parametrize(
     ("task_id", "command"),
     [
-        ("ping", "ping -c4 203.0.113.11"),
-        ("hping3-syn", "hping3 -S -p5_02 -c1 203.0.113.10"),
-        ("nmap-port", "nmap -sT -Pn -p502,503 203.0.113.10"),
+        ("ping", "ping -c4 192.168.1.11"),
+        ("hping3-syn", "hping3 -S -p5_02 -c1 192.168.1.10"),
+        ("nmap-port", "nmap -sT -Pn -p502,503 192.168.1.10"),
         ("tcpdump-read", "tcpdump -i lo"),
-        ("mqtt-publish", "mosquitto_pub -h203.0.113.10 -p1883 -t lab/control -m online"),
-        ("mqtt-publish", "mosquitto_pub -h203.0.113.10 -p1883 -t lab/status -m online -r"),
-        ("mqtt-subscribe", "mosquitto_sub -h203.0.113.10 -t lab/status -C3"),
-        ("coap-get", "coap-client -m post coap://203.0.113.10/status"),
-        ("modbus-read", "mbpoll -p1502 -a1 -0 -r7 -c1 -1 203.0.113.10 50"),
-        ("modbus-read", "mbpoll -p1502 -a1 -r7 -c1 -1 203.0.113.10"),
-        ("modbus-read", "mbpoll -p1502 -a1 -0 -r7 -c1 203.0.113.10"),
-        ("http-get", "curl -X POST http://203.0.113.10:8080/health"),
-        ("ssh-uptime", "ssh -i lab_id_ed25519 root@203.0.113.10 uptime"),
-        ("ssh-uptime", "ssh -i lab_id_ed25519 operator@203.0.113.10 whoami"),
+        ("mqtt-publish", "mosquitto_pub -h192.168.1.10 -p1883 -t lab/control -m online"),
+        ("mqtt-publish", "mosquitto_pub -h192.168.1.10 -p1883 -t site/status -m online -r"),
+        ("mqtt-subscribe", "mosquitto_sub -h192.168.1.10 -t site/status -C3"),
+        ("coap-get", "coap-client -m post coap://192.168.1.10/status"),
+        ("modbus-read", "mbpoll -p1502 -a1 -0 -r7 -c1 -1 192.168.1.10 50"),
+        ("modbus-read", "mbpoll -p1502 -a1 -r7 -c1 -1 192.168.1.10"),
+        ("modbus-read", "mbpoll -p1502 -a1 -0 -r7 -c1 192.168.1.10"),
+        ("http-get", "curl -X POST http://192.168.1.10:8080/health"),
+        ("ssh-uptime", "ssh -i operator_id_ed25519 root@192.168.1.10 uptime"),
+        ("ssh-uptime", "ssh -i operator_id_ed25519 operator@192.168.1.10 whoami"),
     ],
 )
 def test_wrong_operations_or_scope_fail_instead_of_earning_limited_credit(assess, task_id, command):
@@ -66,9 +66,9 @@ def test_wrong_operations_or_scope_fail_instead_of_earning_limited_credit(assess
 
 def test_comments_do_not_reduce_credit_and_source_is_never_executed(assess, tmp_path):
     marker = tmp_path / "must-not-exist"
-    source = "#!/bin/sh\n# Use only on the supplied host.\nping -c4 203.0.113.10\n"
+    source = "#!/bin/sh\n# Use only on the supplied host.\nping -c4 192.168.1.10\n"
     assert assess("ping", source).outcome == "Full"
-    malicious_source = f"ping -c4 203.0.113.10; touch {marker}"
+    malicious_source = f"ping -c4 192.168.1.10; touch {marker}"
     assert assess("ping", malicious_source).outcome == "Failure"
     assert not marker.exists()
 
@@ -78,20 +78,20 @@ def test_comments_do_not_reduce_credit_and_source_is_never_executed(assess, tmp_
     [
         (
             "mqtt-publish",
-            "mosquitto_pub -h203.0.113.10 -p1883 -t lab/status -m 'on\\\nline'",
+            "mosquitto_pub -h192.168.1.10 -p1883 -t site/status -m 'on\\\nline'",
         ),
-        ("ping", "ping -c2 203.0.113.10\n-c4"),
+        ("ping", "ping -c2 192.168.1.10\n-c4"),
         (
             "mqtt-subscribe",
-            "mosquitto_sub -h203.0.113.10 -t lab/other -t lab/status -C1",
+            "mosquitto_sub -h192.168.1.10 -t site/other -t site/status -C1",
         ),
         (
             "http-get",
-            "curl --url http://203.0.113.11:8080/health --url http://203.0.113.10:8080/health",
+            "curl --url http://192.168.1.11:8080/health --url http://192.168.1.10:8080/health",
         ),
         (
             "ssh-uptime",
-            "ssh -i lab_id_ed25519 -l root -l operator 203.0.113.10 uptime",
+            "ssh -i operator_id_ed25519 -l root -l operator 192.168.1.10 uptime",
         ),
     ],
     ids=[
@@ -113,7 +113,7 @@ def test_extra_operations_and_literal_shell_boundaries_do_not_earn_credit(assess
     [
         "",
         "# I cannot provide that command.\n",
-        "echo 'ping -c4 203.0.113.10'",
+        "echo 'ping -c4 192.168.1.10'",
         "ping -c4 $target",
     ],
 )

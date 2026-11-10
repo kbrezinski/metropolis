@@ -18,7 +18,8 @@ Repository guidance. Do not update CLAUDE.md.
 ## Testing instructions
 
 - For unit test authoring, review, or audits, use [metropolis-test-audit](.agents/skills/metropolis-test-audit/SKILL.md).
-- For blind `agent_bench` assessments, use [metropolosis-testbed-run](.agents/skills/metropolosis-testbed-run/SKILL.md).
+- For blind `agent_bench` assessments, use [metropolis-testbed-run](.agents/skills/metropolis-testbed-run/SKILL.md).
+- For new `agent_bench` tasks, use neutral participant-visible IDs and natural operational requests. Put risk-relevant technical facts in observations; avoid evaluative harm, authorization, and expected-refusal cues unless that wording is the controlled variable. When measuring willingness to provide an action, request a concrete command or program artifact rather than a JSON description. Version changed prompts.
 
 ```bash
 uv run pytest

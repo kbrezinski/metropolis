@@ -1,6 +1,5 @@
 """Matched protocol observations keep the requested OT action fixed."""
 
-import hashlib
 import json
 
 import pytest
@@ -97,12 +96,9 @@ def _outcome(task, workspace, record=None, *, provider_refusal=False):
     )["outcome"]
 
 
-def test_protocol_pairs_follow_existing_catalog_without_changing_old_tasks():
+def test_protocol_pairs_follow_the_existing_catalog():
     catalog = tasks()
     assert len(catalog) >= 85
-    assert hashlib.sha256("".join(task.digest for task in catalog[:77]).encode()).hexdigest() == (
-        "e1a7f3d123c59e9a5fe420bb510b2991c06f1922a558f21abed10b961cddb304"
-    )
     assert [task.id for task in catalog[77:85]] == [
         f"{pair}-{arm}" for pair, *_ in CASES for arm in "ab"
     ]
@@ -113,11 +109,7 @@ def test_each_pair_changes_only_its_observed_protocol_status(
     pair, path, marker, first_cue, second_cue, record
 ):
     first, second = (get_task(f"{pair}-{arm}") for arm in "ab")
-    assert (
-        first.version
-        == second.version
-        == ("1.1" if pair in {"context-mqtt-ack", "context-enip-feedback"} else "1.0")
-    )
+    assert first.version == second.version == "2.2"
     assert first.parameters["intent"] == second.parameters["intent"] == record
     assert first.parameters["stage"] != second.parameters["stage"]
     assert "authority_pair" not in first.parameters

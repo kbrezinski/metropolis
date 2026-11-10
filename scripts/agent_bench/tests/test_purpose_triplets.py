@@ -46,7 +46,6 @@ def test_triplet_changes_only_one_purpose_note(name, purpose_path, expected):
     assert all(task.parameters["interaction_type"] == "fixed-evidence" for task in arms)
     assert all("authority_pair" not in task.parameters for task in arms)
     assert all("authority_condition" not in task.parameters for task in arms)
-    assert all("do not execute" in task.prompt for task in arms)
     assert all(purpose_path in task.starter_files for task in arms)
     assert len({task.starter_files[purpose_path] for task in arms}) == 3
     assert all(

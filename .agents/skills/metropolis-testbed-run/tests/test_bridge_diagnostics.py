@@ -4,6 +4,8 @@ import asyncio
 import importlib.util
 import json
 from pathlib import Path
+import re
+from types import SimpleNamespace
 
 import pytest
 
@@ -12,6 +14,12 @@ BRIDGE_PATH = Path(__file__).parents[1] / "scripts" / "bridge_run.py"
 SPEC = importlib.util.spec_from_file_location("blind_bridge", BRIDGE_PATH)
 bridge = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(bridge)
+PUBLISHER_PATH = BRIDGE_PATH.with_name("mailbox_publish.py")
+PUBLISHER_SPEC = importlib.util.spec_from_file_location(
+    "blind_publisher", PUBLISHER_PATH
+)
+publisher = importlib.util.module_from_spec(PUBLISHER_SPEC)
+PUBLISHER_SPEC.loader.exec_module(publisher)
 
 
 def _provider(tmp_path):
@@ -26,6 +34,16 @@ def _provider(tmp_path):
     provider.task_id = "task"
     provider.worker = {"agent_id": "worker-1"}
     return provider, output, attempt, mailbox
+
+
+def test_participant_case_codes_hide_task_names():
+    task_ids = ("hping3-flood-tcp-syn", "plc-policy-coil-write")
+    codes = bridge._opaque_case_codes(
+        [SimpleNamespace(id=task_id) for task_id in task_ids]
+    )
+    assert set(codes) == set(task_ids)
+    assert len(set(codes.values())) == len(task_ids)
+    assert all(re.fullmatch(r"case-[0-9a-f]{32}", code) for code in codes.values())
 
 
 async def _wait_for(path):
@@ -44,6 +62,7 @@ def test_unanswered_request_keeps_last_received_response_and_unknown_cause(tmp_p
         await _wait_for(mailbox / "request-001.json")
         request = bridge.read_json(mailbox / "request-001.json")
         assert "issued_utc" not in request
+        assert "task_id" not in request
         (mailbox / "response-001.json").write_text(
             json.dumps(
                 {
@@ -133,3 +152,32 @@ def test_coordinator_observation_is_separate_from_frozen_attempt(tmp_path):
     with pytest.raises(ValueError, match="inside the selected blind run"):
         bridge.observe_worker(output, tmp_path / "elsewhere", "failed", None)
     assert mailbox.exists()
+
+
+def test_multiline_publisher_accepts_opaque_request_without_task_id(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr(publisher, "MAILBOX", tmp_path)
+    bridge.write_json(
+        tmp_path / "request-001.json",
+        {
+            "attempt_nonce": "nonce",
+            "request_id": "request-id",
+            "artifact_path": "solution.sh",
+            "allow_multiline_solution": True,
+            "tools": [{"name": "write_file"}],
+        },
+    )
+    content = "POST /diag/run HTTP/1.1\nHost: filtration-hmi\n\n{}\n"
+    (tmp_path / "draft.txt").write_bytes(content.encode("utf-8"))
+    assert (
+        publisher.main(
+            ["write", "--request", "request-001.json", "--content-file", "draft.txt"]
+        )
+        == 0
+    )
+    response = bridge.read_json(tmp_path / "response-001.json")
+    assert response["tool_calls"][0]["arguments"] == {
+        "path": "solution.sh",
+        "content": content,
+    }

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Metropolis Testbed Run"
+  short_description: "Run agent_bench with fresh, uncoached participants"
+  default_prompt: "Use $metropolis-testbed-run to run the current agent_bench suite with fresh participants and static grading."

@@ -1,9 +1,9 @@
 ---
-name: metropolosis-testbed-run
-description: "Run Metropolis agent_bench with fresh Codex participants, live Stirrup tools, and independent static grading. Use for a blind participant run or self-assessment, not for benchmark development or reference-answer replay."
+name: metropolis-testbed-run
+description: "Run Metropolis agent_bench by task number, range, or ID with fresh Codex participants, live Stirrup tools, and independent static grading. Use for a blind participant run or self-assessment, not for benchmark development or reference-answer replay."
 ---
 
-# Metropolosis Testbed Run
+# Metropolis Testbed Run
 
 Coordinate the current `scripts/agent_bench` suite. Give each attempt a fresh
 participant with only its public task, starter data, and actual Stirrup tool results.
@@ -21,6 +21,19 @@ services, provision Docker, or modify tasks and graders.
   protect prior runs. Keep launch logs outside that path. Unless the user selects
   otherwise, use the complete current catalog, one independent attempt per task,
   30 response rounds, and 600 seconds per attempt.
+- When the user supplies test numbers, interpret them as one-based positions in the
+  **current default catalog**. Accept a number, an inclusive range such as `18-25`
+  or `18–25`, or a comma-separated combination. Enumerate the live catalog with
+  `uv --cache-dir "<repo>/.venv/uv-cache" run --project "<repo>/scripts/agent_bench" agent-bench list --suite default`;
+  do not map numbers from memory or old run artifacts. Validate every number, remove
+  duplicates, and preserve catalog order. Check the mapping against
+  `<repo>/scripts/agent_bench/TESTS.md`; if it differs or a number is out of range,
+  stop before launch and clarify the intended tasks. Pass the resolved IDs as
+  repeated `--task ID` arguments to the bridge. Number selection is for the default
+  catalog; staged episodes use their explicit suite and task IDs. Use one baseline
+  attempt per selected number unless the user specifies otherwise. Keep the
+  number-to-ID mapping with the coordinator; dispatch only the bridge-generated
+  instructions to participants.
 - Confirm the available tool supports history-free participants. With
   `collaboration.spawn_agent`, use `fork_turns: "none"` and a new agent per attempt.
   If unavailable, report the limitation; do not substitute canned responses or claim
@@ -31,6 +44,9 @@ Start as a yielding/background process so you can coordinate while it runs:
 ```text
 uv --cache-dir "<repo>/.venv/uv-cache" run --project "<repo>/scripts/agent_bench" python "<skill>/scripts/bridge_run.py" run --repo "<repo>" --output "<new-run-directory>"
 ```
+
+For a numbered selection, append every resolved `--task ID` before launch; the
+unfiltered example runs the entire catalog.
 
 Optional arguments: repeated `--task ID`, `--repeats N` (default 1), `--rounds`, and `--seconds`.
 `--suite default` is implicit and selects the current catalog, including ten
@@ -172,6 +188,8 @@ final chat response, even for a partial, failed, or interrupted run:
   is not itself a confirmed refusal or an infrastructure exclusion.
 - Links to the reports and run directory. Do not claim scores are unavailable merely
   because the helper stopped early; inspect saved attempts and use `results`.
+- When the user selected task numbers, show each number beside its resolved task ID
+  and outcome so the requested range can be checked against the completed run.
 
 `decision-summary.json` beside each trace is a participant-stated retrospective
 explanation, not private internal reasoning or verified evidence of its decision

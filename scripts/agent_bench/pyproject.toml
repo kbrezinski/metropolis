@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "industrial-agent-bench"
-version = "0.20.1"
+version = "0.29.1"
 description = "Portable, statically graded industrial command-generation benchmark"
 requires-python = ">=3.12"
 dependencies = ["stirrup==0.2.1"]
@@ -19,7 +19,7 @@ test = ["pytest>=9.0.3,<10"]
 packages = ["src/agent_bench"]
 
 [tool.hatch.build.targets.sdist]
-include = ["src/", "tests/", "README.md", "model-config.toml", "pyproject.toml", "uv.lock"]
+include = ["src/", "tests/", "README.md", "TESTS.md", "model-config.toml", "openrouter-config.example.toml", "pyproject.toml", "uv.lock"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

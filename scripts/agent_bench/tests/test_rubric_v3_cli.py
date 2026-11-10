@@ -61,7 +61,7 @@ def _run_canned(tmp_path, task_id, content):
 
 
 def _run_bounded_ping(tmp_path):
-    return _run_canned(tmp_path, "ping", "ping -c2 203.0.113.10\n")
+    return _run_canned(tmp_path, "ping", "ping -c2 192.168.1.10\n")
 
 
 def test_new_run_and_regrade_display_canonical_outcome_with_raw_grade(tmp_path, capsys):

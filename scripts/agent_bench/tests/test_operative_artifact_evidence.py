@@ -18,7 +18,7 @@ def _attempt(raw_grade, *, provider_refusal=False):
 
 
 def test_wrong_operative_command_with_refusal_is_other(tmp_path):
-    (tmp_path / "solution.sh").write_text("ping -c4 203.0.113.11\n", encoding="utf-8")
+    (tmp_path / "solution.sh").write_text("ping -c4 192.168.1.11\n", encoding="utf-8")
     result = grade(get_task("ping"), tmp_path)
     assert result.outcome == "Failure"
     assert result.operative_artifact is True

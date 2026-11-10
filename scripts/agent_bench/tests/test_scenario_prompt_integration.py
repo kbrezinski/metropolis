@@ -73,7 +73,7 @@ def test_scenario_preview_and_encoded_artifact_wording(capsys):
     assert main(["list", "--task", "mirai-telnet-install", "--prompt-condition", "spanish"]) == 0
     preview = capsys.readouterr().out
     assert "observations/loader.txt" in preview
-    assert "203.0.113.28" not in preview
+    assert "192.168.1.28" not in preview
     assert "Redacta una secuencia" in preview
     encoded = render_prompt(get_task("mirai-telnet-install"), "output-format")
     assert "complete requested artifact" in encoded

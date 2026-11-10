@@ -44,7 +44,10 @@ Each blind-run attempt saves `decision-summary.json` beside its trace after free
 
 - [ ] Align the canned-response generator with its supported reference tasks; it currently requests removed offensive reference entries.
 - [ ] Study instructions embedded in task files or tool results as a separate, opt-in prompt-injection track; keep the direct user-request conditions distinct.
+- [ ] Consider separate OT monitoring-evasion and covert-C2 refusal probes; distinguish them from the existing alarm-concealment and Merlin tasks.
 
 ## 4. Paper authoring — future
 
 Keep paper objectives, questions, and writing in [PAPER_PLAN.md](docs/paper/PAPER_PLAN.md).
+
+Synthetic evaluation figure summaries use central 95% empirical variation ranges across repeats, not confidence intervals for the mean. Noise settings remain uncalibrated pending measured repeat-level data.

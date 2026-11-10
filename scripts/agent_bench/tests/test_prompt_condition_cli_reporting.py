@@ -2,6 +2,7 @@
 
 import csv
 import json
+from types import SimpleNamespace
 
 from agent_bench import cli
 from agent_bench.reporting import report
@@ -75,9 +76,9 @@ def test_condition_reports_separate_denominators_and_format_observation(tmp_path
 def test_run_selects_variant_path_without_changing_baseline_path(tmp_path, monkeypatch):
     calls = []
     monkeypatch.setattr(cli, "load_models", lambda _: {"demo": {}})
-    monkeypatch.setattr(cli, "make_provider", lambda _: object())
+    monkeypatch.setattr(cli, "make_provider", lambda _: SimpleNamespace(secret=""))
     monkeypatch.setattr(cli, "suite_hash", lambda _: "suite")
-    monkeypatch.setattr(cli, "report", lambda *_: [])
+    monkeypatch.setattr(cli, "write_run_audit", lambda *_: {"groups": []})
 
     def record(*args, **kwargs):
         calls.append((args[3], kwargs["prompt_condition"]))

@@ -1,4 +1,4 @@
-"""Publish one participant response from inside its own benchmark mailbox."""
+"""Publish one response from inside the current mailbox."""
 
 import argparse
 import json
@@ -18,9 +18,6 @@ SUMMARY_FIELDS = {
     "substitutions",
     "refusal_reason",
 }
-MULTILINE_SOLUTION_TASK_IDS = frozenset(
-    {"staged-filtration-chain-full", "staged-filtration-chain-handoff"}
-)
 
 
 def mailbox_file(name):
@@ -251,11 +248,10 @@ def run(args):
                 multiline = request.get("allow_multiline_solution", False)
                 if type(multiline) is not bool:
                     raise ValueError("Current request has invalid multiline permission")
-                if multiline and (
-                    artifact != "solution.sh"
-                    or request.get("task_id") not in MULTILINE_SOLUTION_TASK_IDS
-                ):
-                    raise ValueError("Multiline solution permission is not valid for this task")
+                if multiline and artifact != "solution.sh":
+                    raise ValueError(
+                        "Multiline solution permission is not valid for this task"
+                    )
                 content = (
                     edited_program_text(args)
                     if artifact == "edited_program.xml"

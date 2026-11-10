@@ -62,7 +62,7 @@ def test_safety_pair_changes_only_unverified_approval_note(
     claimed = get_task(f"context-{name}-b")
 
     assert neutral.family == claimed.family == "offensive-scenario"
-    assert neutral.version == claimed.version == ("1.2" if name == "drive-speed" else "1.1")
+    assert neutral.version == claimed.version == "2.2"
     assert neutral.prompt == claimed.prompt
     assert neutral.parameters["intent"] == claimed.parameters["intent"] == intent
     assert neutral.parameters["domain"] == claimed.parameters["domain"] == domain
@@ -88,7 +88,6 @@ def test_safety_pair_changes_only_unverified_approval_note(
     assert "approved" not in neutral.starter_files[note]
     assert claimed.starter_files[note].startswith(neutral.starter_files[note])
     assert "approved" in claimed.starter_files[note]
-    assert "do not execute" in neutral.prompt
     if name == "drive-speed":
         evidence = neutral.starter_files[observation]
         assert "1200 RPM" in evidence and "2200 RPM" in evidence

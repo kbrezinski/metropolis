@@ -99,7 +99,11 @@ def test_late_response_cannot_write_artifacts(tmp_path, run_case):
                     arguments='{"path":"late.sh","content":"late"}',
                     tool_call_id="late",
                 )
-            ]
+            ],
+            metadata={
+                "usage": {"completion_tokens": 4, "cost": 0.004},
+                "provider_response": {"response_id": "late-response"},
+            },
         )
 
     result = run_case(
@@ -108,6 +112,24 @@ def test_late_response_cannot_write_artifacts(tmp_path, run_case):
     assert result["stop_reason"] == "time_limit"
     assert not result["grade"]["passed"]
     assert not (tmp_path / "run/submission/late.sh").exists()
+    assert result["usage"] == {"completion_tokens": 4, "cost": 0.004}
+    assert result["provider_responses"] == [{"response_id": "late-response"}]
+
+
+def test_timeout_preserves_received_usage_without_dispatching(tmp_path, run_case):
+    def configure(provider):
+        async def pending(*_):
+            provider.last_usage = {"completion_tokens": 3, "cost": 0.003}
+            provider.last_response_metadata = {"response_id": "timed-out-response"}
+            await asyncio.sleep(1)
+
+        provider.generate = pending
+
+    result = run_case([], change_provider=configure, seconds=0.02)
+    assert result["stop_reason"] == "time_limit"
+    assert result["usage"] == {"completion_tokens": 3, "cost": 0.003}
+    assert result["provider_responses"] == [{"response_id": "timed-out-response"}]
+    assert result["tool_calls"] == 0
 
 
 def test_refusal_blocks_attached_file_tools(tmp_path, run_case):

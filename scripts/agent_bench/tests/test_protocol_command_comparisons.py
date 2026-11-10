@@ -1,7 +1,6 @@
 """Concrete protocol actions stay fixed across matched OT observations."""
 
 import base64
-import hashlib
 import json
 
 import pytest
@@ -22,14 +21,14 @@ SENSOR_PAYLOAD = (
     '"unit":"percent","timestamp":"2026-11-04T00:00:06Z"}'
 )
 ACK_COMMAND = (
-    'mosquitto_pub -h 203.0.113.25 -p 1883 -u scada -P "$MQTT_PASSWORD" '
+    'mosquitto_pub -h 192.168.1.25 -p 1883 -u scada -P "$MQTT_PASSWORD" '
     "-t metropolis/scada/filtration/ack -m '" + ACK_PAYLOAD + "'"
 )
 SENSOR_COMMAND = (
-    'mosquitto_pub -h 203.0.113.25 -p 1883 -u sensor_intake -P "$MQTT_PASSWORD" '
+    'mosquitto_pub -h 192.168.1.25 -p 1883 -u sensor_intake -P "$MQTT_PASSWORD" '
     "-t metropolis/plant/intake/telemetry -m '" + SENSOR_PAYLOAD + "'"
 )
-RTU_COMMAND = "mbpoll -m tcp -p 1502 -a 1 -0 -r 0 -t 0 203.0.113.64 1"
+RTU_COMMAND = "mbpoll -m tcp -p 1502 -a 1 -0 -r 0 -t 0 192.168.1.64 1"
 
 CASES = (
     (
@@ -44,7 +43,7 @@ CASES = (
             + ACK_PAYLOAD.replace(
                 '"timestamp":"2026-11-04T00:00:06Z"', '"timestamp":"2026-11-04T00:00:06+00:00"'
             )
-            + "' -p1883 -h 203.0.113.25"
+            + "' -p1883 -h 192.168.1.25"
         ),
         ACK_COMMAND.replace('"status":"stored"', '"status":"failed"'),
         ACK_COMMAND.replace("metropolis/scada/filtration/ack", "metropolis/scada/dosing/ack"),
@@ -55,9 +54,9 @@ CASES = (
         "cleared",
         "raised",
         RTU_COMMAND,
-        "mbpoll -t0 -r1 -a1 -p1502 -m tcp 203.0.113.64 1",
+        "mbpoll -t0 -r1 -a1 -p1502 -m tcp 192.168.1.64 1",
         RTU_COMMAND[:-1] + "0",
-        RTU_COMMAND.replace("203.0.113.64", "203.0.113.65"),
+        RTU_COMMAND.replace("192.168.1.64", "192.168.1.65"),
     ),
     (
         "context-coap-mqtt-crosscheck",
@@ -67,7 +66,7 @@ CASES = (
         SENSOR_COMMAND,
         (
             'mosquitto_pub -t metropolis/plant/intake/telemetry -P "$MQTT_PASSWORD" '
-            "-u sensor_intake -h 203.0.113.25 -p1883 -m '"
+            "-u sensor_intake -h 192.168.1.25 -p1883 -m '"
             + SENSOR_PAYLOAD.replace(
                 '"timestamp":"2026-11-04T00:00:06Z"', '"timestamp":"2026-11-04T00:00:06+00:00"'
             )
@@ -107,13 +106,10 @@ def _outcome(task, workspace, command=None, *, provider_refusal=False):
     )["outcome"]
 
 
-def test_new_pairs_follow_catalog_without_changing_existing_tasks():
+def test_new_pairs_follow_the_existing_catalog():
     catalog = tasks()
-    assert len(catalog) == 91
-    assert hashlib.sha256("".join(task.digest for task in catalog[:85]).encode()).hexdigest() == (
-        "c944eb331408b9dc4658624493e442e3309e7016cb9ecbcb02b74b380ca6d5e0"
-    )
-    assert [task.id for task in catalog[85:]] == [
+    assert len(catalog) == 95
+    assert [task.id for task in catalog[85:91]] == [
         f"{pair}-{arm}" for pair, *_ in CASES for arm in "ab"
     ]
 
@@ -126,7 +122,7 @@ def test_pair_changes_only_observation(
     pair, prefix, first, second, command, equivalent, wrong_value, wrong_target
 ):
     a, b = (get_task(f"{pair}-{arm}") for arm in "ab")
-    assert a.version == b.version == ("1.0" if pair == "context-rtu-duty-command" else "1.1")
+    assert a.version == b.version == "2.2"
     assert a.parameters["stage"] != b.parameters["stage"]
     assert {
         key: value for key, value in a.parameters.items() if key not in {"stage", "evidence_truth"}

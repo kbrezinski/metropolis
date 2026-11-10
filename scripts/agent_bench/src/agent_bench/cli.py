@@ -8,6 +8,7 @@ import math
 from pathlib import Path
 import sys
 
+from . import __version__
 from .contracts import InfrastructureError
 from .prompt_conditions import (
     CONDITION_DESCRIPTIONS,
@@ -17,7 +18,8 @@ from .prompt_conditions import (
     select_conditions,
 )
 from .providers import load_models, make_provider
-from .reporting import classify, report
+from .reporting import classify
+from .run_audit import write_run_audit
 from .runner import (
     SUITE_IDS,
     catalog_for_suite,
@@ -26,6 +28,8 @@ from .runner import (
     run_staged_attempt,
     suite_hash,
     task_for_suite,
+    utc_now,
+    write_json,
 )
 
 
@@ -53,7 +57,7 @@ def parser() -> argparse.ArgumentParser:
         help="Prompt condition ID; repeat to select several, or use all for baseline plus all 15",
     )
     run.add_argument("--output", required=True, type=Path, help="A new run directory")
-    run.add_argument("--repeats", type=int, default=3)
+    run.add_argument("--repeats", type=int, default=1)
     run.add_argument("--rounds", type=int, default=30)
     run.add_argument("--seconds", type=float, default=600)
     grading = commands.add_parser("grade", help="Statically regrade a saved artifact")
@@ -159,18 +163,6 @@ def _print_plc_control_edit_summary(output: Path) -> None:
                     )
 
 
-def _staged_run(root: Path) -> bool:
-    paths = list(root.rglob("attempt.json"))
-    if not paths:
-        return False
-    suite_ids = {
-        json.loads(path.read_text(encoding="utf-8")).get("suite_id", "default") for path in paths
-    }
-    if "staged-ot" in suite_ids and suite_ids != {"staged-ot"}:
-        raise ValueError("Report staged-ot and other suites from separate run directories")
-    return suite_ids == {"staged-ot"}
-
-
 def _print_staged_summary(rows: list[dict]) -> None:
     final_checkpoint = {}
     for row in rows:
@@ -191,6 +183,157 @@ def _print_staged_summary(rows: list[dict]) -> None:
             f"infrastructure excluded {row['infrastructure_excluded']}{evidence}",
             flush=True,
         )
+
+
+def _run_models(args) -> int:
+    if args.repeats < 1 or args.rounds < 1 or not math.isfinite(args.seconds) or args.seconds <= 0:
+        raise ValueError("Repetitions and attempt budgets must be positive")
+    if args.output.exists():
+        raise ValueError("Choose a new --output directory; existing runs are never overwritten")
+    catalog = catalog_for_suite(args.suite)
+    selected = (
+        [task_for_suite(task_id, args.suite) for task_id in args.task] if args.task else catalog
+    )
+    conditions = select_conditions(args.prompt_condition)
+    if args.suite != "default" and conditions != ("baseline",):
+        raise ValueError("This suite supports the baseline prompt only")
+    if len({task.id for task in selected}) != len(selected):
+        raise ValueError("A task was selected more than once")
+    models = load_models(args.config)
+    aliases = args.model or list(models)
+    if len(set(aliases)) != len(aliases) or any(alias not in models for alias in aliases):
+        raise ValueError("Select distinct model aliases present in the configuration")
+    providers = {alias: make_provider(models[alias]) for alias in aliases}
+    catalog_hash = suite_hash(catalog)
+    plc_catalog_hash = (
+        suite_hash(catalog_for_suite("plc-control-edit"))
+        if any(task.family == "plc-control-edit" for task in selected)
+        else ""
+    )
+    matrix = []
+    tasks = {task.id: task for task in selected}
+    for alias in aliases:
+        for task in selected:
+            task_conditions = (
+                ("baseline",)
+                if task.family == "plc-control-edit" or args.suite == "staged-ot"
+                else conditions
+            )
+            for condition in task_conditions:
+                for repeat in range(1, args.repeats + 1):
+                    path = Path(alias) / task.id
+                    if condition != "baseline":
+                        path /= condition_code(condition)
+                    path /= f"repeat-{repeat:03}"
+                    matrix.append(
+                        {
+                            "model_alias": alias,
+                            "task_id": task.id,
+                            "prompt_condition": condition,
+                            "repeat": repeat,
+                            "attempt_path": path.as_posix(),
+                        }
+                    )
+    manifest = {
+        "schema_version": "1.0",
+        "run_mode": "api",
+        "harness_version": __version__,
+        "status": "running",
+        "suite_id": args.suite,
+        "suite_hash": catalog_hash,
+        "started_utc": utc_now(),
+        "budget": {"rounds": args.rounds, "seconds": args.seconds},
+        "repeats": args.repeats,
+        "prompt_conditions": list(conditions),
+        "attempts": matrix,
+        "models": [
+            {
+                key: models[alias].get(key)
+                for key in (
+                    "alias",
+                    "provider",
+                    "id",
+                    "endpoint",
+                    "upstream_provider",
+                    "api_key_env",
+                    "context_window_tokens",
+                    "max_tokens",
+                    "reasoning",
+                )
+            }
+            for alias in aliases
+        ],
+        "model_errors": {},
+    }
+    secrets = [provider.secret for provider in providers.values() if provider.secret]
+
+    def save_status():
+        serialized = json.dumps(manifest)
+        for secret in secrets:
+            serialized = serialized.replace(secret, "[REDACTED]")
+        write_json(args.output / "run.json", json.loads(serialized))
+        write_json(args.output / "active.json", {"status": manifest["status"]})
+
+    args.output.mkdir(parents=True)
+    save_status()
+    try:
+        for item in matrix:
+            alias, task_id = item["model_alias"], item["task_id"]
+            if alias in manifest["model_errors"]:
+                continue
+            condition, repeat = item["prompt_condition"], item["repeat"]
+            task = tasks[task_id]
+            label = f"{alias} / {task_id} / {repeat}"
+            if condition != "baseline":
+                label += f" / {condition}"
+            print(label, flush=True)
+            attempt_runner = run_staged_attempt if args.suite == "staged-ot" else run_attempt
+            result = attempt_runner(
+                task,
+                models[alias],
+                providers[alias],
+                args.output / item["attempt_path"],
+                repeat,
+                plc_catalog_hash if task.family == "plc-control-edit" else catalog_hash,
+                args.rounds,
+                args.seconds,
+                prompt_condition=condition,
+            )
+            if args.suite == "staged-ot":
+                strip = " → ".join(stage["outcome"] for stage in result["checkpoints"])
+                alignment = result["checkpoints"][-1]["evidence_alignment"]
+                print(
+                    f"  {result['stop_reason']}; checkpoints: {strip}; "
+                    f"final report evidence: {alignment}",
+                    flush=True,
+                )
+            else:
+                print(
+                    f"  {result['stop_reason']}; outcome: {classify(result)['outcome']}",
+                    flush=True,
+                )
+            if result.get("model_error"):
+                manifest["model_errors"][alias] = result["model_error"]
+                save_status()
+        manifest["status"] = "failed" if manifest["model_errors"] else "finished"
+    except KeyboardInterrupt:
+        manifest["status"] = "interrupted"
+        raise
+    except Exception:
+        manifest["status"] = "failed"
+        raise
+    finally:
+        manifest["finished_utc"] = utc_now()
+        save_status()
+        audit = write_run_audit(args.output)
+        if args.suite == "staged-ot":
+            _print_staged_summary(audit["groups"])
+        else:
+            _print_version_three_summary(audit["groups"])
+            _print_plc_injection_summary(args.output / "reports")
+            _print_plc_control_edit_summary(args.output / "reports")
+        print(f"Saved scores to {args.output / 'reports' / 'SCORES.md'}", flush=True)
+    return 2 if manifest["model_errors"] else 0
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -259,14 +402,12 @@ def main(argv: list[str] | None = None) -> int:
                         print(render_prompt(task, condition))
             return 0
         if args.command == "report":
-            if _staged_run(args.run):
-                from .staged_reporting import report_staged
-
-                summary = report_staged(args.run, args.output)
+            audit = write_run_audit(args.run, output=args.output)
+            if audit["suite_id"] == "staged-ot":
                 print(f"Saved staged CSVs and progress diagram to {args.output}")
-                _print_staged_summary(summary)
+                _print_staged_summary(audit["groups"])
                 return 0
-            summary = report(args.run, args.output)
+            summary = audit["groups"]
             print(f"Saved attempt and summary CSVs to {args.output} ({len(summary)} groups)")
             _print_version_three_summary(summary)
             _print_plc_injection_summary(args.output)
@@ -309,89 +450,7 @@ def main(argv: list[str] | None = None) -> int:
                 return 0 if outcome == "Full" else 1
             print(json.dumps(result["grade"], indent=2))
             return 0 if result["grade"]["passed"] else 1
-        if (
-            args.repeats < 1
-            or args.rounds < 1
-            or not math.isfinite(args.seconds)
-            or args.seconds <= 0
-        ):
-            raise ValueError("Repetitions and attempt budgets must be positive")
-        if args.output.exists():
-            raise ValueError("Choose a new --output directory; existing runs are never overwritten")
-        catalog = catalog_for_suite(args.suite)
-        selected = (
-            [task_for_suite(task_id, args.suite) for task_id in args.task] if args.task else catalog
-        )
-        conditions = select_conditions(args.prompt_condition)
-        if args.suite != "default" and conditions != ("baseline",):
-            raise ValueError("This suite supports the baseline prompt only")
-        if len({task.id for task in selected}) != len(selected):
-            raise ValueError("A task was selected more than once")
-        models = load_models(args.config)
-        aliases = args.model or list(models)
-        if len(set(aliases)) != len(aliases) or any(alias not in models for alias in aliases):
-            raise ValueError("Select distinct model aliases present in the configuration")
-        providers = {alias: make_provider(models[alias]) for alias in aliases}
-        catalog_hash = suite_hash(catalog)
-        plc_catalog_hash = (
-            suite_hash(catalog_for_suite("plc-control-edit"))
-            if any(task.family == "plc-control-edit" for task in selected)
-            else ""
-        )
-        args.output.mkdir(parents=True)
-        for alias in aliases:
-            for task in selected:
-                task_conditions = (
-                    ("baseline",)
-                    if task.family == "plc-control-edit" or args.suite == "staged-ot"
-                    else conditions
-                )
-                for condition in task_conditions:
-                    for repeat in range(1, args.repeats + 1):
-                        task_directory = args.output / alias / task.id
-                        if condition != "baseline":
-                            task_directory /= condition_code(condition)
-                        directory = task_directory / f"repeat-{repeat:03}"
-                        label = f"{alias} / {task.id} / {repeat}"
-                        if condition != "baseline":
-                            label += f" / {condition}"
-                        print(label, flush=True)
-                        attempt_runner = (
-                            run_staged_attempt if args.suite == "staged-ot" else run_attempt
-                        )
-                        result = attempt_runner(
-                            task,
-                            models[alias],
-                            providers[alias],
-                            directory,
-                            repeat,
-                            plc_catalog_hash if task.family == "plc-control-edit" else catalog_hash,
-                            args.rounds,
-                            args.seconds,
-                            prompt_condition=condition,
-                        )
-                        if args.suite == "staged-ot":
-                            strip = " → ".join(stage["outcome"] for stage in result["checkpoints"])
-                            alignment = result["checkpoints"][-1]["evidence_alignment"]
-                            print(
-                                f"  {result['stop_reason']}; checkpoints: {strip}; "
-                                f"final report evidence: {alignment}",
-                                flush=True,
-                            )
-                        else:
-                            outcome = classify(result)["outcome"]
-                            print(f"  {result['stop_reason']}; outcome: {outcome}", flush=True)
-        if args.suite == "staged-ot":
-            from .staged_reporting import report_staged
-
-            summary = report_staged(args.output, args.output / "reports")
-            _print_staged_summary(summary)
-            return 0
-        summaries = report(args.output, args.output / "reports")
-        _print_version_three_summary(summaries)
-        _print_plc_injection_summary(args.output / "reports")
-        _print_plc_control_edit_summary(args.output / "reports")
-        return 0
+        return _run_models(args)
     except KeyboardInterrupt:
         print("agent-bench: interrupted; available attempt evidence was saved", file=sys.stderr)
         return 130

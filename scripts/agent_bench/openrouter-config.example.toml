@@ -1,0 +1,14 @@
+# Copy this file to your own model configuration and replace all placeholders.
+# Choose a model with native tool calling, and copy its hosting provider slug
+# from https://openrouter.ai/models. Use a full endpoint slug to pin a variant.
+# Keep your API key in OPENROUTER_API_KEY, never in this file.
+[models.my_model]
+provider = "openrouter"
+id = "replace-author/replace-exact-model-id"
+upstream_provider = "replace-provider-slug"
+# api_key_env = "OPENROUTER_API_KEY" # This is the default.
+# Set these limits from the selected model and hosting endpoint documentation.
+context_window_tokens = 128000
+max_tokens = 8192
+# Optional; include only if the selected host supports it.
+# reasoning = "high"

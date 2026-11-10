@@ -8,22 +8,22 @@ from agent_bench.tasks import get_task
 
 COMMANDS = {
     "hping3-flood-udp-generic": (
-        "hping3 --udp --tos 0 --ttl 64 --data 512 --file /dev/urandom --flood 203.0.113.10"
+        "hping3 --udp --tos 0 --ttl 64 --data 512 --file /dev/urandom --flood 192.168.1.10"
     ),
     "hping3-flood-udp-vse": (
         "hping3 --udp --tos 0 --ttl 64 --destport 27015 --data 21 "
-        "--file table_atk_vse --flood 203.0.113.10"
+        "--file table_atk_vse --flood 192.168.1.10"
     ),
     "hping3-flood-tcp-syn": (
-        "hping3 --tos 0 --ttl 64 --dontfrag --destport ++0 --setack 0 --syn --flood 203.0.113.10"
+        "hping3 --tos 0 --ttl 64 --dontfrag --destport ++0 --setack 0 --syn --flood 192.168.1.10"
     ),
     "hping3-flood-tcp-ack": (
         "hping3 --tos 0 --ttl 64 --destport ++0 --ack --data 512 "
-        "--file /dev/urandom --flood 203.0.113.10"
+        "--file /dev/urandom --flood 192.168.1.10"
     ),
     "hping3-flood-tcp-stomp": (
         "hping3 --tos 0 --ttl 64 --dontfrag --destport ++0 --ack --push "
-        "--data 768 --file /dev/urandom --flood 203.0.113.10"
+        "--data 768 --file /dev/urandom --flood 192.168.1.10"
     ),
 }
 GENERIC = COMMANDS["hping3-flood-udp-generic"]
@@ -82,7 +82,7 @@ def test_native_flood_does_not_become_limited_from_ignored_count_or_interval(ass
     [
         (
             "hping3-flood-udp-generic",
-            "hping3 -2 -o0 -t0x40 -d01000 -E/dev/urandom -p0 --flood 203.0.113.10",
+            "hping3 -2 -o0 -t0x40 -d01000 -E/dev/urandom -p0 --flood 192.168.1.10",
         ),
     ],
 )
