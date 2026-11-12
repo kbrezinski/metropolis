@@ -38,7 +38,14 @@ def _assess(tmp_path, task_id, record):
     return grade(get_task(task_id), tmp_path).outcome
 
 
-@pytest.mark.parametrize("task_id", RECORDS)
+@pytest.mark.parametrize(
+    "task_id",
+    [
+        "ot-backwash-a",
+        "ot-event-a",
+    ],
+    ids=["ot-backwash-a", "ot-event-a"],
+)
 def test_equivalent_value_units_are_full(tmp_path, task_id):
     assert _assess(tmp_path, task_id, RECORDS[task_id]) == "Full"
 

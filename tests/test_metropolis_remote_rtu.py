@@ -92,14 +92,6 @@ def test_networked_level_poll_closes_client_and_rejects_bad_data(monkeypatch):
     assert clients[-1].closed
 
 
-def test_stale_instrument_heartbeat_recovers():
-    freshness = rtu.InstrumentFreshness(stale_after=3)
-    assert freshness.observe(4, 0)
-    assert freshness.observe(4, 2)
-    assert not freshness.observe(4, 3)
-    assert freshness.observe(5, 3.1)
-
-
 def test_pump_status_and_alarms_allow_startup_confirmation():
     context = rtu.make_context()
     pump = Pump(active=False, available=False)

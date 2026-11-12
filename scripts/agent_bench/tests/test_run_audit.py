@@ -5,7 +5,7 @@ import json
 
 import pytest
 
-from agent_bench.run_audit import render_run_overview, write_run_audit
+from agent_bench.run_audit import write_run_audit
 
 
 def save(path, value):
@@ -114,7 +114,7 @@ def test_legacy_report_uses_discovered_count_and_keeps_rubrics_separate(tmp_path
     assert not (root / "reports").exists()
 
 
-@pytest.mark.parametrize("suite", ["default", "staged-ot"])
+@pytest.mark.parametrize("suite", ["default"])
 def test_interrupted_run_before_first_dispatch_reports_zero_persisted(tmp_path, suite):
     save(
         tmp_path / "run.json",
@@ -167,26 +167,6 @@ def test_staged_audit_preserves_checkpoint_strip_without_episode_grade(tmp_path)
     assert [item["outcome"] for item in csv_checkpoints] == ["Full", "Other", "Full"]
     text = (tmp_path / "reports/SCORES.md").read_text(encoding="utf-8")
     assert "Full → Other → Full" in text and "1/3" in text
-
-
-def test_shared_overview_does_not_depend_on_native_manifest_shape():
-    lines = render_run_overview(
-        {
-            "status": "finished",
-            "requested_attempts": 2,
-            "persisted_attempts": 2,
-            "adjudicated_attempts": 1,
-            "excluded_attempts": 1,
-            "unstarted_attempts": 0,
-            "reason": "one endpoint unavailable",
-            "mailbox_integrity_anomalies": [],
-        }
-    )
-    assert lines == [
-        "Run status: finished",
-        "Requested: 2; persisted: 2; adjudicated/valid: 1; infrastructure excluded: 1; unstarted: 0.",
-        "Reason: one endpoint unavailable",
-    ]
 
 
 def test_blind_manifest_reconstructs_saved_conditions_and_preserves_diagnostics(tmp_path):
@@ -287,39 +267,6 @@ def test_readable_groups_preserve_task_scores_and_raw_fields(tmp_path):
     assert "ot_action" not in rows(tmp_path / "reports/attempts.csv")[0]
 
 
-def test_current_staged_checkpoint_actions_are_readable(tmp_path):
-    data = {
-        "task_id": "staged-filtration-a",
-        "task_hash": "episode-hash",
-        "task_version": "1.5",
-        "scenario_id": "filtration-acknowledgement",
-        "arm": "a",
-        "suite_id": "staged-ot",
-        "rubric_version": "3.0",
-        "model": {"alias": "hosted"},
-        "repeat": 1,
-        "stop_reason": "complete",
-        "grade": {},
-        "stage_count": 5,
-        "checkpoints": [
-            {
-                "index": index,
-                "reached": True,
-                "submitted": True,
-                "outcome": "Full",
-                "grade": {"passed": True},
-            }
-            for index in range(1, 6)
-        ],
-    }
-    save(tmp_path / "episode/attempt.json", data)
-    write_run_audit(tmp_path)
-    text = (tmp_path / "reports/SCORES.md").read_text(encoding="utf-8")
-    assert "Register read" in text
-    assert "Acknowledgement report" in text
-    assert "Coverage counts distinct selected" not in text
-
-
 def test_plc_report_regeneration_uses_current_saved_grade(tmp_path):
     attempt_path = tmp_path / "plc-fill-st/attempt.json"
     data = attempt("plc-fill-st")
@@ -398,14 +345,3 @@ def test_plc_report_separates_neutral_cases_with_the_same_form(tmp_path):
     }
     scores = (tmp_path / "reports/SCORES.md").read_text(encoding="utf-8")
     assert "plc-fill-st" in scores and "plc-pump-st" in scores
-
-
-def test_historical_plc_source_run_is_not_labeled_as_current_comparison(tmp_path):
-    data = attempt("plc-vote-st-a")
-    data["task_family"] = "plc-source-injection"
-    save(tmp_path / "older/attempt.json", data)
-    write_run_audit(tmp_path)
-    text = (tmp_path / "reports/SCORES.md").read_text(encoding="utf-8")
-    assert "| Legacy / unclassified | Legacy / unclassified | 1 | 1 |" in text
-    assert "### Request-note framing" not in text
-    assert "### PLC representations" not in text

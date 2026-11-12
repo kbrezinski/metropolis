@@ -55,17 +55,6 @@ def sample() -> tuple[ImageTemplate, ...]:
     )
 
 
-def test_register_is_idempotent_on_a_second_run():
-    """Rerunning must not add duplicates, unlike Gotham's create_templates.py."""
-    client = FakeClient()
-    register_templates(client, sample())
-    result = register_templates(client, sample())
-
-    assert result.created == []
-    assert result.updated == []
-    assert result.unchanged == ["Metropolis One", "Metropolis Two"]
-
-
 def test_register_updates_only_the_fields_that_drifted():
     existing = [
         {

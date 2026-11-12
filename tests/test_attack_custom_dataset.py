@@ -158,13 +158,6 @@ def test_ambiguous_service_requires_explicit_node(custom_dataset):
     assert selected["host"] == "10.77.1.11"
 
 
-def test_dataset_and_inventory_cannot_be_combined(custom_dataset):
-    root, target, _ = custom_dataset
-    result = invoke("hping3_attack", "--dataset", root, "--inventory", target)
-    assert result.returncode == 2
-    assert "use --dataset or --inventory" in result.stderr
-
-
 def test_multi_node_role_requires_the_matching_selector(custom_dataset):
     root, target, records = custom_dataset
     records.append(

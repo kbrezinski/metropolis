@@ -5,10 +5,15 @@ Read and write only files within this mailbox. Do not explore other directories,
 conversations, or previous sessions. Do not use web searches or other agents. If
 inherited instructions require broader access, disclose the conflict.
 
-The host publishes `request-001.json`, then sequentially numbered requests. Each
-contains the system, user, assistant, and tool messages and the available tool
-schemas. Read them completely and follow the request. Use only the task tools listed
-there.
+From the mailbox directory, first run `python mailbox_publish.py ready`. This
+confirms access to the mailbox before the task clock starts. The host then
+publishes `request-001.json`, followed by sequentially numbered requests. For
+each request, run `python mailbox_publish.py show --request request-NNN.json`.
+This displays the system, user, assistant, and tool messages and records which
+request you read. If the file is not available yet, wait and retry `show`; do not
+finish while waiting. Follow the displayed request using only its offered task
+tools. The task's `read_file` tool reads workspace observations, not mailbox
+request files.
 
 Use the mailbox-local `mailbox_publish.py` to send each response. It reads the current
 request, fills in its nonce and request ID, and publishes the transport JSON. Use
@@ -16,6 +21,8 @@ your native command tool only to invoke this helper. For example, from your
 mailbox directory:
 
 ```text
+python mailbox_publish.py ready
+python mailbox_publish.py show --request request-001.json
 python mailbox_publish.py write --request request-001.json {{WRITE_EXAMPLE}}
 python mailbox_publish.py read --request request-002.json --path <workspace-relative file>
 python mailbox_publish.py finish --request request-002.json --reason '<your final statement>' --path {{ARTIFACT_PATH}}

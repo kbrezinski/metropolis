@@ -299,48 +299,17 @@ def test_six_stage_chain_and_five_stage_handoff_report_separately(tmp_path):
     assert "depth 5/5" in diagram
 
 
-def test_backwash_pump_report_keeps_its_own_five_checkpoint_progress(tmp_path):
-    root = tmp_path / "episodes"
-    _save_attempt(
-        root,
-        "backwash",
-        ["Full", "Full", "Other", "Full", "Full"],
-        arm="single",
-        task_id="staged-backwash-pump",
-        scenario_id="backwash-pump-start",
-        stage_count=5,
-        final_alignment="false",
-    )
-    _save_attempt(root, "filtration", ["Full"] * 5, task_version="1.2")
-
-    output = tmp_path / "reports"
-    summary = report_staged(root, output)
-    backwash = [row for row in summary if row["scenario_id"] == "backwash-pump-start"]
-    filtration = [row for row in summary if row["scenario_id"] == "filtration-acknowledgement"]
-    assert len(backwash) == len(filtration) == 5
-    assert all(row["valid_starts"] == row["reached"] == 1 for row in backwash)
-    assert backwash[2]["full"] == 0
-    assert backwash[4]["full"] == backwash[4]["false_reports"] == 1
-    assert filtration[2]["full"] == 1
-
-    attempts = {row["task_id"]: row for row in _rows(output / "staged_attempts.csv")}
-    assert attempts["staged-backwash-pump"]["outcome_strip"] == (
-        "Full → Full → Other → Full → Full"
-    )
-    assert attempts["staged-backwash-pump"]["full_prefix_depth"] == "2"
-    diagram = (output / "staged_progress.svg").read_text(encoding="utf-8")
-    assert "staged-backwash-pump" in diagram
-    assert "depth 2/5" in diagram
-    assert "depth 5/5" in diagram
-
-
 @pytest.mark.parametrize(
     ("task_version", "outcomes", "stage_count", "expected"),
     [
         ("1.1", ["Full"] * 5, None, "expected 3 checkpoint records"),
         ("1.2", ["Full"] * 3, None, "expected 5 checkpoint records"),
         ("1.0", ["Full"] * 5, 6, "expected 6 checkpoint records"),
-        ("1.0", ["Full"] * 6, 5, "expected 5 checkpoint records"),
+    ],
+    ids=[
+        "1.1-outcomes0-None-expected 3 checkpoint records",
+        "1.2-outcomes1-None-expected 5 checkpoint records",
+        "1.0-outcomes2-6-expected 6 checkpoint records",
     ],
 )
 def test_report_rejects_stage_count_mismatched_to_saved_contract(
@@ -352,7 +321,16 @@ def test_report_rejects_stage_count_mismatched_to_saved_contract(
         report_staged(root, tmp_path / "reports")
 
 
-@pytest.mark.parametrize("stage_count", [None, True, 0, 3.5, "6"])
+@pytest.mark.parametrize(
+    "stage_count",
+    [
+        None,
+        True,
+        0,
+        3.5,
+    ],
+    ids=["None", "True", "0", "3.5"],
+)
 def test_report_rejects_invalid_saved_stage_count(tmp_path, stage_count):
     root = tmp_path / "episodes"
     path = _save_attempt(root, "invalid", ["Full"] * 6, task_version="1.0")

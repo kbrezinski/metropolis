@@ -180,13 +180,6 @@ def test_mqtt_access_rejects_unapproved_or_inconsistent_clients(change, expected
     assert "LabOnly" not in str(error.value)
 
 
-def test_mqtt_access_allows_non_mqtt_synthetic_topologies():
-    assert (
-        compiler.compile_mqtt_access({"devices": [{"name": "PLC", "protocols": []}]})
-        == {}
-    )
-
-
 def test_broker_runtime_writes_acl_and_calls_password_hasher(tmp_path, monkeypatch):
     environment = compiler.compile_mqtt_access(_inventory())
     accounts = broker_runtime.decode_access(

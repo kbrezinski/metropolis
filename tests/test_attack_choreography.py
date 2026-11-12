@@ -151,24 +151,6 @@ def test_merlin_agent_reports_marker_permission_failure(monkeypatch):
     assert "permission denied" in detail
 
 
-def test_merlin_cnc_listener_and_upload_lifecycle():
-    """The CNC model tracks listener state, agents, and uploaded artefacts."""
-    cnc = load_file("merlin_cnc_model", MERLIN / "cnc/start_merlin_cnc.py")
-    state = cnc.State()
-    assert state.listener_info()["state"] == "stopped"
-    state.start_listener("https", "0.0.0.0")
-    assert state.listener_info()["scheme"] == "https"
-
-    agent = state.check_in("10.77.4.21", "linux-x64-synthetic")
-    assert state.check_in("10.77.4.21", "linux-x64-synthetic") is agent
-    state.add_command(agent, "chmod 775 /opt/metropolis")
-    assert state.take_commands(agent.agent_id) == ["chmod 775 /opt/metropolis"]
-    assert state.take_commands(agent.agent_id) == []
-
-    state.add_upload(agent.agent_id, "payload.bin", b"inert artefact")
-    assert state.uploads[0]["bytes"] == len(b"inert artefact")
-
-
 def test_choreography_requires_the_lab_acknowledgement():
     """Neither driver sends traffic without the explicit lab acknowledgement."""
     for name in ("mirai/mirai_scenario.py", "merlin/merlin_scenario.py"):

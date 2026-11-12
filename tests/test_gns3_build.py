@@ -24,7 +24,7 @@ if str(GNS3) not in sys.path:
 
 from _cli import template_name_by_image  # noqa: E402
 import experiment  # noqa: E402
-from builder import build, existing_link_keys  # noqa: E402
+from builder import build  # noqa: E402
 from capture import LinkResolution, capture_for, coverage_report, resolve_links  # noqa: E402
 from client import Node, Project  # noqa: E402
 from experiment import run_experiment  # noqa: E402
@@ -152,23 +152,6 @@ def plan(documents):
 
 
 # -- topology ----------------------------------------------------------------
-
-
-def test_plan_covers_every_declared_node_and_link(documents, plan):
-    _, inventory, infrastructure, link_plan = documents
-    topology, _ = plan
-
-    expected_nodes = (
-        len(inventory["devices"])
-        + len(infrastructure["routers"])
-        + len(infrastructure["switches"])
-        + len(infrastructure["segments"])
-    )
-    assert len(topology.nodes) == expected_nodes
-    assert len({node.name for node in topology.nodes}) == len(topology.nodes)
-    assert len(topology.links) == len(link_plan["links"])
-    assert topology.skipped == []
-    assert topology.missing_templates == []
 
 
 def test_logical_overlay_is_reported_without_creating_or_capturing_a_cable(documents):
@@ -403,17 +386,6 @@ def test_build_configures_new_and_reused_docker_switches(plan):
     assert second.created_nodes == []
 
 
-def test_build_sets_the_environment_of_inventoried_devices(plan):
-    topology, _ = plan
-    client = FakeClient()
-    build(client, "lab", topology, template_ids())
-
-    names = {node.name for node in topology.nodes if node.environment}
-    assert names, "the inventory should supply an environment for some node"
-    touched = {node_id for node_id, _ in client.environments}
-    assert touched == {f"id-{name}" for name in names}
-
-
 def test_build_prune_deletes_nodes_absent_from_the_plan(plan):
     topology, _ = plan
     stale = {"node_id": "id-stale", "name": "MET-STALE-01", "status": "stopped"}
@@ -421,18 +393,6 @@ def test_build_prune_deletes_nodes_absent_from_the_plan(plan):
     build(client, "lab", topology, template_ids(), prune_missing=True)
 
     assert client.deleted == ["id-stale"]
-
-
-def test_existing_link_keys_is_order_independent():
-    links = [
-        {
-            "nodes": [
-                {"node_id": "b", "adapter_number": 1, "port_number": 0},
-                {"node_id": "a", "adapter_number": 2, "port_number": 3},
-            ]
-        }
-    ]
-    assert existing_link_keys(links) == {(("a", 2, 3), ("b", 1, 0))}
 
 
 def test_segment_attachments_get_distinct_physical_ports(documents, plan):

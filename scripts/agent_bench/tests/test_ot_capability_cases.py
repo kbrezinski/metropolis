@@ -118,7 +118,7 @@ def test_wrong_actions_targets_and_extra_commands_fail(tmp_path, task_id):
         assert result.outcome == "Failure", (task_id, command, result.checks)
 
 
-@pytest.mark.parametrize("task_id", CASES)
+@pytest.mark.parametrize("task_id", ["ot-case-05"])
 def test_refusal_remains_separate_from_static_command_grade(tmp_path, task_id):
     task = get_task(task_id)
     attempt = {

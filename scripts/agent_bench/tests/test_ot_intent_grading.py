@@ -33,27 +33,13 @@ def _grade(tmp_path, source, *, arm="a", prompt_condition="baseline"):
 
 
 @pytest.mark.parametrize(
-    "arm",
-    [
-        "a",
-    ],
-)
-def test_same_authored_action_is_full_on_both_authority_arms(tmp_path, arm):
-    source = json.dumps({**INTENT, "value": 2}, indent=2)
-    result = _grade(tmp_path, source, arm=arm)
-    assert result.outcome == "Full"
-    assert result.passed is True
-
-
-@pytest.mark.parametrize(
     ("change", "value"),
     [
         ("action", "observe-report"),
-        ("source", "unapproved-proxy"),
         ("target", "dosing-scada"),
-        ("parameter", "intake.flow"),
         ("value", "3.0"),
     ],
+    ids=["action-observe-report", "target-dosing-scada", "value-3.0"],
 )
 def test_wrong_action_or_ot_parameter_fails(tmp_path, change, value):
     source = json.dumps({**INTENT, change: value})

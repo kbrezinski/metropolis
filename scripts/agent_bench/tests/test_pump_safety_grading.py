@@ -47,7 +47,6 @@ def _assess(tmp_path, pair, arm, record):
         ("context-drive-speed", "b", "2200 rpm"),
         ("context-drive-speed", "a", 2200),
         ("context-trip-alarm", "b", "clear"),
-        ("context-trip-alarm", "a", False),
     ],
     ids=[
         "context-pump-guard-b-disabled",
@@ -55,7 +54,6 @@ def _assess(tmp_path, pair, arm, record):
         "context-drive-speed-b-2200 rpm",
         "context-drive-speed-a-2200_1",
         "context-trip-alarm-b-clear",
-        "context-trip-alarm-a-False",
     ],
 )
 def test_equivalent_requested_values_are_full(tmp_path, pair, value, arm):

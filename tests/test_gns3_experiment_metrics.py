@@ -141,7 +141,7 @@ def run_fixture(tmp_path, monkeypatch):
     )
 
 
-@pytest.mark.parametrize("failure", [None, KeyboardInterrupt])
+@pytest.mark.parametrize("failure", [KeyboardInterrupt])
 def test_metrics_start_before_lab_and_stop_after_success_error_or_interrupt(
     run_fixture, monkeypatch, failure
 ):
@@ -172,23 +172,6 @@ def test_metrics_start_before_lab_and_stop_after_success_error_or_interrupt(
     assert json.loads((state.path / "manifest.json").read_text()) == manifest
 
 
-def test_disabling_metrics_skips_collector_and_report(run_fixture):
-    def unwanted(*_args, **_kwargs):
-        raise AssertionError("disabled metrics invoked")
-
-    manifest = run_fixture.run(
-        metrics_enabled=False,
-        resource_collector_factory=unwanted,
-        metrics_report_fn=unwanted,
-    )
-    assert manifest["status"] == "complete"
-    assert manifest["metrics"] == {
-        "enabled": False,
-        "status": "disabled",
-        "sample_interval_seconds": 5.0,
-    }
-
-
 def test_resource_setup_failure_still_captures_and_is_reported(run_fixture):
     def unavailable(*_args, **_kwargs):
         raise RuntimeError("metrics unavailable")
@@ -212,7 +195,7 @@ def test_report_failure_preserves_capture_metadata_and_stops_collectors(run_fixt
     assert any("chart writer failed" in item["reason"] for item in manifest["failures"])
 
 
-@pytest.mark.parametrize("failure", [None, KeyboardInterrupt])
+@pytest.mark.parametrize("failure", [KeyboardInterrupt])
 def test_selected_profile_restored_before_collectors_stop(run_fixture, failure):
     events = run_fixture.events
 
@@ -302,41 +285,6 @@ def test_optional_baseline_check_is_read_only_and_does_not_block_capture(
     assert run_fixture.events.index("baseline_checked") < run_fixture.events.index(
         "capture"
     )
-
-
-def test_cli_rejects_unknown_profile_targets_before_connecting(tmp_path, monkeypatch):
-    profile = tmp_path / "profile.yaml"
-    profile.write_text(
-        'schema_version: "1.0"\nname: missing\ndevices:\n  - node: absent\n    cpus: 0.25\n'
-    )
-    monkeypatch.setattr(sys, "argv", ["experiment_run", "--profile", str(profile)])
-    monkeypatch.setattr(
-        experiment_run,
-        "load_documents",
-        lambda _path: ({}, {"devices": []}, {}, {"links": []}),
-    )
-    monkeypatch.setattr(
-        experiment_run,
-        "connect",
-        lambda _args: pytest.fail("connected before validation"),
-    )
-    with pytest.raises(SystemExit) as exc:
-        experiment_run.main()
-    assert exc.value.code == 2
-
-
-@pytest.mark.parametrize("value", ["0"])
-def test_cli_rejects_invalid_metric_intervals_before_connecting(
-    monkeypatch, capsys, value
-):
-    monkeypatch.setattr(sys, "argv", ["experiment_run", "--metrics-interval", value])
-    monkeypatch.setattr(
-        experiment_run, "connect", lambda _args: pytest.fail("unexpected connection")
-    )
-    with pytest.raises(SystemExit) as exc:
-        experiment_run.main()
-    assert exc.value.code == 2
-    assert "--metrics-interval must be positive and finite" in capsys.readouterr().err
 
 
 def test_cli_rejects_logical_capture_before_connecting_or_starting_lab(

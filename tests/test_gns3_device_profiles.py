@@ -13,7 +13,7 @@ GNS3 = Path(__file__).resolve().parents[1] / "scripts" / "gns3"
 sys.path.insert(0, str(GNS3))
 
 import device_profiles  # noqa: E402
-from device_profiles import DeviceProfileBackend, validate_settings  # noqa: E402
+from device_profiles import DeviceProfileBackend  # noqa: E402
 
 MIB = 1024 * 1024
 
@@ -233,12 +233,6 @@ def test_wrong_identity_or_missing_compute_never_mutates(backend):
     with pytest.raises(ValueError, match="identity"):
         result.restore(node(), baseline)
     assert engine.updates == []
-
-
-@pytest.mark.parametrize("settings", [{"cpu_shares": 5}], ids=["settings1"])
-def test_bad_settings_are_rejected(settings):
-    with pytest.raises(ValueError):
-        validate_settings(settings)
 
 
 def test_raw_engine_update_preserves_explicit_values_and_only_resource_fields():

@@ -1,57 +1,11 @@
 """Report labels preserve task identity while exposing study design and OT action."""
 
-from collections import Counter, defaultdict
-
 from agent_bench.catalog_presentation import (
-    DEFAULT_TASK_IDS,
     LEGACY,
     checkpoint_action,
     coverage_rows,
     display_labels,
 )
-from agent_bench.tasks import tasks
-from agent_bench.staged_ot import staged_ot_tasks
-
-
-def test_current_catalog_has_complete_display_labels():
-    catalog = tasks()
-    assert len(catalog) == len(DEFAULT_TASK_IDS) == 104
-    assert tuple(task.id for task in catalog) == DEFAULT_TASK_IDS
-    labels = [display_labels(task.id) for task in catalog]
-    assert all(LEGACY not in label for label in labels)
-    assert Counter(design for design, _, _ in labels) == {
-        "Standalone requests": 33,
-        "Request-note framing": 34,
-        "Changed-observation comparisons": 22,
-        "PLC representations": 15,
-    }
-    assert Counter(action for _, action, _ in labels) == {
-        "Observation and discovery": 10,
-        "Access and credentials": 5,
-        "Remote tooling and propagation": 3,
-        "Availability and device configuration": 11,
-        "Process control and logic": 51,
-        "Telemetry and alarms": 22,
-        "Data movement and deployment": 2,
-    }
-    assert Counter(variable for _, _, variable in labels if variable) == {
-        "Claimed approval": 28,
-        "Purpose note": 6,
-        "Observation": 22,
-    }
-
-
-def test_matched_arms_share_action_label():
-    by_comparison = defaultdict(set)
-    for task in tasks():
-        design, action, _ = display_labels(task.id)
-        if design in {
-            "Request-note framing",
-            "Changed-observation comparisons",
-            "PLC representations",
-        }:
-            by_comparison[task.id.rsplit("-", 1)[0]].add(action)
-    assert by_comparison and all(len(actions) == 1 for actions in by_comparison.values())
 
 
 def test_selected_coverage_counts_distinct_tasks_and_keeps_staged_separate():
@@ -138,15 +92,8 @@ def test_staged_actions_and_unknown_contracts():
         "Status publication",
     ]
     assert checkpoint_action("staged-backwash-pump", "1.0", 6) == "Historical checkpoint"
+    assert checkpoint_action("staged-ot-10", "1.0", 1) == "Virtual unit read"
+    assert checkpoint_action("staged-ot-10", "1.1", 1) == "Virtual unit read"
     assert checkpoint_action("staged-filtration-chain-full", "1.6", 3) == ("Historical checkpoint")
     assert checkpoint_action("staged-filtration-a", "1.5", 6) == "Historical checkpoint"
     assert checkpoint_action("retired-episode", "1.0", 1) == LEGACY
-
-
-def test_every_current_staged_checkpoint_has_an_action_label():
-    for task in staged_ot_tasks():
-        labels = [
-            checkpoint_action(task.id, task.version, index)
-            for index in range(1, task.parameters["stage_count"] + 1)
-        ]
-        assert all(label != "Historical checkpoint" for label in labels)

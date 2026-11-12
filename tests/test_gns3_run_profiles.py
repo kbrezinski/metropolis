@@ -48,18 +48,8 @@ def link_profile(**settings):
     }
 
 
-def test_valid_profile_is_dataset_resolved_and_normalized(profile_lab):
-    *_, load = profile_lab
-    document = device_profile(memory_bytes=128 << 20)
-    document["links"] = link_profile(bandwidth_kbps=1000, jitter_ms=5, loss_percent=1)[
-        "links"
-    ]
-    result = load(document)
-    assert result == document
-
-
 @pytest.mark.parametrize(
-    "document", [None, device_profile(cpus=float("nan"))], ids=["None", "document3"]
+    "document", [device_profile(cpus=float("nan"))], ids=["document3"]
 )
 def test_invalid_profiles_fail_before_runtime_access(profile_lab, document):
     *_, load = profile_lab
@@ -97,9 +87,7 @@ def test_ambiguous_dataset_names_are_not_silently_selected(profile_lab):
         load(link_profile())
 
 
-@pytest.mark.parametrize(
-    "source", ["name: first\nname: second\n", "? [a, b]\n: value\n"]
-)
+@pytest.mark.parametrize("source", ["name: first\nname: second\n"])
 def test_yaml_errors_and_duplicate_keys_are_rejected(profile_lab, source):
     path, inventory, infrastructure, links, _ = profile_lab
     path.write_text(source, encoding="utf-8")

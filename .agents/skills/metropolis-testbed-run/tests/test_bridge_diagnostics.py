@@ -2,6 +2,7 @@
 
 import asyncio
 import csv
+import hashlib
 import importlib.util
 import json
 from pathlib import Path
@@ -37,6 +38,77 @@ def _provider(tmp_path):
     return provider, output, attempt, mailbox
 
 
+def test_registration_exclusion_does_not_abort_later_tasks(tmp_path, monkeypatch):
+    selected = [SimpleNamespace(id=name, parameters={}) for name in ("first", "second")]
+    calls = []
+
+    class FakeProvider:
+        def __init__(self, _output, mailbox, *_args, **_kwargs):
+            self.mailbox = mailbox
+            self.worker = None
+            self.summary_record = {"status": "unavailable"}
+            self.participant_template_sha256 = "template"
+            self.instructions_sha256 = "instructions"
+            self.publisher_sha256 = "publisher"
+            self.ready_receipt = None
+            self.first_request_seen = None
+            self.receipts = []
+            self.unanswered_request = None
+            self.mailbox_integrity = {}
+
+        def collect_summary(self, _submission):
+            return None
+
+        def close(self):
+            return None
+
+    def fake_attempt(task, _model, provider, directory, *_args, **_kwargs):
+        calls.append(task.id)
+        directory.mkdir(parents=True)
+        provider.worker = None if task.id == "first" else {"agent_id": "fresh-worker"}
+        excluded = provider.worker is None
+        return {
+            "task_id": task.id,
+            "agent_engine": {"config": {}},
+            "grade": {
+                "outcome": "Infrastructure Error" if excluded else "Full",
+                "infrastructure_error": "Registration timed out" if excluded else None,
+            },
+        }
+
+    monkeypatch.setattr(
+        bridge,
+        "catalog_for_suite",
+        lambda suite: selected if suite == "default" else [],
+    )
+    monkeypatch.setattr(bridge, "suite_hash", lambda _catalog: "catalog-hash")
+    monkeypatch.setattr(bridge, "MailboxProvider", FakeProvider)
+    monkeypatch.setattr(bridge, "run_attempt", fake_attempt)
+    monkeypatch.setattr(bridge, "results", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(bridge.tempfile, "gettempdir", lambda: str(tmp_path))
+
+    output = tmp_path / "run"
+    args = SimpleNamespace(
+        repo=Path(__file__).parents[4],
+        output=output,
+        suite="default",
+        task=["first", "second"],
+        prompt_condition=None,
+        repeats=1,
+        rounds=1,
+        seconds=1,
+        model_id="canned",
+    )
+    assert bridge.run(args) is None
+    assert calls == ["first", "second"]
+    assert bridge.read_json(output / "active.json")["status"] == "finished"
+    assert bridge.read_json(output / "active.json")["registration_failures"] == 1
+    first = bridge.read_json(output / "codex-subagent/first/repeat-001/attempt.json")
+    second = bridge.read_json(output / "codex-subagent/second/repeat-001/attempt.json")
+    assert first["grade"]["infrastructure_error"] == "Registration timed out"
+    assert second["grade"]["outcome"] == "Full"
+
+
 def test_participant_case_codes_hide_task_names():
     task_ids = ("hping3-flood-tcp-syn", "plc-policy-coil-write")
     codes = bridge._opaque_case_codes(
@@ -69,15 +141,19 @@ def test_participant_mailbox_hides_output_name_and_task_id(tmp_path, monkeypatch
     )
 
     def register(_delay):
-        bridge.write_json(
-            mailbox / "worker.json",
-            {
-                "agent_id": "new-worker",
-                "attempt_nonce": provider.nonce,
-                "fork_turns": "none",
-                "dispatched_instructions_sha256": provider.instructions_sha256,
-            },
-        )
+        if not (mailbox / "worker.json").exists():
+            bridge.write_json(
+                mailbox / "worker.json",
+                {
+                    "agent_id": "new-worker",
+                    "attempt_nonce": provider.nonce,
+                    "fork_turns": "none",
+                    "dispatched_instructions_sha256": provider.instructions_sha256,
+                },
+            )
+        if not (mailbox / "ready.json").exists():
+            monkeypatch.setattr(publisher, "MAILBOX", mailbox)
+            assert publisher.main(["ready"]) == 0
 
     monkeypatch.setattr(bridge.time, "sleep", register)
     provider.start(task_id)
@@ -89,6 +165,9 @@ def test_participant_mailbox_hides_output_name_and_task_id(tmp_path, monkeypatch
     assert str(mailbox) in instructions
     assert output.name not in instructions
     assert task_id not in instructions
+    assert task_id not in (mailbox / "ready-challenge.json").read_text()
+    assert task_id not in (mailbox / "ready.json").read_text()
+    assert bridge.read_json(mailbox / "ready.json")["attempt_nonce"] == provider.nonce
 
     async def exchange():
         pending = asyncio.create_task(provider.generate([], {}))
@@ -97,6 +176,7 @@ def test_participant_mailbox_hides_output_name_and_task_id(tmp_path, monkeypatch
         payload = bridge.read_json(request)
         assert "task_id" not in payload
         assert task_id not in request.read_text()
+        assert publisher.main(["show", "--request", request.name]) == 0
         bridge.write_json(
             mailbox / "response-001.json",
             {
@@ -110,7 +190,157 @@ def test_participant_mailbox_hides_output_name_and_task_id(tmp_path, monkeypatch
         await pending
 
     asyncio.run(exchange())
+    assert (
+        provider.first_request_seen["request_id"]
+        == bridge.read_json(mailbox / "request-001.json")["request_id"]
+    )
     provider.close()
+
+
+def test_worker_registration_without_mailbox_readiness_is_excluded(
+    tmp_path, monkeypatch
+):
+    output = tmp_path / "run"
+    output.mkdir()
+    mailbox = tmp_path / "session" / "case" / "repeat-001"
+    provider = bridge.MailboxProvider(
+        output, mailbox, "known-model", 1, set(), b"publisher"
+    )
+    clock = [0.0]
+    monkeypatch.setattr(bridge.time, "monotonic", lambda: clock[0])
+
+    def register(_delay):
+        if not (mailbox / "worker.json").exists():
+            bridge.write_json(
+                mailbox / "worker.json",
+                {
+                    "agent_id": "new-worker",
+                    "attempt_nonce": provider.nonce,
+                    "fork_turns": "none",
+                    "dispatched_instructions_sha256": provider.instructions_sha256,
+                },
+            )
+        clock[0] = 181.0
+
+    monkeypatch.setattr(bridge.time, "sleep", register)
+    with pytest.raises(bridge.InfrastructureError, match="mailbox|ready|acknowledg"):
+        provider.start("task")
+    assert not (mailbox / "request-001.json").exists()
+
+
+def test_wrong_mailbox_readiness_is_rejected(tmp_path, monkeypatch):
+    output = tmp_path / "run"
+    output.mkdir()
+    mailbox = tmp_path / "session" / "case" / "repeat-001"
+    provider = bridge.MailboxProvider(
+        output, mailbox, "known-model", 1, set(), b"publisher"
+    )
+
+    def register(_delay):
+        if not (mailbox / "worker.json").exists():
+            bridge.write_json(
+                mailbox / "worker.json",
+                {
+                    "agent_id": "new-worker",
+                    "attempt_nonce": provider.nonce,
+                    "fork_turns": "none",
+                    "dispatched_instructions_sha256": provider.instructions_sha256,
+                },
+            )
+            bridge.write_json(
+                mailbox / "ready.json",
+                {"attempt_nonce": provider.nonce, "challenge": "stale-challenge"},
+            )
+
+    monkeypatch.setattr(bridge.time, "sleep", register)
+    with pytest.raises(bridge.InfrastructureError, match="mailbox|ready|acknowledg"):
+        provider.start("task")
+    assert not (mailbox / "request-001.json").exists()
+
+
+def test_publisher_ready_and_show_prove_mailbox_access(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(publisher, "MAILBOX", tmp_path)
+    bridge.write_json(tmp_path / "ready-challenge.json", {"attempt_nonce": "nonce"})
+    assert publisher.main(["ready"]) == 2
+    assert not (tmp_path / "ready.json").exists()
+    bridge.write_json(
+        tmp_path / "ready-challenge.json",
+        {"attempt_nonce": "nonce", "challenge": "fresh-challenge"},
+    )
+    assert publisher.main(["ready"]) == 0
+    assert bridge.read_json(tmp_path / "ready.json") == {
+        "attempt_nonce": "nonce",
+        "challenge": "fresh-challenge",
+    }
+    assert publisher.main(["ready"]) == 2
+
+    request = tmp_path / "request-001.json"
+    bridge.write_json(
+        request,
+        {
+            "attempt_nonce": "nonce",
+            "request_id": "request-id",
+            "messages": [{"role": "user", "content": "Read the supplied status."}],
+            "tools": [{"name": "read_file"}],
+        },
+    )
+    assert publisher.main(["show", "--request", request.name]) == 0
+    assert "Read the supplied status." in capsys.readouterr().out
+    assert bridge.read_json(tmp_path / "seen-001.json") == {
+        "attempt_nonce": "nonce",
+        "request_id": "request-id",
+        "request_sha256": hashlib.sha256(request.read_bytes()).hexdigest(),
+    }
+    seen_bytes = (tmp_path / "seen-001.json").read_bytes()
+    assert publisher.main(["show", "--request", request.name]) == 0
+    assert (tmp_path / "seen-001.json").read_bytes() == seen_bytes
+
+
+def test_unseen_first_request_is_infrastructure_not_task_failure(tmp_path, monkeypatch):
+    provider, output, attempt, mailbox = _provider(tmp_path)
+    monkeypatch.setattr(bridge, "FIRST_REQUEST_SEEN_SECONDS", 0.01)
+
+    with pytest.raises(
+        bridge.InfrastructureError, match="request.*(seen|acknowledg)|mailbox"
+    ):
+        asyncio.run(provider.generate([], {}))
+
+    diagnostic = bridge.read_json(attempt / "unanswered-request.json")
+    assert diagnostic["round"] == 1
+    assert diagnostic["response_present"] is False
+    assert (
+        diagnostic["request_id"]
+        == bridge.read_json(mailbox / "request-001.json")["request_id"]
+    )
+    assert provider.first_request_seen is None
+    assert bridge.read_json(output / "active.json")["status"] == "unanswered"
+
+
+def test_first_response_without_seen_receipt_is_not_accepted(tmp_path, monkeypatch):
+    provider, _, attempt, mailbox = _provider(tmp_path)
+    monkeypatch.setattr(bridge, "FIRST_REQUEST_SEEN_SECONDS", 0.01)
+
+    async def exchange():
+        pending = asyncio.create_task(provider.generate([], {}))
+        await _wait_for(mailbox / "request-001.json")
+        request = bridge.read_json(mailbox / "request-001.json")
+        bridge.write_json(
+            mailbox / "response-001.json",
+            {
+                "attempt_nonce": provider.nonce,
+                "request_id": request["request_id"],
+                "content": "Awaiting the published task request.",
+                "tool_calls": [],
+                "provider_refusal": False,
+            },
+        )
+        with pytest.raises(bridge.InfrastructureError, match="request|mailbox"):
+            await pending
+
+    asyncio.run(exchange())
+    assert provider.receipts == []
+    assert provider.first_request_seen is None
+    assert bridge.read_json(attempt / "unanswered-request.json")["round"] == 1
 
 
 async def _wait_for(path):
@@ -121,8 +351,11 @@ async def _wait_for(path):
     raise AssertionError(f"Request was not published: {path}")
 
 
-def test_unanswered_request_keeps_last_received_response_and_unknown_cause(tmp_path):
+def test_unanswered_request_keeps_last_received_response_and_unknown_cause(
+    tmp_path, monkeypatch
+):
     provider, output, attempt, mailbox = _provider(tmp_path)
+    monkeypatch.setattr(publisher, "MAILBOX", mailbox)
 
     async def exchange():
         first = asyncio.create_task(provider.generate([], {}))
@@ -130,6 +363,7 @@ def test_unanswered_request_keeps_last_received_response_and_unknown_cause(tmp_p
         request = bridge.read_json(mailbox / "request-001.json")
         assert "issued_utc" not in request
         assert "task_id" not in request
+        assert publisher.main(["show", "--request", "request-001.json"]) == 0
         (mailbox / "response-001.json").write_text(
             json.dumps(
                 {
@@ -175,6 +409,33 @@ def test_unanswered_request_keeps_last_received_response_and_unknown_cause(tmp_p
     assert rows[0]["worker_observation"] is None
     assert "worker status unobserved" in bridge.unanswered_lines(rows)[1]
     assert "last received round 1 at " in bridge.unanswered_lines(rows)[1]
+
+
+def test_mailbox_polling_gap_is_an_infrastructure_error(tmp_path, monkeypatch):
+    provider, _, attempt, _ = _provider(tmp_path)
+    monkeypatch.setattr(bridge, "MAX_POLL_GAP_SECONDS", 0.01)
+
+    with pytest.raises(bridge.InfrastructureError, match="invalidated attempt timing"):
+        asyncio.run(provider.generate([], {}))
+
+    diagnostic = bridge.read_json(attempt / "unanswered-request.json")
+    assert diagnostic["poll_gap_seconds"] > 0.01
+    assert diagnostic["cause"] == "not determined"
+    assert diagnostic["response_present"] is False
+
+
+def test_deadline_cancellation_propagates_polling_gap_as_infrastructure(
+    tmp_path, monkeypatch
+):
+    provider, _, attempt, _ = _provider(tmp_path)
+    monkeypatch.setattr(bridge, "MAX_POLL_GAP_SECONDS", 0.005)
+
+    with pytest.raises(bridge.InfrastructureError, match="invalidated attempt timing"):
+        asyncio.run(asyncio.wait_for(provider.generate([], {}), timeout=0.05))
+    assert (
+        bridge.read_json(attempt / "unanswered-request.json")["poll_gap_seconds"]
+        > 0.005
+    )
 
 
 def test_coordinator_observation_is_separate_from_frozen_attempt(tmp_path):

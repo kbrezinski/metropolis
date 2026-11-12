@@ -1,6 +1,7 @@
 """Publish one response from inside the current mailbox."""
 
 import argparse
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -201,7 +202,16 @@ def publish_once(path, value):
 def build_parser():
     parser = argparse.ArgumentParser(description=__doc__)
     modes = parser.add_subparsers(dest="mode", required=True)
-    for mode in ("write", "read", "submit-stage", "finish", "refuse", "summary"):
+    modes.add_parser("ready")
+    for mode in (
+        "show",
+        "write",
+        "read",
+        "submit-stage",
+        "finish",
+        "refuse",
+        "summary",
+    ):
         item = modes.add_parser(mode)
         item.add_argument(
             "--request", required=True, help="Current request file name in this mailbox"
@@ -241,11 +251,38 @@ def build_parser():
 
 
 def run(args):
+    if args.mode == "ready":
+        if (MAILBOX / "closed.json").exists() or any(MAILBOX.glob("request-*.json")):
+            raise ValueError("Mailbox readiness must precede the first request")
+        challenge = load_object(mailbox_file("ready-challenge.json"))
+        if set(challenge) != {"attempt_nonce", "challenge"} or not all(
+            isinstance(value, str) and value for value in challenge.values()
+        ):
+            raise ValueError("Invalid mailbox readiness challenge")
+        publish_once(MAILBOX / "ready.json", challenge)
+        print("Published ready.json")
+        return
     request, response = current_request(args.request, summary=args.mode == "summary")
     common = {
         "attempt_nonce": request["attempt_nonce"],
         "request_id": request["request_id"],
     }
+    if args.mode == "show":
+        number = REQUEST_NAME.fullmatch(args.request).group(1)
+        seen_path = MAILBOX / f"seen-{number}.json"
+        seen = {
+            **common,
+            "request_sha256": hashlib.sha256(
+                mailbox_file(args.request).read_bytes()
+            ).hexdigest(),
+        }
+        if seen_path.exists():
+            if load_object(seen_path) != seen:
+                raise ValueError("Existing request receipt does not match this request")
+        else:
+            publish_once(seen_path, seen)
+        print(json.dumps(request, ensure_ascii=False, indent=2))
+        return
     if args.mode == "summary":
         payload = {**common, **summary_value(args)}
     else:

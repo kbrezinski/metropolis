@@ -49,6 +49,8 @@ from stirrup.core.models import AssistantMessage, TextBlock, TokenUsage, ToolCal
 
 
 MAX_RESPONSE_BYTES = 4 * 1024 * 1024
+MAX_POLL_GAP_SECONDS = 30.0
+FIRST_REQUEST_SEEN_SECONDS = 120.0
 MULTILINE_SOLUTION_TASK_IDS = frozenset(
     {"staged-filtration-chain-full", "staged-filtration-chain-handoff"}
 )
@@ -119,6 +121,8 @@ class MailboxProvider:
         self.nonce, self.round = uuid.uuid4().hex, 0
         self.participant_name = participant_name or f"case_{self.nonce}"
         self.worker = None
+        self.ready_receipt = None
+        self.first_request_seen = None
         self.receipts = []
         self.last_usage = {}
         self.generation_ended = False
@@ -186,6 +190,12 @@ class MailboxProvider:
         self.mailbox.mkdir(parents=True, exist_ok=False)
         (self.mailbox / "mailbox_publish.py").write_bytes(self.publisher_bytes)
         registration = self.mailbox / "worker.json"
+        ready_path = self.mailbox / "ready.json"
+        challenge = uuid.uuid4().hex
+        write_json(
+            self.mailbox / "ready-challenge.json",
+            {"attempt_nonce": self.nonce, "challenge": challenge},
+        )
         template = Path(__file__).resolve().parents[1] / "references/participant.md"
         template_bytes = template.read_bytes()
         self.participant_template_sha256 = hashlib.sha256(template_bytes).hexdigest()
@@ -260,10 +270,14 @@ class MailboxProvider:
             publisher_sha256=self.publisher_sha256,
         )
         deadline = time.monotonic() + 180
-        while not registration.exists():
+        while not (registration.exists() and ready_path.exists()):
             if time.monotonic() >= deadline:
+                if not registration.exists():
+                    raise InfrastructureError(
+                        "No fresh Codex worker registered within 180 seconds"
+                    )
                 raise InfrastructureError(
-                    "No fresh Codex worker registered within 180 seconds"
+                    "Participant did not confirm mailbox access within 180 seconds"
                 )
             time.sleep(0.2)
         try:
@@ -282,11 +296,19 @@ class MailboxProvider:
                     "Registration must identify a distinct, no-history worker for this nonce "
                     "and attest the complete dispatched participant instructions"
                 )
+            ready = read_json(ready_path)
+            if ready != {"attempt_nonce": self.nonce, "challenge": challenge}:
+                raise ValueError("Participant mailbox readiness receipt is invalid")
             self.worker = worker
             self.seen_workers.add(agent_id)
+            self.ready_receipt = {
+                **ready,
+                "received_utc": utc_now(),
+                "raw_sha256": hashlib.sha256(read_bytes(ready_path)).hexdigest(),
+            }
         except (OSError, ValueError) as error:
             raise InfrastructureError(
-                f"Invalid worker registration: {error}"
+                f"Invalid worker registration or mailbox readiness: {error}"
             ) from error
 
     async def generate(self, messages, tools):
@@ -298,6 +320,7 @@ class MailboxProvider:
         request_id = uuid.uuid4().hex
         request = self.mailbox / f"request-{self.round:03}.json"
         response = self.mailbox / f"response-{self.round:03}.json"
+        seen_path = self.mailbox / f"seen-{self.round:03}.json"
         issued_utc, issued_at = utc_now(), time.monotonic()
         write_json(
             request,
@@ -325,10 +348,56 @@ class MailboxProvider:
             round=self.round,
             issued_utc=issued_utc,
         )
+        last_poll_at = issued_at
+        poll_gap_seconds = None
+        first_request_unseen = False
         try:
-            while not response.exists():
+            while True:
+                now = time.monotonic()
+                if now - last_poll_at > MAX_POLL_GAP_SECONDS:
+                    poll_gap_seconds = round(now - last_poll_at, 3)
+                    raise InfrastructureError("Mailbox polling was interrupted")
+                last_poll_at = now
+                if (
+                    self.round == 1
+                    and seen_path.exists()
+                    and self.first_request_seen is None
+                ):
+                    seen = read_json(seen_path)
+                    expected = {
+                        "attempt_nonce": self.nonce,
+                        "request_id": request_id,
+                        "request_sha256": hashlib.sha256(
+                            read_bytes(request)
+                        ).hexdigest(),
+                    }
+                    if seen != expected:
+                        raise InfrastructureError(
+                            "First request receipt does not match the current request"
+                        )
+                    self.first_request_seen = {
+                        **seen,
+                        "received_utc": utc_now(),
+                        "raw_sha256": hashlib.sha256(read_bytes(seen_path)).hexdigest(),
+                    }
+                if response.exists() and (
+                    self.round != 1 or self.first_request_seen is not None
+                ):
+                    break
+                if (
+                    self.round == 1
+                    and self.first_request_seen is None
+                    and now - issued_at >= FIRST_REQUEST_SEEN_SECONDS
+                ):
+                    first_request_unseen = True
+                    raise InfrastructureError(
+                        "Participant did not acknowledge the first mailbox request"
+                    )
                 await asyncio.sleep(0.2)
-        except asyncio.CancelledError:
+        except (asyncio.CancelledError, InfrastructureError) as error:
+            gap = time.monotonic() - last_poll_at
+            if gap > MAX_POLL_GAP_SECONDS:
+                poll_gap_seconds = round(gap, 3)
             last_reply = next(
                 (
                     item
@@ -353,8 +422,14 @@ class MailboxProvider:
                     last_reply["received_utc"] if last_reply else None
                 ),
                 "participant_status": "unobserved",
-                "cause": "not determined",
+                "cause": (
+                    "first request not acknowledged"
+                    if first_request_unseen
+                    else "not determined"
+                ),
             }
+            if poll_gap_seconds is not None:
+                self.unanswered_request["poll_gap_seconds"] = poll_gap_seconds
             try:
                 write_json(
                     self.directory / "unanswered-request.json", self.unanswered_request
@@ -365,8 +440,14 @@ class MailboxProvider:
                     request_id=request_id,
                     diagnostics=str(self.directory / "unanswered-request.json"),
                 )
-            except OSError as error:
-                self.unanswered_request["diagnostic_write_error"] = str(error)
+            except OSError as diagnostic_error:
+                self.unanswered_request["diagnostic_write_error"] = str(
+                    diagnostic_error
+                )
+            if poll_gap_seconds is not None:
+                raise InfrastructureError(
+                    f"Mailbox polling gap of {poll_gap_seconds}s invalidated attempt timing"
+                ) from error
             raise
         try:
             reply, _ = self.receive(response, phase="generation", request_id=request_id)
@@ -1408,6 +1489,7 @@ def run(args):
     mailbox_parent = Path(tempfile.gettempdir()).resolve()
     mailbox_root = None
     last_mailbox_closed_at = None
+    registration_failures = 0
     catalog_hash, seen_workers = suite_hash(catalog), set()
     plc_catalog_hash = suite_hash(catalog_for_suite("plc-control-edit"))
     bridge_hash = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
@@ -1543,6 +1625,8 @@ def run(args):
                 result["blind_run"] = {
                     "worker_registration": provider.worker,
                     "registration_source": "coordinator-reported",
+                    "mailbox_readiness": provider.ready_receipt,
+                    "first_request_seen": provider.first_request_seen,
                     "filesystem_boundary": "shared host, instruction-restricted to mailbox",
                     "prior_training_exposure": "unknown",
                     "response_receipts": provider.receipts,
@@ -1565,18 +1649,27 @@ def run(args):
                 write_json(directory / "attempt.json", result)
                 print(f"Frozen: {task.id} / {repeat}", flush=True)
                 if provider.worker is None:
+                    registration_failures += 1
                     write_json(
                         output / "active.json",
                         {
-                            "status": "failed",
-                            "reason": "Worker registration failed; run stopped",
-                            "reports": str(output / "reports"),
+                            "status": "registration_excluded",
+                            "task_id": task.id,
+                            "repeat": repeat,
+                            "reason": result["grade"].get("infrastructure_error"),
                         },
                     )
-                    return 2
+                    print(
+                        f"Worker registration excluded: {task.id} / {repeat}; continuing",
+                        flush=True,
+                    )
         write_json(
             output / "active.json",
-            {"status": "finished", "reports": str(output / "reports")},
+            {
+                "status": "finished",
+                "registration_failures": registration_failures,
+                "reports": str(output / "reports"),
+            },
         )
     except KeyboardInterrupt:
         write_json(output / "active.json", {"status": "interrupted"})

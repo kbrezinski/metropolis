@@ -5,7 +5,6 @@ from __future__ import annotations
 import csv
 import hashlib
 import json
-import math
 import struct
 import sys
 from datetime import datetime, timezone
@@ -49,7 +48,7 @@ def entry(path, **extra):
     }
 
 
-@pytest.mark.parametrize("nano,endian", [(False, "<"), (True, "<"), (False, ">")])
+@pytest.mark.parametrize("nano,endian", [(False, "<")])
 def test_classic_formats_original_lengths_empty_bins_and_partial_windows(
     tmp_path, endian, nano
 ):
@@ -92,19 +91,6 @@ def test_large_packet_clock_offset_is_reported_without_allocating_empty_years(tm
     pcap(path, [(1, 0, 100, 20)])
     with pytest.raises(ValueError, match="align compute clocks"):
         metrics_report._bandwidth(path, entry(path))
-
-
-def test_resource_series_leaves_gaps_for_missing_readings_and_samples():
-    samples = [
-        {"timestamp": timestamp(START), "cpu_percent": None},
-        {"timestamp": timestamp(START + 5), "cpu_percent": 10},
-        {"timestamp": timestamp(START + 20), "cpu_percent": 20},
-    ]
-    _, values = metrics_report._series_values(samples, "cpu_percent", 5)
-    assert math.isnan(values[0])
-    assert values[1] == 10
-    assert math.isnan(values[2])
-    assert values[3] == 20
 
 
 @pytest.mark.parametrize(

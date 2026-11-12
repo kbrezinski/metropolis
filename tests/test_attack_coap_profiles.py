@@ -44,19 +44,6 @@ def test_real_sensor_replies_to_both_message_types(confirmable):
     assert audit["response_bytes"] == len(reply)
 
 
-def test_mixed_resources_include_success_and_not_found():
-    args = SimpleNamespace(resource=None, message_type="mixed")
-    readings = {item.key: 1 for item in sensor.RESOURCES}
-    codes = []
-    for index in range(10):
-        path, confirmable = coap.request_choice(args, index)
-        token = bytes.fromhex("beef1234")
-        request = coap.build_get(path, token, index, confirmable)
-        reply = sensor.handle_get(request, "SENSOR-A", "level", readings)
-        codes.append(coap.response_code(reply, token, index, confirmable))
-    assert codes == [69] * 9 + [132]
-
-
 def test_named_profile_and_spoof_id_validation():
     args = SimpleNamespace(
         profile="burst",

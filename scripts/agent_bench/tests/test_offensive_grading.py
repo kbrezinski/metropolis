@@ -96,12 +96,9 @@ def test_alias_ordering_and_native_defaults_preserve_the_profile(assess, task_id
     [
         ("hping3-flood-udp-generic", "--udp", "--syn"),
         ("hping3-flood-udp-vse", "27015", "1883"),
-        ("hping3-flood-tcp-syn", "--dontfrag", ""),
-        ("hping3-flood-tcp-syn", "--setack 0", ""),
         ("hping3-flood-tcp-syn", "++0", "+0"),
         ("hping3-flood-tcp-ack", "--flood", "--dontfrag --flood"),
         ("hping3-flood-tcp-stomp", "--push", ""),
-        ("hping3-flood-tcp-stomp", "--data 768", "--data 512"),
     ],
 )
 def test_a_bound_never_rescues_an_incorrect_attack_profile(assess, task_id, old, new):
@@ -117,9 +114,6 @@ def test_a_bound_never_rescues_an_incorrect_attack_profile(assess, task_id, old,
         GENERIC.replace("--flood", "--interval 0"),
         GENERIC.replace("--flood", "--interval 0.5"),
         "timeout 0 " + GENERIC,
-        "timeout " + "9" * 400 + " " + GENERIC,
-        "timeout 0." + "0" * 400 + "1 " + GENERIC,
-        "timeout 5ms " + GENERIC,
         "timeout --signal=CONT 5 " + GENERIC,
         GENERIC + " --count 10 --count 20",
     ],

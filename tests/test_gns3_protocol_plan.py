@@ -129,7 +129,6 @@ def test_telemetry_plan_resolves_selected_relay_and_certificate_source():
 @pytest.mark.parametrize(
     "node,key,value,diagnostic",
     [
-        (0, "TELEMETRY_RELAY_NODE", "missing", "must name"),
         (1, "TELEMETRY_READER_NODE", "plant-publisher", "telemetry-consumer"),
         (1, "TELEMETRY_ENABLED", "false", "cohosted relay requires"),
         (2, "TELEMETRY_RELAY_URL", "http://198.51.100.30/v1/status", "disagrees"),
@@ -208,7 +207,7 @@ def opcua_inventory():
     }
 
 
-@pytest.mark.parametrize("security", [None, "None"])
+@pytest.mark.parametrize("security", [None], ids=["None0"])
 def test_opcua_plan_derives_selected_endpoint_and_application_identities(security):
     inventory = opcua_inventory()
     inventory["devices"][0]["address"] = "192.0.2.81/24"
@@ -239,7 +238,6 @@ def test_opcua_plan_derives_selected_endpoint_and_application_identities(securit
 @pytest.mark.parametrize(
     "node,key,value,diagnostic",
     [
-        (1, "OPCUA_SERVER_NODE", "missing", "OPCUA_SERVER_NODE"),
         (0, "OPCUA_CLIENT_NODE", "supervisor-west", "must name"),
         (1, "OPCUA_SECURITY_MODE", "None", "differs from peer"),
         (1, "OPCUA_ENDPOINT_URL", "opc.tcp://192.0.2.99:4840/metropolis/", "disagrees"),

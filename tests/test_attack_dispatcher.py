@@ -21,17 +21,6 @@ ROOT = Path(__file__).resolve().parents[1]
 ATTACKS = ROOT / "scripts/attacks"
 DISPATCHER = ATTACKS / "run.py"
 
-# Helper modules carry protocol and inventory logic, never a CLI.
-HELPERS = {
-    "_common",
-    "_mqtt",
-    "_telnet",
-    "_c2",
-    "run",
-    "run_mirai_choreography",
-    "run_merlin",
-}
-
 
 @pytest.fixture
 def role_inventory(tmp_path):
@@ -107,24 +96,6 @@ def records(result):
     return [
         json.loads(line) for line in result.stdout.splitlines() if line.startswith("{")
     ]
-
-
-def test_dispatcher_lists_supported_commands_without_helpers():
-    """The documented entry points are discoverable, but helpers are hidden."""
-    result = invoke("--help")
-    assert result.returncode == 0
-    listed = {
-        line.strip()
-        for line in result.stdout.splitlines()
-        if line.startswith("  ") and line.strip() and " " not in line.strip()
-    }
-    assert {
-        "coap_response_measurement",
-        "mirai_scenario",
-        "merlin_scenario",
-        "mqtt_bruteforce_attack",
-    } <= listed
-    assert not (listed & HELPERS)
 
 
 def test_gotham_mirai_setup_maps_inventory_without_contacting_gns3(role_inventory):

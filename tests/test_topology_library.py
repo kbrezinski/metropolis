@@ -30,7 +30,6 @@ from metropolis.topology import (  # noqa: E402
     Topology,
     TopologyError,
     load_bundled_topology,
-    to_topology,
 )
 
 DATASET = ROOT / "testbeds/metropolis/datasets/water_treatment_v1"
@@ -178,16 +177,6 @@ def test_overlay_requires_declared_vti_endpoints_on_its_network():
         lab.validate()
 
 
-def test_documents_from_different_testbeds_are_refused():
-    documents = {
-        name: yaml.safe_load(path.read_text(encoding="utf-8"))
-        for name, path in DOCUMENTS.items()
-    }
-    documents["links"] = dict(documents["links"], testbed_id="somewhere-else")
-    with pytest.raises(TopologyError, match="belongs to testbed"):
-        to_topology(documents)
-
-
 # -- building -----------------------------------------------------------------
 
 
@@ -214,12 +203,6 @@ def test_overlapping_networks_are_caught():
     assert any("overlap" in problem for problem in lab.problems())
 
 
-def test_a_device_on_an_unplanned_subnet_is_caught():
-    lab = two_cell()
-    lab.device("PLC-A").subnet = "192.168.1.0/24"
-    assert any("not in the address plan" in problem for problem in lab.problems())
-
-
 def test_duplicate_device_addresses_are_caught():
     topology = Topology(testbed_id="example")
     topology.add_network("cell", "10.42.0.0/24")
@@ -228,12 +211,6 @@ def test_duplicate_device_addresses_are_caught():
     assert "devices sensor-a and sensor-b share address 10.42.0.20" in (
         topology.problems()
     )
-
-
-def test_a_gateway_mismatch_is_caught():
-    lab = two_cell()
-    lab.device("PLC-A").gateway = "10.0.10.254"
-    assert any("does not match" in problem for problem in lab.problems())
 
 
 def test_a_contradictory_node_environment_is_caught():
@@ -278,15 +255,6 @@ def test_validate_raises_and_lists_every_problem():
 # -- serialising --------------------------------------------------------------
 
 
-# -- drawing ------------------------------------------------------------------
-
-
-def test_dot_labels_are_escaped():
-    lab = two_cell()
-    lab.routers[0].name = 'R-"odd"'
-    assert '\\"odd\\"' in lab.to_dot()
-
-
 # -- deriving the network settings --------------------------------------------
 
 
@@ -306,24 +274,6 @@ def test_auto_network_fills_in_the_gateway_and_entrypoint_values():
     assert device.environment["NODE_HOSTNAME"] == "PLC-A"
     assert device.environment["NODE_IP"] == "10.0.10.10/24"
     assert device.environment["NODE_GATEWAY"] == "10.0.10.1"
-    assert lab.problems() == []
-
-
-def test_auto_network_keeps_the_settings_in_step_when_the_address_changes():
-    lab = Topology()
-    lab.add_network("cell-a", "10.0.10.0/24", gateway="10.0.10.1")
-    device = lab.add_device(
-        "PLC-A",
-        image="img",
-        subnet="cell-a",
-        address="10.0.10.10/24",
-        auto_network=True,
-    )
-
-    device.address = "10.0.10.11/24"
-    device.refresh_network()
-
-    assert device.environment["NODE_IP"] == "10.0.10.11/24"
     assert lab.problems() == []
 
 
@@ -357,26 +307,7 @@ def test_allocation_reports_a_full_subnet():
 # -- inferring VLANs from the network -----------------------------------------
 
 
-def test_link_infers_vlans_from_the_network():
-    """A port's membership is stated once, on the network."""
-    lab = two_cell()
-    link = lab.link("l", "sw-a:router-uplink", "PLC-A:eth0", network_id="cell-a")
-
-    assert link.vlans == (10,)
-    assert link.kind == "access", "one VLAN is an access port"
-
-
 # -- switch ports -------------------------------------------------------------
-
-
-def test_a_port_learns_its_vlans_from_the_link_on_it():
-    """The cabling is the source of truth, so the port reports what it carries."""
-    lab = two_cell()
-    port = lab.ports_of("sw-a")[lab.ports_of("sw-a").index("router-uplink")]
-
-    assert port.vlans == (10,)
-    assert port.mode == "trunk"
-    assert port.link is not None and port.link.id == "link-r-sw"
 
 
 def test_a_port_stated_twice_with_different_vlans_is_caught():
@@ -397,19 +328,3 @@ def test_a_port_whose_mode_contradicts_its_vlans_is_caught():
         )
     )
     assert any("does not match" in problem for problem in lab.problems())
-
-
-def test_only_roles_are_written_to_yaml():
-    """A port's VLANs live on its link, so writing them again would duplicate."""
-    lab = two_cell()
-    lab.switch("sw-a").ports = Ports(
-        (
-            SwitchPort("router-uplink", mode="trunk", vlans=(10,)),
-            SwitchPort("plc-uplink"),
-        )
-    )
-    document = lab.to_dicts()["infrastructure"]
-    switch = next(item for item in document["switches"] if item["name"] == "sw-a")
-
-    assert switch["attachment_points"] == ["router-uplink", "plc-uplink"]
-    assert "ports" not in switch

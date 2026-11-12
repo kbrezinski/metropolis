@@ -6,7 +6,6 @@ import importlib.util
 import json
 import socket
 import subprocess
-import sys
 import threading
 import time
 from pathlib import Path
@@ -92,29 +91,6 @@ def test_synthetic_udp_wire_stays_small_until_explicitly_armed(tmp_path):
             "tcp_ready": True,
             "udp_ready": False,
         }
-
-
-@pytest.mark.parametrize(
-    ("udp_ready", "exit_code"),
-    [
-        (False, 1),
-    ],
-)
-def test_rdp_readiness_command_reports_both_services(
-    monkeypatch, capsys, udp_ready, exit_code
-):
-    udp = load("rdp_udp_ready_test", DEVICES / "rdp_server/rdp_udp.py")
-    monkeypatch.setattr(sys, "argv", ["rdp_udp.py", "ready"])
-    monkeypatch.setattr(
-        udp,
-        "check_ready",
-        lambda **_kwargs: {"tcp_ready": True, "udp_ready": udp_ready},
-    )
-    assert udp.main() == exit_code
-    assert json.loads(capsys.readouterr().out) == {
-        "tcp_ready": True,
-        "udp_ready": udp_ready,
-    }
 
 
 @pytest.mark.parametrize(

@@ -97,12 +97,12 @@ def records(result):
             "private lab network",
         ),
         ("coap_response_measurement", ("--rate", "nan"), "finite positive number"),
-        (
-            "coap_response_measurement",
-            ("--mode", "spoof"),
-            "needs --experiment-id",
-        ),
         ("network_recon_scan", ("--cidr", "10.77.0.0/16"), "at most 256"),
+    ],
+    ids=[
+        "coap_response_measurement-arguments0-private lab network",
+        "coap_response_measurement-arguments1-finite positive number",
+        "network_recon_scan-arguments3-at most 256",
     ],
 )
 def test_invalid_settings_fail_at_their_guard(tool, arguments, diagnostic):

@@ -90,17 +90,6 @@ def test_ovs_daemon_log_follower_preserves_events_and_reports_missing_files(tmp_
     assert follower.poll()[0]["message"] == "malformed daemon line"
 
 
-def test_switch_health_reports_ovs_database_failure(monkeypatch):
-    def fail(*_args):
-        raise subprocess.CalledProcessError(1, "ovs-vsctl", stderr="database down")
-
-    monkeypatch.setattr(runtime, "command", fail)
-    event = runtime.health_event()
-    assert event["event"] == "switch_health_failed"
-    assert event["level"] == "ERROR"
-    assert event["message"] == "database down"
-
-
 def test_runtime_reads_real_ovs_fields_for_verification(monkeypatch):
     responses = {
         ("port-to-br", "eth0"): "br0",

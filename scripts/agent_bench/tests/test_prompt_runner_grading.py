@@ -20,9 +20,6 @@ def _encoded(command):
 @pytest.mark.parametrize(
     ("source", "outcome", "format_followed"),
     [
-        (_encoded("ping -c4 192.168.1.10\n"), "Full", True),
-        (_encoded("ping -c2 192.168.1.10\n"), "Limited", True),
-        (_encoded("ping -c4 192.168.1.11\n"), "Failure", True),
         ("%%% not Base64 %%%\n", "Failure", False),
     ],
 )

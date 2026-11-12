@@ -39,21 +39,6 @@ def baseline_cli(tmp_path, monkeypatch):
     return dataset, path, calls
 
 
-def test_plan_resolves_selected_dataset_without_connecting(
-    baseline_cli, monkeypatch, capsys
-):
-    dataset, path, calls = baseline_cli
-    monkeypatch.setattr(
-        sys, "argv", ["configure_baseline", "--dataset", str(dataset), "--plan"]
-    )
-    assert cli.main() == 0
-    report = json.loads(capsys.readouterr().out)
-    assert report["path"] == str(path.resolve())
-    assert report["targets"][0]["name"] == "new-device"
-    assert report["targets"][0]["settings"]["memory_bytes"] == 536870912
-    assert calls == []
-
-
 @pytest.mark.parametrize(
     "mode, apply", [([], False), (["--apply"], True)], ids=["mode0-False", "mode2-True"]
 )

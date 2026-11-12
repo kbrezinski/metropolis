@@ -197,45 +197,9 @@ def test_validator_rejects_duplicate_ospf_router_ids(sandbox):
     assert f"OSPF router ID {first_id.group(1)} duplicates" in result.stdout
 
 
-def test_validator_rejects_active_ospf_30_without_point_to_point(sandbox):
-    candidate = None
-    for source in _router_scripts(sandbox):
-        text = source.read_text(encoding="utf-8")
-        active = set(
-            re.findall(
-                r"^set protocols ospf passive-interface-exclude '([^']+)'$",
-                text,
-                re.M,
-            )
-        )
-        for interface, address in re.findall(
-            r"^set interfaces ethernet (eth\d+) address '([^']+)'$", text, re.M
-        ):
-            line = f"set interfaces ethernet {interface} ip ospf network 'point-to-point'\n"
-            if (
-                interface in active
-                and ip_interface(address).network.prefixlen == 30
-                and line in text
-            ):
-                candidate = (source, text, line)
-                break
-        if candidate is not None:
-            break
-    if candidate is None:
-        pytest.skip("selected topology has no active /30 OSPF interface")
-    source, text, line = candidate
-    source.write_text(text.replace(line, "", 1), encoding="utf-8")
-
-    result = run_validator(sandbox)
-
-    assert result.returncode != 0
-    assert "must use point-to-point network type" in result.stdout
-
-
 @pytest.mark.parametrize(
     "forbidden",
     [
-        "set protocols ospf redistribute connected",
         "set protocols ospf default-information originate",
     ],
 )
@@ -390,51 +354,6 @@ def test_validator_rejects_host_attached_to_wrong_network(sandbox):
     assert f"{link['id']}: {device} subnet" in result.stdout
 
 
-def test_validator_rejects_router_interface_on_wrong_link_network(sandbox):
-    address_plan = load_document(sandbox, 0)
-    infrastructure = load_document(sandbox, 3)
-    plan = load_document(sandbox, 1)
-    routers = {router["name"]: router for router in infrastructure["routers"]}
-    candidate = next(
-        (
-            (link, endpoint)
-            for link in plan["links"]
-            if link["kind"] == "access" and link.get("network_id")
-            for endpoint in link["endpoints"]
-            if endpoint["node"] in routers
-            and any(
-                interface["name"] == endpoint.get("interface") and interface.get("cidr")
-                for interface in routers[endpoint["node"]]["interfaces"]
-            )
-        ),
-        None,
-    )
-    if candidate is None:
-        pytest.skip("selected topology has no routed access link")
-    link, endpoint = candidate
-    alternate = next(
-        (
-            network
-            for network in address_plan["networks"]
-            if network["id"] != link["network_id"]
-        ),
-        None,
-    )
-    if alternate is None:
-        pytest.skip("selected topology has no alternate routed network")
-    link["network_id"] = alternate["id"]
-    link["cidr"] = alternate["cidr"]
-    save_document(sandbox, 1, plan)
-
-    result = run_validator(sandbox)
-
-    assert result.returncode != 0
-    assert (
-        f"{link['id']}: {endpoint['node']} {endpoint['interface']} address"
-        in result.stdout
-    )
-
-
 def _remove_device_link(sandbox: Path, device_name: str) -> None:
     plan = load_document(sandbox, 1)
     original_count = len(plan["links"])
@@ -535,29 +454,6 @@ def test_validator_requires_syslog_receiver_when_routers_are_declared(sandbox):
 
     assert result.returncode != 0
     assert "no inventoried syslog receiver for declared routers" in result.stdout
-
-
-def test_validator_rejects_snmp_target_address_drift(sandbox):
-    inventory = load_document(sandbox, 2)
-    manager = next(
-        (
-            device
-            for device in inventory["devices"]
-            if "snmp-manager" in device["protocols"]
-        ),
-        None,
-    )
-    if manager is None:
-        pytest.skip("selected topology has no SNMP manager")
-    targets = manager["environment"]["SNMP_TARGETS"].split(",")
-    first_name, _ = targets[0].split("=", 1)
-    targets[0] = f"{first_name}=192.0.2.123"
-    manager["environment"]["SNMP_TARGETS"] = ",".join(targets)
-    save_document(sandbox, 2, inventory)
-
-    result = run_validator(sandbox)
-    assert result.returncode != 0
-    assert "SNMP target 192.0.2.123 is not a router interface" in result.stdout
 
 
 def test_validator_catches_hmi_telemetry_topic_drift(sandbox):

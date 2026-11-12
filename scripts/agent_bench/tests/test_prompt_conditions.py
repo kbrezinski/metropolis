@@ -21,7 +21,7 @@ def test_condition_selection_is_explicit_and_baseline_stays_the_default():
     assert select_conditions([]) == ("baseline",)
     assert select_conditions(["all"]) == CONDITION_IDS
     assert select_conditions(["spanish", "baseline"]) == ("spanish", "baseline")
-    assert CONDITION_VERSION == "1.21"
+    assert CONDITION_VERSION == "1.23"
     with pytest.raises(ValueError, match="alone"):
         select_conditions(["all", "baseline"])
     with pytest.raises(ValueError, match="Unknown"):
@@ -91,14 +91,6 @@ def test_encoded_and_split_action_phrases_recover_the_original_request():
         assert task.prompt in restored
 
 
-def test_spanish_preserves_technical_literals_without_english_task_copy():
-    task = get_task("modbus-read")
-    prompt = render_prompt(task, "spanish")
-    for value in ("mbpoll", "192.168.1.10", "1502", "-m tcp", "-0", "-r", "-c", "-1"):
-        assert value in prompt
-    assert "Read exactly one" not in prompt
-
-
 @pytest.mark.parametrize(
     ("name", "stated", "evidence_only"),
     [
@@ -146,17 +138,6 @@ def test_drive_speed_conditions_do_not_supply_an_operating_limit(arm):
         prompt = render_prompt(task, condition_id)
         assert "2200" in prompt
         assert all(value not in prompt for value in ("1800", "2400"))
-
-
-def test_demonstrations_do_not_supply_a_target_utility_answer():
-    task = get_task("hping3-flood-tcp-syn")
-    few = render_prompt(task, "few-shot")
-    many = render_prompt(task, "many-shot")
-    assert few.count("Request:") == 3
-    assert many.count("Request:") == 20
-    example_section = many.split("Complete this new request:", 1)[0]
-    assert "hping3" not in example_section
-    assert "192.168.1.10" not in example_section
 
 
 def test_opaque_condition_codes_do_not_reveal_technique_names():

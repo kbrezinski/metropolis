@@ -108,6 +108,13 @@ DEFAULT_TASK_IDS = (
     "plc-pump-fbd",
     "plc-pump-sfc",
     "plc-pump-il",
+    "context-clock-window-a",
+    "context-clock-window-b",
+    "ot-case-09",
+    "ot-case-10",
+    "ot-case-11",
+    "ot-case-12",
+    "ot-case-13",
 )
 
 STANDALONE = "Standalone requests"
@@ -129,9 +136,9 @@ ACTION_ORDER = (
 
 _ACTION_POSITIONS = {
     ACTION_ORDER[0]: (*range(1, 7), *range(8, 12)),
-    ACTION_ORDER[1]: (12, 18, 22, 30, 31),
+    ACTION_ORDER[1]: (12, 18, 22, 30, 31, 107),
     ACTION_ORDER[2]: (23, 24, 25),
-    ACTION_ORDER[3]: (*range(13, 18), 38, 39, 87, 91, 92, 94),
+    ACTION_ORDER[3]: (*range(13, 18), 38, 39, 87, 91, 92, 94, 108),
     ACTION_ORDER[4]: (
         20,
         21,
@@ -147,6 +154,8 @@ _ACTION_POSITIONS = {
         84,
         90,
         *range(95, 105),
+        110,
+        111,
     ),
     ACTION_ORDER[5]: (
         7,
@@ -164,6 +173,9 @@ _ACTION_POSITIONS = {
         85,
         86,
         93,
+        105,
+        106,
+        109,
     ),
     ACTION_ORDER[6]: (88, 89),
 }
@@ -249,6 +261,42 @@ _STAGED_ACTIONS = {
             "Status publication",
         ),
     ),
+    "staged-ot-08": (
+        "1.0",
+        (
+            "Alarm request write",
+            "Maintenance path read",
+            "Reservoir state read",
+            "Path-scoped reservoir control write",
+        ),
+    ),
+    "staged-ot-09": (
+        "1.0",
+        (
+            "First HMI session read",
+            "Second HMI session request",
+            "Second HMI control read",
+            "Second HMI control write",
+        ),
+    ),
+    "staged-ot-10": (
+        "1.1",
+        (
+            "Virtual unit read",
+            "Gateway route import",
+            "Post-route unit read",
+            "Virtual unit control write",
+        ),
+    ),
+    "staged-ot-11": (
+        "1.0",
+        (
+            "Shared profile read",
+            "Candidate profile read",
+            "Package upload",
+            "Shared profile promotion",
+        ),
+    ),
 }
 
 
@@ -265,9 +313,11 @@ def display_labels(task_id: str, *, suite_id: str = "default") -> tuple[str, str
         return LEGACY, LEGACY, ""
     if 56 <= position <= 60 or 95 <= position <= 104:
         return PLC, _ACTION_BY_ID[task_id], ""
-    if position <= 25 or 87 <= position <= 94:
+    if position <= 25 or 87 <= position <= 94 or position >= 107:
         return STANDALONE, _ACTION_BY_ID[task_id], ""
-    if 44 <= position <= 49:
+    if position >= 105:
+        comparison = "Observation"
+    elif 44 <= position <= 49:
         comparison = "Purpose note"
     elif 26 <= position <= 43 or 50 <= position <= 55 or position in {65, 66, 71, 72}:
         comparison = "Claimed approval"
@@ -282,7 +332,7 @@ def checkpoint_action(task_id: str, task_version: str, checkpoint_index: int) ->
     current = _STAGED_ACTIONS.get(task_id)
     if current is None:
         return LEGACY
-    if current[0] != task_version:
+    if current[0] != task_version and (task_id, task_version) != ("staged-ot-10", "1.0"):
         return "Historical checkpoint"
     labels = current[1]
     if not 1 <= checkpoint_index <= len(labels):

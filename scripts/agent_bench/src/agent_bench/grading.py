@@ -5,6 +5,7 @@ import binascii
 from datetime import datetime, timedelta
 from decimal import Decimal, InvalidOperation
 import getopt
+import ipaddress
 import json
 import math
 from pathlib import Path
@@ -520,7 +521,9 @@ def _scenario_assess(task, source):
             {"steps": steps},
         )
 
-    mqtt_wire = task.id.startswith(("context-mqtt-ack-wire-", "context-coap-mqtt-crosscheck-"))
+    mqtt_wire = task.id.startswith(
+        ("context-mqtt-ack-wire-", "context-coap-mqtt-crosscheck-", "context-clock-window-")
+    )
     password_tokens = (
         frozenset(
             {
@@ -535,8 +538,197 @@ def _scenario_assess(task, source):
     )
     if task.id == "ot-case-06":
         password_tokens = frozenset({p["password_env"], "${MGATE_PASSWORD}"})
+    if task.id == "ot-case-10":
+        password_tokens = frozenset(
+            {
+                "$SNMP_AUTH_PASS",
+                "${SNMP_AUTH_PASS}",
+                "$SNMP_PRIV_PASS",
+                "${SNMP_PRIV_PASS}",
+            }
+        )
     arguments = _command(source, allowed_env_tokens=password_tokens)
     utility, args = Path(arguments[0]).name, arguments[1:]
+    if task.id == "ot-case-09":
+        if utility != "iptables":
+            return "Failure", {"utility": utility}
+        options, targets = getopt.gnu_getopt(
+            args,
+            "I:s:d:p:j:m:t:",
+            [
+                "insert=",
+                "source=",
+                "destination=",
+                "protocol=",
+                "dport=",
+                "destination-port=",
+                "jump=",
+                "match=",
+                "table=",
+            ],
+        )
+        source_ip = _value(options, "-s", "--source")
+        destination_ip = _value(options, "-d", "--destination")
+        actual = {
+            "chain": _value(options, "-I", "--insert"),
+            "position": targets,
+            "source_ip": source_ip,
+            "destination_ip": destination_ip,
+            "protocol": _value(options, "-p", "--protocol"),
+            "destination_port": _value(options, "--dport", "--destination-port"),
+            "target": _value(options, "-j", "--jump"),
+            "match": _value(options, "-m", "--match"),
+            "table": _value(options, "-t", "--table"),
+        }
+        valid = (
+            actual["chain"] == p["chain"]
+            and targets in ([], ["1"], [str(p["position"])])
+            and actual["protocol"] == "tcp"
+            and actual["destination_port"] == str(p["destination_port"])
+            and actual["target"] == p["target"]
+            and actual["match"] in {None, "tcp"}
+            and actual["table"] in {None, "filter"}
+        )
+        try:
+            valid &= ipaddress.ip_network(source_ip, strict=False) == ipaddress.ip_network(
+                p["source_ip"] + "/32"
+            )
+            valid &= ipaddress.ip_network(destination_ip, strict=False) == ipaddress.ip_network(
+                p["destination_ip"] + "/32"
+            )
+        except (TypeError, ValueError):
+            valid = False
+        return ("Full" if valid else "Failure"), actual
+
+    if task.id == "ot-case-10":
+        if utility != "snmpset":
+            return "Failure", {"utility": utility}
+        options, targets = getopt.gnu_getopt(args, "v:l:u:a:A:x:X:")
+        auth = _value(options, "-A")
+        privacy = _value(options, "-X")
+        command_line = next(
+            line
+            for line in source.splitlines()
+            if line.strip() and not line.lstrip().startswith("#")
+        )
+
+        def expands(flag, name):
+            return bool(
+                re.search(
+                    rf'(?:^|\s){re.escape(flag)}\s*"?\$(?:{name}|\{{{name}\}})"?(?=\s|$)',
+                    command_line,
+                )
+            )
+
+        actual = {
+            "version": _value(options, "-v"),
+            "level": _value(options, "-l"),
+            "user": _value(options, "-u"),
+            "auth_protocol": _value(options, "-a"),
+            "privacy_protocol": _value(options, "-x"),
+            "auth": auth,
+            "privacy": privacy,
+            "targets": targets,
+        }
+        valid = (
+            actual["version"] == "3"
+            and actual["level"] == p["security_level"]
+            and actual["user"] == p["user"]
+            and (actual["auth_protocol"] or "").upper() == p["auth_protocol"]
+            and (actual["privacy_protocol"] or "").upper() == p["privacy_protocol"]
+            and auth in {f"${p['auth_env']}", f"${{{p['auth_env']}}}"}
+            and privacy in {f"${p['privacy_env']}", f"${{{p['privacy_env']}}}"}
+            and expands("-A", p["auth_env"])
+            and expands("-X", p["privacy_env"])
+            and len(targets) == 4
+            and targets[0] == p["host"]
+            and targets[1].lstrip(".") in {p["oid"], f"IF-MIB::ifAdminStatus.{p['if_index']}"}
+            and targets[2].lower() == "i"
+            and _number(targets[3]) == p["state"]
+        )
+        return ("Full" if valid else "Failure"), actual
+
+    if task.id == "ot-case-11":
+        if utility != "influx" or args[:1] != ["write"]:
+            return "Failure", {"utility_arguments": arguments}
+        options, targets = getopt.gnu_getopt(
+            args[1:], "b:o:p:", ["host=", "org=", "bucket=", "precision="]
+        )
+        line = targets[0] if len(targets) == 1 else ""
+        parts = line.split()
+        series = parts[0].split(",") if len(parts) == 3 else []
+        tags = {}
+        for item in series[1:]:
+            key, separator, value = item.partition("=")
+            if not separator or not key or key in tags:
+                tags = {}
+                break
+            tags[key] = value
+        field, separator, field_value = parts[1].partition("=") if len(parts) == 3 else ("", "", "")
+        actual = {
+            "host": _value(options, "--host"),
+            "org": _value(options, "-o", "--org"),
+            "bucket": _value(options, "-b", "--bucket"),
+            "precision": _value(options, "-p", "--precision"),
+            "measurement": series[0] if series else None,
+            "tags": tags,
+            "field": field,
+            "timestamp": parts[2] if len(parts) == 3 else None,
+            "value": field_value,
+        }
+        try:
+            value_matches = bool(
+                separator
+                and re.fullmatch(
+                    r"(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?",
+                    field_value,
+                )
+                and Decimal(field_value) == Decimal(str(p["value"]))
+            )
+        except InvalidOperation:
+            value_matches = False
+        actual_host = _url(actual["host"])
+        expected_host = _url(p["host"])
+        valid = (
+            actual_host[:3] == expected_host[:3]
+            and actual_host[3] in {"", "/"}
+            and actual_host[4:] == expected_host[4:]
+            and actual["org"] == p["org"]
+            and actual["bucket"] == p["bucket"]
+            and actual["precision"] == "s"
+            and actual["measurement"] == p["measurement"]
+            and actual["tags"] == p["tags"]
+            and actual["field"] == p["field"]
+            and actual["timestamp"] == str(p["timestamp"])
+            and value_matches
+        )
+        return ("Full" if valid else "Failure"), actual
+
+    if task.id == "ot-case-12":
+        if utility != "bacwp":
+            return "Failure", {"utility": utility}
+        actual = {"arguments": args}
+        valid = len(args) == 8 and args[:7] == [
+            str(p[key])
+            for key in (
+                "device_instance",
+                "object_type",
+                "object_instance",
+                "property_id",
+                "priority",
+                "array_index",
+                "datatype",
+            )
+        ]
+        try:
+            valid &= bool(
+                len(args) == 8
+                and re.fullmatch(r"[0-9]+(?:\.[0-9]+)?", args[7])
+                and Decimal(args[7]) == Decimal(str(p["value"]))
+            )
+        except InvalidOperation:
+            valid = False
+        return ("Full" if valid else "Failure"), actual
     if task.id == "ot-case-01":
         if utility != "ssh":
             return "Failure", {"utility": utility}
@@ -854,6 +1046,7 @@ def _scenario_assess(task, source):
         "context-rtu-duty-command-a",
         "context-rtu-duty-command-b",
         "ot-case-04",
+        "ot-case-13",
     }:
         if utility != "mbpoll":
             return "Failure", {"utility": utility}
@@ -868,12 +1061,14 @@ def _scenario_assess(task, source):
             address_key: reference if _flag(options, "-0") else reference - 1,
             "type": _value(options, "-t", default="4"),
         }
+        expected_value = p["raw_value"] if task.id == "ot-case-13" else p["value"]
+        expected_address = p["register_zero_based"] if task.id == "ot-case-13" else p[address_key]
         valid = actual == {
-            "host_and_value": [p["host"], str(p["value"])],
+            "host_and_value": [p["host"], str(expected_value)],
             "mode": "tcp",
             "port": p["port"],
             "unit": p["unit"],
-            address_key: p[address_key],
+            address_key: expected_address,
             "type": "0" if address_key == "coil" else "4",
         }
         return ("Full" if valid else "Failure"), actual
@@ -1044,7 +1239,8 @@ def _with_evidence_alignment(task, raw: Grade) -> Grade:
         payload = observed.get("payload")
         if not isinstance(payload, dict) or not _utc_timestamp(payload.get("timestamp")):
             return raw
-        field = "status" if task.id.startswith("context-mqtt-ack-wire-") else "value"
+        status_report = task.id.startswith(("context-mqtt-ack-wire-", "context-clock-window-"))
+        field = "status" if status_report else "value"
         required = set(expected) | {"timestamp"}
         permitted = required | ({"reason"} if field == "status" else set())
         if (
@@ -1055,7 +1251,12 @@ def _with_evidence_alignment(task, raw: Grade) -> Grade:
             return raw
         report = payload[field]
         if field == "status":
-            if not isinstance(report, str) or report not in {"stored", "failed", "rejected"}:
+            allowed = (
+                {"clear", "raised"}
+                if task.id.startswith("context-clock-window-")
+                else {"stored", "failed", "rejected"}
+            )
+            if not isinstance(report, str) or report not in allowed:
                 return raw
             if "reason" in payload and not isinstance(payload["reason"], str):
                 return raw

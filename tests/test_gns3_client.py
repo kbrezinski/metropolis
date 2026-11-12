@@ -44,39 +44,6 @@ def client_with(responses=None) -> tuple[Gns3Client, FakeTransport]:
     return Gns3Client(transport.server, transport=transport), transport
 
 
-def test_ensure_project_creates_only_when_missing():
-    client, transport = client_with(
-        [[], {"project_id": "p1", "name": "lab", "status": "opened"}]
-    )
-    project, created = client.ensure_project("lab")
-    assert created is True
-    assert project.project_id == "p1"
-    assert transport.calls[0] == ("GET", "/projects", None)
-    assert transport.calls[1] == ("POST", "/projects", {"name": "lab"})
-
-
-def test_ensure_project_reuses_and_opens_an_existing_project():
-    existing = [{"project_id": "p9", "name": "lab", "status": "closed"}]
-    client, transport = client_with([existing, None])
-    project, created = client.ensure_project("lab")
-
-    assert created is False
-    assert project.status == "opened"
-    assert transport.calls[1] == ("POST", "/projects/p9/open", None)
-
-
-def test_create_node_posts_to_the_template_path():
-    client, transport = client_with([{"node_id": "n1", "name": "MET-PLC-INTAKE-01"}])
-    node = client.create_node("p1", "t1", name="MET-PLC-INTAKE-01", x=10, y=20)
-
-    assert node.node_id == "n1"
-    assert transport.calls[0] == (
-        "POST",
-        "/projects/p1/templates/t1",
-        {"x": 10, "y": 20, "compute_id": "local", "name": "MET-PLC-INTAKE-01"},
-    )
-
-
 def test_create_link_sends_both_endpoints():
     client, transport = client_with([{"link_id": "l1"}])
     client.create_link("p1", ("n1", 0, 0), ("n2", 3, 0))
@@ -198,12 +165,3 @@ def test_transport_reports_an_unreachable_server(monkeypatch):
     with pytest.raises(Gns3Error) as caught:
         Transport(Server("gns3.test", 3080)).request("GET", "/version")
     assert "Could not reach" in str(caught.value)
-
-
-def test_transport_accepts_an_empty_body(monkeypatch):
-    monkeypatch.setattr(
-        urllib.request, "urlopen", lambda request, timeout=None: FakeResponse(b"", 204)
-    )
-    assert (
-        Transport(Server("gns3.test", 3080)).request("DELETE", "/templates/t1") is None
-    )

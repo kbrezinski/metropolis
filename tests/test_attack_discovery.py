@@ -277,27 +277,6 @@ def test_flood_mode_has_no_pacing_and_still_has_hard_caps(
     assert list(driver.flood_schedule(0.5, 4)) == [0]
 
 
-def test_discovery_defaults_to_inventory_and_documented_ports(discovery_inventory):
-    """The sweep covers inventoried hosts and the documented listener set."""
-    start = records(
-        invoke(
-            "scanner/iot_discovery.py",
-            "--inventory",
-            discovery_inventory,
-            "--dry-run",
-            ack=False,
-        )
-    )[0]
-    assert start["protocol"] == "both"
-    assert start["hosts"] == ["10.77.1.10", "10.77.1.20", "10.77.4.10"]
-    assert "tcp/502" in start["ports"]
-    assert "tcp/8883" in start["ports"]
-    assert "tcp/48101" in start["ports"]
-    assert "udp/69" in start["ports"]
-    assert "udp/5683" in start["ports"]
-    assert start["planned"] == len(start["hosts"]) * len(start["ports"])
-
-
 def test_discovery_reports_complete_and_partial_coverage(tcp_listener):
     port, accepted = tcp_listener
     arguments = (

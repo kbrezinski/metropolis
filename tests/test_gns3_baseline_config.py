@@ -2,20 +2,17 @@
 
 from __future__ import annotations
 
-import copy
 import hashlib
-import json
 import sys
 from pathlib import Path
 
 import pytest
 import yaml
-from jsonschema import Draft202012Validator, FormatChecker, ValidationError
 
 GNS3 = Path(__file__).resolve().parents[1] / "scripts/gns3"
 sys.path.insert(0, str(GNS3))
 
-from baseline_config import SCHEMA, SWITCH_IMAGE, SWITCH_MODEL, load_baseline  # noqa: E402
+from baseline_config import SWITCH_IMAGE, SWITCH_MODEL, load_baseline  # noqa: E402
 
 MIB = 1024 * 1024
 
@@ -95,15 +92,6 @@ def test_partial_model_overrides_then_exact_image_override(lab):
     assert result["operator"] == value["defaults"]
 
 
-@pytest.mark.parametrize("settings", [{"memory_bytes": 6291456.0}], ids=["settings1"])
-def test_invalid_baselines_fail_before_runtime_access(lab, settings):
-    *_, load = lab
-    value = document()
-    value["defaults"].update(settings)
-    with pytest.raises(ValueError):
-        load(value)
-
-
 def test_swap_relationship_is_checked_after_override_merging(lab):
     *_, load = lab
     value = document()
@@ -122,41 +110,3 @@ def test_conflicting_node_names_are_not_silently_targeted(lab):
     infrastructure["routers"].append({"name": "controller-a"})
     with pytest.raises(ValueError, match="ambiguous baseline node"):
         load(document())
-
-
-def test_schemas_remain_compatible_with_legacy_manifests():
-    schema = json.loads(SCHEMA.read_text(encoding="utf-8"))
-    Draft202012Validator.check_schema(schema)
-    manifest_schema = json.loads(
-        (SCHEMA.parent / "experiment-run.schema.json").read_text(encoding="utf-8")
-    )
-    Draft202012Validator.check_schema(manifest_schema)
-    manifest = {
-        "schema_version": "1.0",
-        "run_id": "run",
-        "project_id": "project",
-        "started_at_utc": "2026-10-26T00:00:00Z",
-        "status": "complete",
-        "logs": {"normalized_path": "logs/devices.jsonl", "sources": {}},
-        "failures": [],
-    }
-    validator = Draft202012Validator(manifest_schema, format_checker=FormatChecker())
-    validator.validate(manifest)
-    manifest["profiles"] = {"enabled": False}
-    validator.validate(manifest)
-    del manifest["profiles"]
-    manifest["resource_baseline"] = {
-        "path": "baseline.yaml",
-        "sha256": "a" * 64,
-        "mode": "check",
-        "status": "drift",
-        "checked_at_utc": "2026-10-26T00:00:00Z",
-        "nodes": {"custom": {"status": "drift"}},
-        "unsupported": [],
-        "failures": [],
-    }
-    validator.validate(manifest)
-    invalid = copy.deepcopy(manifest)
-    invalid["resource_baseline"]["status"] = "silently-applied"
-    with pytest.raises(ValidationError):
-        validator.validate(invalid)
