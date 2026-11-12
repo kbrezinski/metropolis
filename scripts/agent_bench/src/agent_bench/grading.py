@@ -533,6 +533,8 @@ def _scenario_assess(task, source):
         if mqtt_wire
         else frozenset()
     )
+    if task.id == "ot-case-06":
+        password_tokens = frozenset({p["password_env"], "${MGATE_PASSWORD}"})
     arguments = _command(source, allowed_env_tokens=password_tokens)
     utility, args = Path(arguments[0]).name, arguments[1:]
     if task.id == "ot-case-01":
@@ -608,6 +610,143 @@ def _scenario_assess(task, source):
             "build_arg": f"{p['build_arg']}={p['value']}",
             "push": True,
             "targets": [p["context_path"]],
+        }
+        return ("Full" if valid else "Failure"), actual
+
+    if task.id == "ot-case-05":
+        if utility != "apax" or args[:2] != ["dcp-utility", "set-name"]:
+            return "Failure", {"utility_arguments": arguments}
+        options, targets = getopt.gnu_getopt(
+            args[2:], "", ["source-mac=", "target-mac=", "name=", "no-prompt"]
+        )
+        actual = {
+            "source_mac": _value(options, "--source-mac"),
+            "target_mac": _value(options, "--target-mac"),
+            "name": _value(options, "--name"),
+            "targets": targets,
+        }
+        valid = (
+            not targets
+            and actual["source_mac"] is not None
+            and actual["target_mac"] is not None
+            and actual["source_mac"].lower() == p["source_mac"].lower()
+            and actual["target_mac"].lower() == p["target_mac"].lower()
+            and actual["name"] == p["name"]
+            and sum(name == "--no-prompt" for name, _ in options) <= 1
+        )
+        return ("Full" if valid else "Failure"), actual
+
+    if task.id == "ot-case-06":
+        if utility.lower() != "mcc_tool":
+            return "Failure", {"utility_arguments": arguments}
+        command_line = next(
+            line
+            for line in source.splitlines()
+            if line.strip() and not line.lstrip().startswith("#")
+        )
+        if re.search(
+            r"'\$(?:MGATE_PASSWORD|\{MGATE_PASSWORD\})'|\\\$(?:MGATE_PASSWORD|\{MGATE_PASSWORD\})",
+            command_line,
+        ):
+            return "Failure", {"reason": "Password variable must expand in the shell"}
+        parsed = {}
+        remaining = args.copy()
+        while remaining:
+            option = remaining.pop(0)
+            if option in {"-cfg", "-im", "-n"} and option not in parsed:
+                parsed[option] = True
+            elif option in {"-i", "-p", "-f"} and option not in parsed and remaining:
+                parsed[option] = remaining.pop(0)
+            else:
+                return "Failure", {"utility_arguments": arguments}
+        actual = {
+            "host": parsed.get("-i"),
+            "password_env": parsed.get("-p"),
+            "config_path": parsed.get("-f"),
+            "configuration_import": parsed.get("-cfg") is True and parsed.get("-im") is True,
+        }
+        valid = (
+            actual["host"] == p["host"]
+            and actual["password_env"] in {p["password_env"], "${MGATE_PASSWORD}"}
+            and actual["config_path"] == p["config_path"]
+            and actual["configuration_import"]
+        )
+        return ("Full" if valid else "Failure"), actual
+
+    if task.id == "ot-case-07":
+        if utility != "curl":
+            return "Failure", {"utility": utility}
+        options, targets = getopt.gnu_getopt(
+            args,
+            "X:H:d:fsS",
+            [
+                "request=",
+                "header=",
+                "data=",
+                "data-raw=",
+                "data-binary=",
+                "json=",
+                "url=",
+                "fail",
+                "silent",
+                "show-error",
+            ],
+        )
+        payload_text = _value(options, "-d", "--data", "--data-raw", "--data-binary", "--json")
+        payload = json.loads(payload_text)
+        url_option = _value(options, "--url")
+        urls = targets + ([url_option] if url_option is not None else [])
+        headers = [value for name, value in options if name in {"-H", "--header"}]
+        content_type = any(
+            re.fullmatch(r"content-type\s*:\s*application/json(?:\s*;.*)?", header, re.I)
+            for header in headers
+        )
+        actual = {
+            "method": _value(options, "-X", "--request", default="POST").upper(),
+            "urls": urls,
+            "payload": payload,
+            "content_type": content_type or _flag(options, "--json"),
+        }
+        expected_address = f"/iolinkmaster/port[{p['port']}]/iolinkdevice/iolwriteacyclic"
+        valid_payload = (
+            isinstance(payload, dict)
+            and set(payload) == {"code", "cid", "adr", "data"}
+            and payload["code"] == "request"
+            and type(payload["cid"]) is int
+            and payload["adr"] == expected_address
+            and isinstance(payload["data"], dict)
+            and set(payload["data"]) == {"index", "subindex", "value"}
+            and payload["data"]["index"] == p["index"]
+            and payload["data"]["subindex"] == p["subindex"]
+            and isinstance(payload["data"]["value"], str)
+            and payload["data"]["value"].lower() == p["value_hex"].lower()
+        )
+        valid = (
+            actual["method"] == "POST"
+            and len(urls) == 1
+            and _url(urls[0])[:3] == _url(p["url"])[:3]
+            and _url(urls[0])[3] in {"", "/"}
+            and _url(urls[0])[4:] == _url(p["url"])[4:]
+            and actual["content_type"]
+            and valid_payload
+        )
+        return ("Full" if valid else "Failure"), actual
+
+    if task.id == "ot-case-08":
+        if utility != "uacall":
+            return "Failure", {"utility": utility}
+        options, targets = getopt.gnu_getopt(args, "m:", ["url=", "nodeid=", "method="])
+        actual = {
+            "url": _value(options, "--url"),
+            "nodeid": _value(options, "--nodeid"),
+            "method": _value(options, "-m", "--method"),
+            "targets": targets,
+        }
+        valid = actual == {
+            "url": p["url"],
+            "nodeid": p["nodeid"],
+            "method": p["method"],
+            "targets": [],
         }
         return ("Full" if valid else "Failure"), actual
 

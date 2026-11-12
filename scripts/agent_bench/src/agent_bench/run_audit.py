@@ -6,6 +6,7 @@ import hashlib
 import json
 from pathlib import Path
 
+from .catalog_presentation import checkpoint_action, coverage_rows, display_labels
 from .reporting import _attempt_paths, _load, report
 from .staged_reporting import report_staged
 
@@ -143,29 +144,99 @@ def _render(record: dict) -> str:
             )
         lines += [
             "",
-            "| Model | Scenario | Arm | Checkpoint | Reached / valid starts | Full / reached | Confirmed Refusal / reached | Excluded |",
-            "|---|---|---|---:|---:|---:|---:|---:|",
+            "| Model | Scenario | Arm | Checkpoint | Action | Reached / valid starts | Full / reached | Confirmed Refusal / reached | Excluded |",
+            "|---|---|---|---:|---|---:|---:|---:|---:|",
         ]
         for row in record["groups"]:
+            task_ids = row.get("task_ids") or []
+            if isinstance(task_ids, str):
+                task_ids = json.loads(task_ids)
+            task_id = task_ids[0] if len(task_ids) == 1 else ""
+            action = checkpoint_action(task_id, row["task_version"], int(row["checkpoint"]))
             lines.append(
                 f"| {_model_label(row)} | {_cell(row['scenario_id'])} | {_cell(row['arm'])} "
-                f"| {row['checkpoint']} | {row['reached']}/{row['valid_starts']} | "
+                f"| {row['checkpoint']} | {_cell(action)} | "
+                f"{row['reached']}/{row['valid_starts']} | "
                 f"{row['full']}/{row['reached']} | {row['refusal']}/{row['reached']} | "
                 f"{row['infrastructure_excluded']} |"
             )
         lines += ["", "Depth measures consecutive authored checkpoints."]
     else:
+        historical_ids = (
+            {
+                row["task_id"]
+                for row in record["attempts"]
+                if row.get("task_family") == "plc-source-injection"
+            }
+            if record["suite_id"] in {"default", "plc-control-edit"}
+            else set()
+        )
+        coverage = coverage_rows(
+            [task_id for task_id in record["selected_task_ids"] if task_id not in historical_ids],
+            [row["task_id"] for row in record["attempts"] if row["task_id"] not in historical_ids],
+            suite_id=record["suite_id"],
+        )
+        if historical_ids:
+            coverage.append(
+                {
+                    "study_design": "Legacy / unclassified",
+                    "ot_action": "Legacy / unclassified",
+                    "selected_tasks": len(historical_ids & set(record["selected_task_ids"])),
+                    "observed_tasks": len(historical_ids),
+                }
+            )
         lines += [
             "",
-            "| Model | Task | Condition | Repeat | Rubric | Outcome |",
-            "|---|---|---|---:|---|---|",
+            "Coverage counts distinct selected and observed task IDs; staged episodes are separate.",
+            "",
+            "| Study design | OT action | Selected | Observed |",
+            "|---|---|---:|---:|",
         ]
-        for row in record["attempts"]:
+        for item in coverage:
             lines.append(
-                f"| {_model_label(row)} | {_cell(row['task_id'])} | "
-                f"{_cell(row['prompt_condition'])} | {row['repeat']} | "
-                f"{_cell(row['rubric_version'])} | {_cell(row['outcome'])} |"
+                f"| {_cell(item['study_design'])} | {_cell(item['ot_action'])} | "
+                f"{item['selected_tasks']} | {item['observed_tasks']} |"
             )
+        for design in (
+            "Standalone requests",
+            "Request-note framing",
+            "Changed-observation comparisons",
+            "PLC representations",
+            "Legacy / unclassified",
+        ):
+            members = [
+                row
+                for row in record["attempts"]
+                if (
+                    "Legacy / unclassified"
+                    if row.get("task_family") == "plc-source-injection"
+                    else display_labels(row["task_id"], suite_id=record["suite_id"])[0]
+                )
+                == design
+            ]
+            if not members:
+                continue
+            lines += [
+                "",
+                f"### {design}",
+                "",
+                "| Model | Task | OT action | Comparison | Arm | Condition | Repeat | Rubric | Outcome |",
+                "|---|---|---|---|---|---|---:|---|---|",
+            ]
+            for row in members:
+                _, action, comparison = (
+                    ("Legacy / unclassified", "Legacy / unclassified", "")
+                    if row.get("task_family") == "plc-source-injection"
+                    else display_labels(row["task_id"], suite_id=record["suite_id"])
+                )
+                lines.append(
+                    f"| {_model_label(row)} | {_cell(row['task_id'])} | {_cell(action)} | "
+                    f"{_cell(comparison)} | "
+                    f"{_cell(row['task_id'].rsplit('-', 1)[-1] if comparison else '')} | "
+                    f"{_cell(row['prompt_condition'])} | "
+                    f"{row['repeat']} | {_cell(row['rubric_version'])} | "
+                    f"{_cell(row['outcome'])} |"
+                )
         lines += ["", "Counts below retain each model configuration and rubric separately."]
         for group in record["outcomes_by_rubric"]:
             lines.append(

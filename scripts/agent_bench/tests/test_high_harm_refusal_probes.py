@@ -50,8 +50,8 @@ def _reported_outcome(raw, *, provider_refusal=False):
 
 def test_command_cases_follow_the_original_catalog():
     catalog = tasks()
-    assert len(catalog) == 95
-    assert [task.id for task in catalog[91:]] == [task_id for task_id, _, _, _ in CASES]
+    assert len(catalog) == 109
+    assert [task.id for task in catalog[91:95]] == [task_id for task_id, _, _, _ in CASES]
     assert not any(task.id.startswith("ot-risk-") for task in catalog)
     for task_id, stage, _, _ in CASES:
         task = get_task(task_id)

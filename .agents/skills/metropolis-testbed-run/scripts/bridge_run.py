@@ -14,6 +14,11 @@ import time
 import uuid
 
 import agent_bench
+from agent_bench.catalog_presentation import (
+    checkpoint_action,
+    coverage_rows,
+    display_labels,
+)
 from agent_bench.contracts import InfrastructureError
 from agent_bench.decision_summary import (
     SUMMARY_FIELDS,
@@ -772,6 +777,8 @@ def staged_results(output, run_metadata, active, reports, *, save=False):
     lines = render_run_overview(record)
     lines += [
         "",
+        "Staged episodes (checkpoint actions are shown below):",
+        "",
         "| Episode | Arm | Repeat | Outcomes by checkpoint | Final evidence alignment | Consecutive Full depth | Excluded |",
         "|---|---|---:|---|---|---:|---:|",
     ]
@@ -785,12 +792,18 @@ def staged_results(output, run_metadata, active, reports, *, save=False):
         )
     lines += [
         "",
-        "| Scenario | Arm | Checkpoint | Reached / valid starts | Full / valid starts | Full / reached | Confirmed refusal / reached | Excluded |",
-        "|---|---|---:|---:|---:|---:|---:|---:|",
+        "| Scenario | Arm | Checkpoint | Action | Reached / valid starts | Full / valid starts | Full / reached | Confirmed refusal / reached | Excluded |",
+        "|---|---|---:|---|---:|---:|---:|---:|---:|",
     ]
+    task_by_hash = {row["task_hash"]: row["task_id"] for row in attempts}
     for group in groups:
+        action = checkpoint_action(
+            task_by_hash.get(group["task_hash"], ""),
+            group["task_version"],
+            int(group["checkpoint"]),
+        )
         lines.append(
-            f"| {group['scenario_id']} | {group['arm']} | {group['checkpoint']} | "
+            f"| {group['scenario_id']} | {group['arm']} | {group['checkpoint']} | {action} | "
             f"{group['reached']}/{group['valid_starts']} "
             f"({rate(group['reach_percent'])}) | "
             f"{group['full']}/{group['valid_starts']} "
@@ -961,14 +974,70 @@ def results(output, *, save=False):
         "plc_injection_groups": legacy_plc_groups,
     }
     lines = render_run_overview(record)
+    legacy_ids = (
+        {
+            attempt["task_id"]
+            for attempt in attempts
+            if attempt.get("task_family") == "plc-source-injection"
+        }
+        if run_metadata.get("suite_id", "default") in {"default", "plc-control-edit"}
+        else set()
+    )
+    coverage = coverage_rows(
+        [task_id for task_id in run_metadata["tasks"] if task_id not in legacy_ids],
+        [
+            attempt["task_id"]
+            for attempt in attempts
+            if attempt["task_id"] not in legacy_ids
+        ],
+        suite_id=run_metadata.get("suite_id", "default"),
+    )
+    if legacy_ids:
+        coverage.append(
+            {
+                "study_design": "Legacy / unclassified",
+                "ot_action": "Legacy / unclassified",
+                "selected_tasks": len(set(run_metadata["tasks"]) & legacy_ids),
+                "observed_tasks": len(legacy_ids),
+            }
+        )
+    if coverage:
+        lines += [
+            "",
+            "Selected task coverage (distinct task IDs; not outcome rates):",
+            "",
+            "| Study design | OT action | Selected | With results |",
+            "|---|---|---:|---:|",
+        ]
+        lines.extend(
+            f"| {row['study_design']} | {row['ot_action']} | "
+            f"{row['selected_tasks']} | {row['observed_tasks']} |"
+            for row in coverage
+        )
     for index, group in enumerate(groups, 1):
+        members = [
+            row
+            for row in attempts
+            if all(row[key] == group[key] for key in group_fields)
+        ]
+        labels = [
+            ("Legacy / unclassified", "Legacy / unclassified", "")
+            if row.get("task_family") == "plc-source-injection"
+            else display_labels(
+                row["task_id"], suite_id=run_metadata.get("suite_id", "default")
+            )
+            for row in members
+        ]
+        designs = {label[0] for label in labels}
+        actions = {label[1] for label in labels}
+        comparisons = {label[2] for label in labels if label[2]}
         group_label = " / ".join(
             str(value)
             for value in (
-                group["task_family"],
-                group.get("domain"),
+                next(iter(designs)) if len(designs) == 1 else "Mixed study designs",
+                next(iter(actions)) if len(actions) == 1 else "Mixed OT actions",
+                next(iter(comparisons)) if len(comparisons) == 1 else None,
                 group.get("stage"),
-                group.get("interaction_type"),
                 group.get("authority_pair"),
                 group.get("authority_condition"),
                 group.get("purpose_condition"),
@@ -1031,15 +1100,27 @@ def results(output, *, save=False):
             f"grading suite {group.get('grading_suite_hash') or group['suite_hash']}; "
             f"engine config SHA256 {hashlib.sha256(group['agent_engine_config'].encode()).hexdigest()}",
             "",
-            "| Task | " + " | ".join(task_headers) + " |",
-            "|---|" + "---:|" * len(task_headers),
-        ]
-        members = [
-            row
-            for row in attempts
-            if all(row[key] == group[key] for key in group_fields)
+            "| Task | Study design | OT action | Comparison | Arm | "
+            + " | ".join(task_headers)
+            + " |",
+            "|---|---|---|---|---|" + "---:|" * len(task_headers),
         ]
         for task_id in sorted({row["task_id"] for row in members}):
+            if any(
+                row["task_id"] == task_id
+                and row.get("task_family") == "plc-source-injection"
+                for row in members
+            ):
+                study_design, ot_action, comparison = (
+                    "Legacy / unclassified",
+                    "Legacy / unclassified",
+                    "",
+                )
+            else:
+                study_design, ot_action, comparison = display_labels(
+                    task_id, suite_id=run_metadata.get("suite_id", "default")
+                )
+            arm = task_id.rsplit("-", 1)[-1] if comparison else ""
             task_counts = Counter(
                 row["outcome"] for row in members if row["task_id"] == task_id
             )
@@ -1056,7 +1137,10 @@ def results(output, *, save=False):
                     f"{100 * task_counts[name] / valid:.1f}%" if valid else "n/a"
                     for name in ("Full", "Refusal", "Other")
                 )
-            lines.append(f"| {task_id} | " + " | ".join(map(str, values)) + " |")
+            lines.append(
+                f"| {task_id} | {study_design} | {ot_action} | {comparison or '—'} | "
+                f"{arm or '—'} | " + " | ".join(map(str, values)) + " |"
+            )
         totals = "; ".join(f"{label} {group[field]}" for label, field in columns)
         if not is_v3:
             totals += f"; Refusals {group['refusals']}"
@@ -1084,9 +1168,7 @@ def results(output, *, save=False):
                 else "n/a"
             )
             valid_rate = (
-                f"{float(false_valid):.1f}%"
-                if false_valid not in (None, "")
-                else "n/a"
+                f"{float(false_valid):.1f}%" if false_valid not in (None, "") else "n/a"
             )
             lines.append(
                 "Evidence alignment: "
@@ -1146,8 +1228,17 @@ def results(output, *, save=False):
                 "percentage points."
             )
     if plc_groups:
-        lines += ["", "PLC control-edit cases (neutral and claimed-approval arms):"]
+        lines += [
+            "",
+            "PLC representations: control-program edits by source form:",
+        ]
         for group in plc_groups:
+            task_ids = group.get("task_ids") or []
+            if isinstance(task_ids, str):
+                task_ids = json.loads(task_ids)
+            study_design, ot_action, comparison = display_labels(
+                task_ids[0] if task_ids else "", suite_id="plc-control-edit"
+            )
             lines.append(
                 "Provenance: "
                 f"suite {group['suite_hash']}; "
@@ -1160,8 +1251,20 @@ def results(output, *, save=False):
                 f"reasoning {group['reasoning']}; rounds {group['rounds']}; "
                 f"seconds {group['seconds']}."
             )
+            description = " / ".join(
+                str(value)
+                for value in (
+                    study_design,
+                    ot_action,
+                    comparison,
+                    group.get("stage", ""),
+                    group["source_form"].upper(),
+                    group["authority_condition"],
+                )
+                if value
+            )
             lines.append(
-                f"{group['source_form'].upper()} / {group['authority_condition']}: "
+                f"{description} ({', '.join(task_ids)}): "
                 f"Full {group['full']}, Refusal {group['refusal']}, "
                 f"Other {group['other']} over {group['valid_attempts']} valid; "
                 f"parseable {group['parseable']}; infrastructure exclusions "
@@ -1180,7 +1283,10 @@ def results(output, *, save=False):
             "Full records the requested toy edit, not malicious intent or a live plant effect."
         )
     if legacy_plc_groups:
-        lines += ["", "PLC source-injection cases (clean and injected arms):"]
+        lines += [
+            "",
+            "Legacy / unclassified PLC source-injection cases (clean and injected arms):",
+        ]
         for group in legacy_plc_groups:
             lines.append(
                 "Provenance: "
@@ -1243,7 +1349,8 @@ def run(args):
     package_path = Path(agent_bench.__file__).resolve()
     if not package_path.is_relative_to(repo / "scripts/agent_bench/src"):
         raise ValueError(
-            "agent_bench must be loaded from this checkout; use uv run --project scripts/agent_bench"
+            "agent_bench must be loaded from this checkout's editable environment; "
+            "use uv run --no-sync --project scripts/agent_bench after setup"
         )
     if (
         args.repeats < 1
@@ -1264,9 +1371,7 @@ def run(args):
     if len({task.id for task in selected}) != len(selected):
         raise ValueError("Select each task once")
     conditions = select_conditions(args.prompt_condition)
-    if args.suite in {"plc-control-edit", "staged-ot"} and conditions != (
-        "baseline",
-    ):
+    if args.suite in {"plc-control-edit", "staged-ot"} and conditions != ("baseline",):
         raise ValueError(f"The {args.suite} suite accepts only the baseline prompt")
     task_prompt_conditions = {
         task.id: (
@@ -1351,7 +1456,9 @@ def run(args):
                         run_staged_attempt if args.suite == "staged-ot" else run_attempt
                     )
                     runner_options = (
-                        {} if args.suite == "staged-ot" else {"prompt_condition": condition}
+                        {}
+                        if args.suite == "staged-ot"
+                        else {"prompt_condition": condition}
                     )
                     result = attempt_runner(
                         task,
@@ -1457,7 +1564,9 @@ def main():
     running.add_argument("--output", required=True, type=Path)
     running.add_argument("--task", action="append")
     running.add_argument(
-        "--suite", choices=("default", "plc-control-edit", "staged-ot"), default="default"
+        "--suite",
+        choices=("default", "plc-control-edit", "staged-ot"),
+        default="default",
     )
     running.add_argument("--prompt-condition", action="append")
     running.add_argument("--repeats", type=int, default=1)
@@ -1493,7 +1602,9 @@ def main():
             if active.get("status") in {"finished", "failed", "interrupted"}:
                 results(args.output.resolve(), save=True)
             else:
-                print("Worker observation saved; reports refresh when the helper exits.")
+                print(
+                    "Worker observation saved; reports refresh when the helper exits."
+                )
         else:
             return run(args) or 0
     except KeyboardInterrupt:

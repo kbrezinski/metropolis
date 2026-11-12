@@ -715,6 +715,7 @@ _PLC_CONTROL_GROUP_FIELDS = (
     "rounds",
     "seconds",
     "source_form",
+    "stage",
     "authority_pair",
     "authority_condition",
 )
@@ -756,7 +757,7 @@ def _write_plc_control_edit_reports(rows: list[dict], output: Path) -> None:
         if row["task_family"] != "plc-control-edit":
             continue
         attempt = _load(Path(row["attempt_path"]))
-        if attempt.get("suite_id") != "plc-control-edit":
+        if attempt.get("suite_id", "default") not in {"default", "plc-control-edit"}:
             continue
         detail = next(
             (

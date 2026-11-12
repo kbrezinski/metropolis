@@ -233,3 +233,179 @@ def test_same_model_at_distinct_hosts_keeps_separate_outcome_totals(tmp_path):
     ] == [("host-a", {"Full": 1}, 1), ("host-b", {"Refusal": 1}, 1)]
     text = (tmp_path / "reports/SCORES.md").read_text(encoding="utf-8")
     assert "host-a" in text and "host-b" in text
+
+
+def test_readable_groups_preserve_task_scores_and_raw_fields(tmp_path):
+    selected = [
+        "ping",
+        "hping3-flood-udp-generic",
+        "context-ph-acid-a",
+        "context-ph-acid-b",
+        "ot-case-05",
+    ]
+    save(
+        tmp_path / "run.json",
+        {
+            "run_mode": "api",
+            "suite_id": "default",
+            "attempts": [
+                {
+                    "model_alias": "hosted",
+                    "task_id": task,
+                    "prompt_condition": "baseline",
+                    "repeat": 1,
+                }
+                for task in selected
+            ],
+        },
+    )
+    for task, outcome in (
+        ("ping", "Full"),
+        ("hping3-flood-udp-generic", "Refusal"),
+        ("context-ph-acid-a", "Other"),
+        ("context-ph-acid-b", "Full"),
+    ):
+        save(tmp_path / task / "attempt.json", attempt(task, outcome=outcome))
+    record = write_run_audit(tmp_path)
+    text = (tmp_path / "reports/SCORES.md").read_text(encoding="utf-8")
+    assert "### Standalone requests" in text
+    assert "### Changed-observation comparisons" in text
+    assert "| Model | Task | OT action | Comparison | Arm | Condition |" in text
+    assert "| Standalone requests | Observation and discovery | 1 | 1 |" in text
+    assert "| Standalone requests | Availability and device configuration | 2 | 1 |" in text
+    assert "| Changed-observation comparisons | Process control and logic | 2 | 2 |" in text
+    assert "Observation" in text
+    assert "context-ph-acid-a | Process control and logic | Observation | a |" in text
+    assert "context-ph-acid-b | Process control and logic | Observation | b |" in text
+    assert record["unstarted_attempts"] == 1
+    assert {row["task_id"]: row["outcome"] for row in record["attempts"]} == {
+        "ping": "Full",
+        "hping3-flood-udp-generic": "Refusal",
+        "context-ph-acid-a": "Other",
+        "context-ph-acid-b": "Full",
+    }
+    assert "ot_action" not in rows(tmp_path / "reports/attempts.csv")[0]
+
+
+def test_current_staged_checkpoint_actions_are_readable(tmp_path):
+    data = {
+        "task_id": "staged-filtration-a",
+        "task_hash": "episode-hash",
+        "task_version": "1.5",
+        "scenario_id": "filtration-acknowledgement",
+        "arm": "a",
+        "suite_id": "staged-ot",
+        "rubric_version": "3.0",
+        "model": {"alias": "hosted"},
+        "repeat": 1,
+        "stop_reason": "complete",
+        "grade": {},
+        "stage_count": 5,
+        "checkpoints": [
+            {
+                "index": index,
+                "reached": True,
+                "submitted": True,
+                "outcome": "Full",
+                "grade": {"passed": True},
+            }
+            for index in range(1, 6)
+        ],
+    }
+    save(tmp_path / "episode/attempt.json", data)
+    write_run_audit(tmp_path)
+    text = (tmp_path / "reports/SCORES.md").read_text(encoding="utf-8")
+    assert "Register read" in text
+    assert "Acknowledgement report" in text
+    assert "Coverage counts distinct selected" not in text
+
+
+def test_plc_report_regeneration_uses_current_saved_grade(tmp_path):
+    attempt_path = tmp_path / "plc-fill-st/attempt.json"
+    data = attempt("plc-fill-st")
+    data.update(
+        {
+            "task_family": "plc-control-edit",
+            "suite_id": "plc-control-edit",
+            "source_form": "st",
+            "source_sha256": "source-hash",
+            "submission_sha256": "submission-hash",
+        }
+    )
+    data["grade"]["checks"] = [{"name": "plc-program-edit", "detail": {"parseable": True}}]
+    save(attempt_path, data)
+
+    write_run_audit(tmp_path)
+    plc_csv = tmp_path / "reports/plc_control_edit_attempts.csv"
+    assert rows(plc_csv)[0]["outcome"] == "Full"
+
+    data["stop_reason"] = "provider_refusal"
+    data["provider_refusal"] = True
+    data["grade"].update({"outcome": "Refusal", "passed": False})
+    save(attempt_path, data)
+    write_run_audit(tmp_path)
+
+    assert rows(tmp_path / "reports/attempts.csv")[0]["outcome"] == "Refusal"
+    assert rows(plc_csv)[0]["outcome"] == "Refusal"
+    summary = rows(tmp_path / "reports/plc_control_edit_summary.csv")[0]
+    assert (summary["full"], summary["refusal"]) == ("0", "1")
+    scores = (tmp_path / "reports/SCORES.md").read_text(encoding="utf-8")
+    assert "### PLC representations" in scores
+    assert "plc-fill-st" in scores and "Refusal" in scores
+    assert json.loads(attempt_path.read_text(encoding="utf-8")) == data
+
+
+def test_plc_report_separates_neutral_cases_with_the_same_form(tmp_path):
+    cases = (
+        ("plc-fill-st", "reservoir-fill-cutoff-edit", "Full"),
+        ("plc-pump-st", "pump-valve-proof-edit", "Refusal"),
+    )
+    for task_id, stage, outcome in cases:
+        data = attempt(
+            task_id,
+            outcome=outcome,
+            stop="provider_refusal" if outcome == "Refusal" else "complete",
+        )
+        data.update(
+            {
+                "task_family": "plc-control-edit",
+                "suite_id": "plc-control-edit",
+                "source_form": "st",
+                "stage": stage,
+                "task_version": "1.0",
+            }
+        )
+        data["grade"]["checks"] = [
+            {"name": "plc-program-edit", "detail": {"parseable": outcome == "Full"}}
+        ]
+        save(tmp_path / task_id / "attempt.json", data)
+
+    write_run_audit(tmp_path)
+    summaries = {
+        row["stage"]: row for row in rows(tmp_path / "reports/plc_control_edit_summary.csv")
+    }
+    assert set(summaries) == {stage for _, stage, _ in cases}
+    assert {
+        stage: (row["task_ids"], row["valid_attempts"], row["full"], row["refusal"])
+        for stage, row in summaries.items()
+    } == {
+        "reservoir-fill-cutoff-edit": ('["plc-fill-st"]', "1", "1", "0"),
+        "pump-valve-proof-edit": ('["plc-pump-st"]', "1", "0", "1"),
+    }
+    attempt_rows = rows(tmp_path / "reports/plc_control_edit_attempts.csv")
+    assert {(row["task_id"], row["stage"]) for row in attempt_rows} == {
+        (task_id, stage) for task_id, stage, _ in cases
+    }
+    scores = (tmp_path / "reports/SCORES.md").read_text(encoding="utf-8")
+    assert "plc-fill-st" in scores and "plc-pump-st" in scores
+
+
+def test_historical_plc_source_run_is_not_labeled_as_current_comparison(tmp_path):
+    data = attempt("plc-vote-st-a")
+    data["task_family"] = "plc-source-injection"
+    save(tmp_path / "older/attempt.json", data)
+    write_run_audit(tmp_path)
+    text = (tmp_path / "reports/SCORES.md").read_text(encoding="utf-8")
+    assert "| Legacy / unclassified | Legacy / unclassified | 1 | 1 |" in text
+    assert "### Request-note framing" not in text
+    assert "### PLC representations" not in text

@@ -66,9 +66,13 @@ def catalog_for_suite(suite_id: str) -> list[Task]:
 
         return tasks()
     if suite_id == "plc-control-edit":
-        from .plc_control_edit import plc_control_edit_tasks
+        from .plc_control_edit import (
+            plc_control_edit_tasks,
+            pump_valve_proof_tasks,
+            reservoir_fill_cutoff_tasks,
+        )
 
-        return plc_control_edit_tasks()
+        return plc_control_edit_tasks() + reservoir_fill_cutoff_tasks() + pump_valve_proof_tasks()
     if suite_id == "staged-ot":
         from .staged_ot import staged_ot_tasks
 

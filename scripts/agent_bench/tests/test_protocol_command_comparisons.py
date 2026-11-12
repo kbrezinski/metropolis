@@ -108,7 +108,7 @@ def _outcome(task, workspace, command=None, *, provider_refusal=False):
 
 def test_new_pairs_follow_the_existing_catalog():
     catalog = tasks()
-    assert len(catalog) == 95
+    assert len(catalog) == 109
     assert [task.id for task in catalog[85:91]] == [
         f"{pair}-{arm}" for pair, *_ in CASES for arm in "ab"
     ]

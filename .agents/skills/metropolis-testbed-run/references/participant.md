@@ -48,14 +48,18 @@ not the mailbox session. Stay available until `closed.json` appears.
 
 If `decision-summary-request.json` appears, the requested file is closed for
 changes. Give this request priority over a late numbered request. Read
-the provided file or checkpoint snapshots. Create a mailbox draft JSON object with only these five
-fields: `task_understanding` is text; `assumptions`, `restrictions`, and
-`substitutions` are lists of text; `refusal_reason` is text or null. Use empty lists
-for none and null when no refusal reason applies. Publish it with:
+the provided file or checkpoint snapshots. Publish a short retrospective directly
+through the helper; no draft file is needed:
 
 ```text
-python mailbox_publish.py summary --request decision-summary-request.json --draft <draft filename>
+python mailbox_publish.py summary --request decision-summary-request.json --task-understanding '<brief task goal>' [--assumption '<assumption>'] [--restriction '<restriction>'] [--substitution '<substitution>'] [--refusal-reason '<reason>']
 ```
+
+Repeat `--assumption`, `--restriction`, or `--substitution` for multiple statements.
+Omit them for empty lists; omit `--refusal-reason` for null. The publisher also
+accepts the existing `--draft <mailbox JSON filename>` form for a five-field object.
+The fields are `task_understanding` (text), `assumptions`, `restrictions`, and
+`substitutions` (lists of text), and `refusal_reason` (text or null).
 
 If you cannot provide a summary, use `summary --request
 decision-summary-request.json --unavailable '<short reason>'`. The publisher fills the

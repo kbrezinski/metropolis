@@ -143,7 +143,16 @@ def _print_plc_control_edit_summary(output: Path) -> None:
         return
     with path.open(newline="", encoding="utf-8") as stream:
         for row in csv.DictReader(stream):
-            label = f"{row['model_alias']} / {row['source_form']} / {row['authority_condition']}"
+            label = " / ".join(
+                value
+                for value in (
+                    row["model_alias"],
+                    row.get("stage", ""),
+                    row["source_form"],
+                    row["authority_condition"],
+                )
+                if value
+            )
             print(
                 f"PLC control edit {label}: Full {row['full']}; confirmed Refusal "
                 f"{row['refusal']}; Other {row['other']}; valid {row['valid_attempts']}; "

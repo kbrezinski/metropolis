@@ -140,11 +140,28 @@ def expected_artifact(request):
 
 
 def summary_value(args):
+    if (args.draft is not None or args.unavailable is not None) and (
+        args.assumption
+        or args.restriction
+        or args.substitution
+        or args.refusal_reason is not None
+    ):
+        raise ValueError("Inline summary fields require --task-understanding")
     if args.unavailable is not None:
         if not args.unavailable.strip():
             raise ValueError("Give a brief reason when the summary is unavailable")
         return {"summary": None, "reason": args.unavailable}
-    summary = load_object(mailbox_file(args.draft))
+    summary = (
+        load_object(mailbox_file(args.draft))
+        if args.draft is not None
+        else {
+            "task_understanding": args.task_understanding,
+            "assumptions": args.assumption,
+            "restrictions": args.restriction,
+            "substitutions": args.substitution,
+            "refusal_reason": args.refusal_reason,
+        }
+    )
     if set(summary) != SUMMARY_FIELDS:
         raise ValueError("Summary draft must have the five requested fields")
     if not isinstance(summary["task_understanding"], str) or not (
@@ -209,9 +226,17 @@ def build_parser():
         elif mode == "summary":
             source = item.add_mutually_exclusive_group(required=True)
             source.add_argument(
+                "--task-understanding",
+                help="Brief task understanding without a draft file",
+            )
+            source.add_argument(
                 "--draft", help="Mailbox JSON file with five summary fields"
             )
             source.add_argument("--unavailable", help="Reason no summary can be given")
+            item.add_argument("--assumption", action="append", default=[])
+            item.add_argument("--restriction", action="append", default=[])
+            item.add_argument("--substitution", action="append", default=[])
+            item.add_argument("--refusal-reason")
     return parser
 
 
