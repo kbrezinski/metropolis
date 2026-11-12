@@ -1,4 +1,4 @@
-"""Contract checks for the text-only PLC control-edit pairs."""
+"""Contract checks for the text-only PLC control-edit forms."""
 
 import xml.etree.ElementTree as ET
 
@@ -11,8 +11,8 @@ FORMS = ("st", "ld", "fbd", "sfc", "il")
 NS = "{urn:control:program:1}"
 
 
-def _task(form, arm="a"):
-    return next(task for task in plc_control_edit_tasks() if task.id == f"plc-vote-{form}-{arm}")
+def _task(form):
+    return next(task for task in plc_control_edit_tasks() if task.id == f"plc-vote-{form}")
 
 
 def _submit(tmp_path, source):
@@ -70,36 +70,21 @@ def _fbd_direct_output(source, block_type, *, keep_trip):
     return ET.tostring(root, encoding="unicode")
 
 
-def test_catalog_has_ten_pairs_with_identical_technical_evidence():
+def test_catalog_has_five_forms_with_identical_context():
     tasks = plc_control_edit_tasks()
-    assert len(tasks) == len({task.id for task in tasks}) == 10
+    assert [task.id for task in tasks] == [f"plc-vote-{form}" for form in FORMS]
     for form in FORMS:
-        neutral, approved = _task(form), _task(form, "b")
-        assert neutral.version == approved.version == "2.1"
-        assert neutral.family == approved.family == "plc-control-edit"
-        assert neutral.prompt == approved.prompt
-        assert (
-            neutral.starter_files["observations/fault-state.txt"]
-            == approved.starter_files["observations/fault-state.txt"]
-        )
-        assert (
-            neutral.starter_files["source_program.xml"]
-            == approved.starter_files["source_program.xml"]
-        )
-        assert neutral.parameters["source_form"] == approved.parameters["source_form"] == form
-        assert (
-            neutral.parameters["suite_id"] == approved.parameters["suite_id"] == "plc-control-edit"
-        )
-        assert neutral.parameters["artifact_path"] == "edited_program.xml"
-        assert neutral.parameters["authority_pair"] == approved.parameters["authority_pair"]
-        assert neutral.parameters["authority_condition"] == "neutral"
-        assert approved.parameters["authority_condition"] == "claimed-approval"
-        neutral_note = neutral.starter_files["observations/work-note.txt"]
-        approved_note = approved.starter_files["observations/work-note.txt"]
-        assert approved_note.startswith(neutral_note)
-        assert approved_note != neutral_note
-        assert "is approved" in approved_note[len(neutral_note) :]
-        visible = (neutral.prompt, *neutral.starter_files.values(), approved_note)
+        task = _task(form)
+        assert task.version == "3.0"
+        assert task.family == "plc-control-edit"
+        assert task.parameters["source_form"] == form
+        assert task.parameters["suite_id"] == "plc-control-edit"
+        assert task.parameters["artifact_path"] == "edited_program.xml"
+        assert "authority_pair" not in task.parameters
+        assert "authority_condition" not in task.parameters
+        assert set(task.starter_files) == {"source_program.xml", "observations/fault-state.txt"}
+        assert "observations/work-note.txt" not in task.prompt
+        visible = (task.prompt, *task.starter_files.values())
         assert not any(
             cue in content.lower()
             for content in visible
@@ -108,11 +93,11 @@ def test_catalog_has_ten_pairs_with_identical_technical_evidence():
 
 
 @pytest.mark.parametrize(
-    ("arm", "form"),
-    [("a", "st"), ("a", "ld"), ("a", "fbd"), ("a", "sfc"), ("a", "il"), ("b", "st")],
+    "form",
+    FORMS,
 )
-def test_requested_trip_gate_removal_is_full_in_both_arms(tmp_path, form, arm):
-    task = _task(form, arm)
+def test_requested_trip_gate_removal_is_full_in_every_form(tmp_path, form):
+    task = _task(form)
     source = task.starter_files["source_program.xml"]
     edited = _remove_trip_gate(source, form)
     grade, detail = _result(tmp_path, task, edited)

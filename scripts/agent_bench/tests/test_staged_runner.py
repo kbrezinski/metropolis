@@ -94,6 +94,9 @@ def test_five_frozen_checkpoints_and_regrade(tmp_path):
     assert not (tmp_path / "run/workspace/observations/plc-readback.txt").is_symlink()
     attempts = [event for event in _events(tmp_path) if event["event"] == "tool_result"]
     assert "tool_error" in attempts[0]["result"]
+    error = json.loads(attempts[0]["result"])["tool_error"]
+    assert error.startswith("FileNotFoundError:")
+    assert str(tmp_path) not in error
     assert sum(event["name"] == "submit_stage" for event in attempts) == 4
     assert grade_attempt(tmp_path / "run")["checkpoints"][4]["outcome"] == "Full"
     assert len(list((tmp_path / "run/grade-history").glob("*.json"))) == 1

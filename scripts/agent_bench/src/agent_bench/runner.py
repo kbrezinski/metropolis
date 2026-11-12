@@ -87,6 +87,14 @@ def task_for_suite(task_id: str, suite_id: str) -> Task:
     raise ValueError(f"Unknown task in {suite_id}: {task_id}")
 
 
+def _tool_error(error: Exception) -> str:
+    if isinstance(error, OSError):
+        # OSError text may include the absolute attempt workspace and task ID.
+        detail = error.strerror or "File operation failed"
+        return f"{type(error).__name__}: {detail}"[:2000]
+    return str(error)[:2000]
+
+
 def _tool(workspace: Workspace, name: str, arguments: str, remaining: float):
     try:
         args = json.loads(arguments)
@@ -101,7 +109,7 @@ def _tool(workspace: Workspace, name: str, arguments: str, remaining: float):
             return {"written": args["path"]}
         raise ValueError(f"Unknown tool: {name}")
     except (ValueError, TypeError, KeyError, OSError) as exc:
-        return {"tool_error": str(exc)[:2000]}
+        return {"tool_error": _tool_error(exc)}
 
 
 def _apply_budget(grade: dict, stop_reason: str) -> dict:

@@ -59,16 +59,11 @@ DEFAULT_TASK_IDS = (
     "context-drive-speed-b",
     "context-trip-alarm-a",
     "context-trip-alarm-b",
-    "plc-vote-st-a",
-    "plc-vote-st-b",
-    "plc-vote-ld-a",
-    "plc-vote-ld-b",
-    "plc-vote-fbd-a",
-    "plc-vote-fbd-b",
-    "plc-vote-sfc-a",
-    "plc-vote-sfc-b",
-    "plc-vote-il-a",
-    "plc-vote-il-b",
+    "plc-vote-st",
+    "plc-vote-ld",
+    "plc-vote-fbd",
+    "plc-vote-sfc",
+    "plc-vote-il",
     "context-ph-acid-a",
     "context-ph-acid-b",
     "context-vfd-current-a",
@@ -136,7 +131,7 @@ _ACTION_POSITIONS = {
     ACTION_ORDER[0]: (*range(1, 7), *range(8, 12)),
     ACTION_ORDER[1]: (12, 18, 22, 30, 31),
     ACTION_ORDER[2]: (23, 24, 25),
-    ACTION_ORDER[3]: (*range(13, 18), 38, 39, 92, 96, 97, 99),
+    ACTION_ORDER[3]: (*range(13, 18), 38, 39, 87, 91, 92, 94),
     ACTION_ORDER[4]: (
         20,
         21,
@@ -145,14 +140,13 @@ _ACTION_POSITIONS = {
         35,
         *range(40, 44),
         *range(47, 54),
-        *range(56, 78),
-        80,
-        81,
-        88,
-        89,
-        95,
-        *range(100, 105),
-        *range(105, 110),
+        *range(56, 73),
+        75,
+        76,
+        83,
+        84,
+        90,
+        *range(95, 105),
     ),
     ACTION_ORDER[5]: (
         7,
@@ -164,14 +158,14 @@ _ACTION_POSITIONS = {
         *range(44, 47),
         54,
         55,
-        78,
-        79,
-        *range(82, 88),
-        90,
-        91,
-        98,
+        73,
+        74,
+        *range(77, 83),
+        85,
+        86,
+        93,
     ),
-    ACTION_ORDER[6]: (93, 94),
+    ACTION_ORDER[6]: (88, 89),
 }
 
 _POSITION_BY_ID = {task_id: position for position, task_id in enumerate(DEFAULT_TASK_IDS, 1)}
@@ -267,16 +261,15 @@ def display_labels(task_id: str, *, suite_id: str = "default") -> tuple[str, str
     position = _POSITION_BY_ID.get(task_id)
     if position is None or suite_id not in {"default", "plc-control-edit"}:
         return LEGACY, LEGACY, ""
-    if suite_id == "plc-control-edit" and not (56 <= position <= 65 or 100 <= position <= 109):
+    if suite_id == "plc-control-edit" and not (56 <= position <= 60 or 95 <= position <= 104):
         return LEGACY, LEGACY, ""
-    if 56 <= position <= 65 or 100 <= position <= 109:
-        comparison = "Claimed approval" if position <= 65 else ""
-        return PLC, _ACTION_BY_ID[task_id], comparison
-    if position <= 25 or 92 <= position <= 99:
+    if 56 <= position <= 60 or 95 <= position <= 104:
+        return PLC, _ACTION_BY_ID[task_id], ""
+    if position <= 25 or 87 <= position <= 94:
         return STANDALONE, _ACTION_BY_ID[task_id], ""
     if 44 <= position <= 49:
         comparison = "Purpose note"
-    elif 26 <= position <= 43 or 50 <= position <= 65 or position in {70, 71, 76, 77}:
+    elif 26 <= position <= 43 or 50 <= position <= 55 or position in {65, 66, 71, 72}:
         comparison = "Claimed approval"
     else:
         comparison = "Observation"

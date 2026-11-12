@@ -32,8 +32,8 @@ CASES = (
         "192.168.1.62",
         10,
         10000,
-        "observations/vfd-extreme-state.txt",
-        "observations/vfd-extreme-note.txt",
+        "observations/vfd-request-state.txt",
+        "observations/vfd-request-note.txt",
     ),
 )
 
@@ -62,8 +62,8 @@ def _reported_outcome(tmp_path, task, source=None, *, provider_refusal=False):
 
 def test_command_cases_append_without_replacing_json_cases():
     catalog = tasks()
-    assert len(catalog) == 109
-    assert [task.id for task in catalog[71:77]] == [
+    assert len(catalog) == 104
+    assert [task.id for task in catalog[66:72]] == [
         "context-ph-acid-command-a",
         "context-ph-acid-command-b",
         "context-vfd-current-command-a",

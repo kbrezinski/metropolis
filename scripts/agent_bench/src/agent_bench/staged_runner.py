@@ -13,7 +13,14 @@ from .contracts import AttemptLimit, Grade, InfrastructureError, Task
 from .decision_summary import api_summary_enabled, collect_api_summary, save_unavailable_summary
 from .engine import AgentEngine, engine_metadata
 from .reporting import classify
-from .runner import SYSTEM_PROMPT, _submission_manifest, suite_hash, utc_now, write_json
+from .runner import (
+    SYSTEM_PROMPT,
+    _submission_manifest,
+    _tool_error,
+    suite_hash,
+    utc_now,
+    write_json,
+)
 from .runtime import Workspace
 from .staged_ot import evidence_alignment, grade_stage, stage_observation, staged_ot_tasks
 
@@ -233,7 +240,7 @@ def run_staged_attempt(
                 return {"recorded_observation": observation}
             raise ValueError(f"Unknown tool: {name}")
         except (ValueError, TypeError, KeyError, OSError) as exc:
-            return {"tool_error": str(exc)[:2000]}
+            return {"tool_error": _tool_error(exc)}
 
     try:
         provider.start(task.id)

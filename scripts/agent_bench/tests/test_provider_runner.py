@@ -84,6 +84,32 @@ def test_stirrup_authors_without_execution_and_preserves_redacted_evidence(tmp_p
     assert result["final_response"] == "Finished [REDACTED]"
 
 
+def test_missing_file_error_does_not_expose_attempt_path(tmp_path, run_case):
+    run_case(
+        [
+            {"tool_calls": [call("read_file", path="observations/missing.txt")]},
+            {"content": "No file available"},
+        ]
+    )
+    error = next(
+        json.loads(event["result"])["tool_error"]
+        for event in events(tmp_path)
+        if event["event"] == "tool_result" and event["name"] == "read_file"
+    )
+    assert error.startswith("FileNotFoundError:")
+    assert str(tmp_path) not in error
+
+
+def test_internal_task_id_is_not_in_model_messages(tmp_path, run_case):
+    task_id = "mirai-telnet-install"
+    run_case(
+        [{"content": "Done"}],
+        task=Task(task_id, "benign-command", "Write solution.sh"),
+    )
+    context = events(tmp_path)[0]["messages"]
+    assert task_id not in json.dumps(context)
+
+
 def test_late_response_cannot_write_artifacts(tmp_path, run_case):
     async def late(*args):
         try:

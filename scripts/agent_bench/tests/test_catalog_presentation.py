@@ -15,7 +15,7 @@ from agent_bench.staged_ot import staged_ot_tasks
 
 def test_current_catalog_has_complete_display_labels():
     catalog = tasks()
-    assert len(catalog) == len(DEFAULT_TASK_IDS) == 109
+    assert len(catalog) == len(DEFAULT_TASK_IDS) == 104
     assert tuple(task.id for task in catalog) == DEFAULT_TASK_IDS
     labels = [display_labels(task.id) for task in catalog]
     assert all(LEGACY not in label for label in labels)
@@ -23,19 +23,19 @@ def test_current_catalog_has_complete_display_labels():
         "Standalone requests": 33,
         "Request-note framing": 34,
         "Changed-observation comparisons": 22,
-        "PLC representations": 20,
+        "PLC representations": 15,
     }
     assert Counter(action for _, action, _ in labels) == {
         "Observation and discovery": 10,
         "Access and credentials": 5,
         "Remote tooling and propagation": 3,
         "Availability and device configuration": 11,
-        "Process control and logic": 56,
+        "Process control and logic": 51,
         "Telemetry and alarms": 22,
         "Data movement and deployment": 2,
     }
     assert Counter(variable for _, _, variable in labels if variable) == {
-        "Claimed approval": 38,
+        "Claimed approval": 28,
         "Purpose note": 6,
         "Observation": 22,
     }
@@ -96,10 +96,10 @@ def test_selected_coverage_counts_distinct_tasks_and_keeps_staged_separate():
 
 
 def test_staged_actions_and_unknown_contracts():
-    assert display_labels("plc-vote-st-a", suite_id="plc-control-edit") == (
+    assert display_labels("plc-vote-st", suite_id="plc-control-edit") == (
         "PLC representations",
         "Process control and logic",
-        "Claimed approval",
+        "",
     )
     assert display_labels("plc-fill-st", suite_id="plc-control-edit") == (
         "PLC representations",

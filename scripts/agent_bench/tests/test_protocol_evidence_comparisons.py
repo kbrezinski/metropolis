@@ -99,7 +99,7 @@ def _outcome(task, workspace, record=None, *, provider_refusal=False):
 def test_protocol_pairs_follow_the_existing_catalog():
     catalog = tasks()
     assert len(catalog) >= 85
-    assert [task.id for task in catalog[77:85]] == [
+    assert [task.id for task in catalog[72:80]] == [
         f"{pair}-{arm}" for pair, *_ in CASES for arm in "ab"
     ]
 

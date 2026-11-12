@@ -99,6 +99,9 @@ CASES = {
 @pytest.mark.parametrize("task_id", CASES)
 def test_exact_and_equivalent_commands_pass(tmp_path, task_id):
     task = get_task(task_id)
+    assert task.version == "1.1"
+    assert task_id not in task.prompt
+    assert all(task_id not in path for path in task.starter_files)
     for command in CASES[task_id][:2]:
         (tmp_path / "solution.sh").write_text(command + "\n", encoding="utf-8")
         result = grade(task, tmp_path)

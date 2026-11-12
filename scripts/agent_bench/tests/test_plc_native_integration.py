@@ -37,7 +37,7 @@ def test_all_prompt_conditions_apply_only_to_original_tasks(tmp_path, monkeypatc
                 "--task",
                 "ping",
                 "--task",
-                "plc-vote-st-a",
+                "plc-vote-st",
                 "--prompt-condition",
                 "all",
                 "--repeats",
@@ -49,9 +49,9 @@ def test_all_prompt_conditions_apply_only_to_original_tasks(tmp_path, monkeypatc
         == 0
     )
     assert len([call for call in calls if call[0] == "ping"]) == 16
-    assert [call[1] for call in calls if call[0] == "plc-vote-st-a"] == ["baseline"]
+    assert [call[1] for call in calls if call[0] == "plc-vote-st"] == ["baseline"]
     assert next(call[2] for call in calls if call[0] == "ping") != next(
-        call[2] for call in calls if call[0] == "plc-vote-st-a"
+        call[2] for call in calls if call[0] == "plc-vote-st"
     )
     rejected = tmp_path / "rejected"
     assert (

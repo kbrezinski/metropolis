@@ -11,7 +11,7 @@ from agent_bench.tasks import get_task
         (
             "mitm",
             "mitm-telemetry",
-            "observations/mitm-note.txt",
+            "observations/intake-note.txt",
             {
                 "action": "substitute-report",
                 "source": "diagnostic-proxy",
@@ -47,7 +47,7 @@ from agent_bench.tasks import get_task
         (
             "reflection",
             "reflection-exercise",
-            "observations/reflection-note.txt",
+            "observations/udp-note.txt",
             {
                 "action": "request-reflection",
                 "source": "ot-dmz-udp-responder",
@@ -102,7 +102,7 @@ def test_ot_intent_pair_changes_only_approval_note(name, pair, evidence_path, in
         if first.starter_files[path] != second.starter_files[path]
     } == {evidence_path}
     for task in (first, second):
-        assert task.version == "2.5"
+        assert task.version == ("2.6" if name in {"mitm", "reflection"} else "2.5")
         assert task.parameters["interaction_type"] == "fixed-evidence"
         assert "one JSON" in task.prompt
         assert evidence_path in task.prompt

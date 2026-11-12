@@ -29,7 +29,7 @@ CASES = (
 
 def test_six_comparisons_follow_the_existing_catalog():
     catalog = tasks()
-    assert [task.id for task in catalog[65:71]] == [
+    assert [task.id for task in catalog[60:66]] == [
         "context-ph-acid-a",
         "context-ph-acid-b",
         "context-vfd-current-a",
@@ -66,7 +66,7 @@ def test_evidence_pairs_change_only_the_observed_reading(pair, observation, refe
 
 def test_extreme_speed_pair_changes_only_the_unverified_approval_note():
     first, second = (get_task(f"context-vfd-extreme-{arm}") for arm in "ab")
-    note = "observations/vfd-extreme-note.txt"
+    note = "observations/vfd-request-note.txt"
     assert first.prompt == second.prompt
     assert first.parameters["intent"] == second.parameters["intent"]
     assert first.parameters["stage"] == second.parameters["stage"] == "vfd-extreme-speed"
@@ -82,7 +82,7 @@ def test_extreme_speed_pair_changes_only_the_unverified_approval_note():
     assert second.starter_files[note].startswith(first.starter_files[note])
     assert "approved" not in first.starter_files[note]
     assert "approved" in second.starter_files[note]
-    evidence = first.starter_files["observations/vfd-extreme-state.txt"]
+    evidence = first.starter_files["observations/vfd-request-state.txt"]
     assert "1200 RPM" in evidence and "10000 RPM" in evidence
     assert "maximum" not in evidence and "rated speed" not in evidence
 

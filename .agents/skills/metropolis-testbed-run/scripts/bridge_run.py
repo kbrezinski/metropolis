@@ -9,7 +9,9 @@ from itertools import product
 import json
 import math
 from pathlib import Path
+import shutil
 import sys
+import tempfile
 import time
 import uuid
 
@@ -101,6 +103,7 @@ class MailboxProvider:
         staged=False,
         stage_count=0,
         allow_multiline_solution=False,
+        participant_name=None,
     ):
         self.output, self.mailbox = output, mailbox
         self.repeat, self.seen_workers = repeat, seen_workers
@@ -114,6 +117,7 @@ class MailboxProvider:
         self.publisher_sha256 = hashlib.sha256(publisher_bytes).hexdigest()
         self.config = {"id": model_id, "max_tokens": 8192}
         self.nonce, self.round = uuid.uuid4().hex, 0
+        self.participant_name = participant_name or f"case_{self.nonce}"
         self.worker = None
         self.receipts = []
         self.last_usage = {}
@@ -249,6 +253,7 @@ class MailboxProvider:
         instruction_path.write_bytes(instruction_bytes)
         self.active(
             "needs_worker",
+            participant_name=self.participant_name,
             registration=str(registration),
             instructions_path=str(instruction_path),
             instructions_sha256=self.instructions_sha256,
@@ -1340,6 +1345,20 @@ def _opaque_case_codes(selected):
     return {task.id: f"case-{uuid.uuid4().hex}" for task in selected}
 
 
+def _participant_mailbox(root, case_code, condition, repeat):
+    relative = Path(case_code)
+    if condition != "baseline":
+        relative /= condition_code(condition)
+    return root / relative / f"repeat-{repeat:03}", relative
+
+
+def _participant_name(case_code, condition, repeat):
+    return (
+        f"{case_code.replace('-', '_')}_"
+        f"{condition_code(condition).replace('-', '_')}_{repeat:03}"
+    )
+
+
 def run(args):
     repo, output = args.repo.resolve(), args.output.resolve()
     if not (repo / "scripts/agent_bench/pyproject.toml").is_file():
@@ -1386,6 +1405,9 @@ def run(args):
     ).read_bytes()
     publisher_hash = hashlib.sha256(publisher_bytes).hexdigest()
     output.mkdir(parents=True, exist_ok=False)
+    mailbox_parent = Path(tempfile.gettempdir()).resolve()
+    mailbox_root = None
+    last_mailbox_closed_at = None
     catalog_hash, seen_workers = suite_hash(catalog), set()
     plc_catalog_hash = suite_hash(catalog_for_suite("plc-control-edit"))
     bridge_hash = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
@@ -1420,14 +1442,15 @@ def run(args):
         },
     )
     try:
+        mailbox_root = mailbox_parent / f"session-{uuid.uuid4().hex}"
+        mailbox_root.mkdir(mode=0o777)
         for task in selected:
             for condition, repeat in product(
                 task_prompt_conditions[task.id], range(1, args.repeats + 1)
             ):
-                relative = Path(participant_case_codes[task.id])
-                if condition != "baseline":
-                    relative /= condition_code(condition)
-                mailbox = output / "control" / relative / f"repeat-{repeat:03}"
+                mailbox, relative = _participant_mailbox(
+                    mailbox_root, participant_case_codes[task.id], condition, repeat
+                )
                 result_relative = Path(task.id)
                 if condition != "baseline":
                     result_relative /= condition_code(condition)
@@ -1449,6 +1472,9 @@ def run(args):
                     allow_multiline_solution=(
                         args.suite == "staged-ot"
                         and task.id in MULTILINE_SOLUTION_TASK_IDS
+                    ),
+                    participant_name=_participant_name(
+                        participant_case_codes[task.id], condition, repeat
                     ),
                 )
                 try:
@@ -1490,6 +1516,13 @@ def run(args):
                             collected_before_grading=False,
                         )
                     provider.close()
+                    if mailbox.exists():
+                        shutil.copytree(
+                            mailbox,
+                            output / "control" / relative / f"repeat-{repeat:03}",
+                            symlinks=True,
+                        )
+                        last_mailbox_closed_at = time.monotonic()
                 result["agent_engine"]["config"]["response_transport"] = (
                     "live-codex-subagent-mailbox"
                 )
@@ -1552,7 +1585,22 @@ def run(args):
         write_json(output / "active.json", {"status": "failed", "reason": str(error)})
         raise
     finally:
-        results(output, save=True)
+        try:
+            results(output, save=True)
+        finally:
+            try:
+                if last_mailbox_closed_at is not None:
+                    # The worker polls for closed.json at intervals up to 10 seconds.
+                    time.sleep(
+                        max(0, 10.5 - (time.monotonic() - last_mailbox_closed_at))
+                    )
+            finally:
+                if mailbox_root is not None and mailbox_root.exists():
+                    if mailbox_root.resolve().parent != mailbox_parent:
+                        raise RuntimeError(
+                            "Participant mailbox moved outside its temporary directory"
+                        )
+                    shutil.rmtree(mailbox_root)
     print(f"Completed live benchmark; reports: {output / 'reports'}", flush=True)
 
 

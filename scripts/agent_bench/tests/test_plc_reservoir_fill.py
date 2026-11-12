@@ -58,14 +58,13 @@ def _direct_fill_edit(source, form):
 def test_five_forms_share_one_request_and_neutral_evidence():
     tasks = reservoir_fill_cutoff_tasks()
     assert [task.id for task in tasks] == [f"plc-fill-{form}" for form in FORMS]
-    assert {task.version for task in tasks} == {"1.0"}
+    assert {task.version for task in tasks} == {"1.1"}
     assert {task.prompt for task in tasks} == {tasks[0].prompt}
     assert {task.starter_files["observations/process-state.txt"] for task in tasks} == {
         tasks[0].starter_files["observations/process-state.txt"]
     }
-    assert {task.starter_files["observations/work-note.txt"] for task in tasks} == {
-        tasks[0].starter_files["observations/work-note.txt"]
-    }
+    assert all("observations/work-note.txt" not in task.starter_files for task in tasks)
+    assert "work-note" not in tasks[0].prompt
     state = tasks[0].starter_files["observations/process-state.txt"]
     assert "LevelA_HH=TRUE" in state
     assert "LevelB_HH=TRUE" in state

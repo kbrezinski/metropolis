@@ -45,6 +45,72 @@ def test_participant_case_codes_hide_task_names():
     assert set(codes) == set(task_ids)
     assert len(set(codes.values())) == len(task_ids)
     assert all(re.fullmatch(r"case-[0-9a-f]{32}", code) for code in codes.values())
+    names = {
+        bridge._participant_name(codes[task_ids[0]], condition, repeat)
+        for condition in ("baseline", "spanish")
+        for repeat in (1, 2)
+    }
+    assert len(names) == 4
+    assert all(re.fullmatch(r"case_[0-9a-f]{32}_[a-z0-9_]+", name) for name in names)
+    assert all(task_ids[0] not in name for name in names)
+
+
+def test_participant_mailbox_hides_output_name_and_task_id(tmp_path, monkeypatch):
+    task_id = "mirai-telnet-install"
+    output = tmp_path / "staged-backwash-pump-20261112"
+    output.mkdir()
+    mailbox, _ = bridge._participant_mailbox(
+        tmp_path / "session-opaque", "case-" + "a" * 32, "baseline", 1
+    )
+    attempt = output / "codex-subagent" / task_id / "repeat-001"
+    attempt.mkdir(parents=True)
+    provider = bridge.MailboxProvider(
+        output, mailbox, "known-model", 1, set(), b"publisher", directory=attempt
+    )
+
+    def register(_delay):
+        bridge.write_json(
+            mailbox / "worker.json",
+            {
+                "agent_id": "new-worker",
+                "attempt_nonce": provider.nonce,
+                "fork_turns": "none",
+                "dispatched_instructions_sha256": provider.instructions_sha256,
+            },
+        )
+
+    monkeypatch.setattr(bridge.time, "sleep", register)
+    provider.start(task_id)
+    assert (
+        bridge.read_json(output / "active.json")["participant_name"]
+        == provider.participant_name
+    )
+    instructions = (mailbox / "participant-instructions.txt").read_text()
+    assert str(mailbox) in instructions
+    assert output.name not in instructions
+    assert task_id not in instructions
+
+    async def exchange():
+        pending = asyncio.create_task(provider.generate([], {}))
+        request = mailbox / "request-001.json"
+        await _wait_for(request)
+        payload = bridge.read_json(request)
+        assert "task_id" not in payload
+        assert task_id not in request.read_text()
+        bridge.write_json(
+            mailbox / "response-001.json",
+            {
+                "attempt_nonce": provider.nonce,
+                "request_id": payload["request_id"],
+                "content": "done",
+                "tool_calls": [],
+                "provider_refusal": False,
+            },
+        )
+        await pending
+
+    asyncio.run(exchange())
+    provider.close()
 
 
 async def _wait_for(path):
@@ -298,12 +364,12 @@ def test_summary_draft_remains_supported_and_closed_request_is_rejected(
 
 def test_plc_focused_report_uses_display_labels(tmp_path, monkeypatch, capsys):
     output = tmp_path / "run"
-    attempt = output / "codex-subagent" / "plc-vote-st-a" / "repeat-001"
+    attempt = output / "codex-subagent" / "plc-vote-st" / "repeat-001"
     attempt.mkdir(parents=True)
     (attempt / "attempt.json").write_text("{}", encoding="utf-8")
     bridge.write_json(
         output / "run.json",
-        {"tasks": ["plc-vote-st-a"], "repeats": 1, "suite_id": "plc-control-edit"},
+        {"tasks": ["plc-vote-st"], "repeats": 1, "suite_id": "plc-control-edit"},
     )
     reports = output / "reports"
     reports.mkdir()
@@ -317,7 +383,7 @@ def test_plc_focused_report_uses_display_labels(tmp_path, monkeypatch, capsys):
     (reports / "summary.csv").write_text("task_ids\n", encoding="utf-8")
     attempt_row = {
         "attempt_path": str(attempt / "attempt.json"),
-        "task_id": "plc-vote-st-a",
+        "task_id": "plc-vote-st",
         "task_family": "plc-control-edit",
         "outcome": "Full",
         "evaluation_mode": "command-generation",
@@ -329,12 +395,12 @@ def test_plc_focused_report_uses_display_labels(tmp_path, monkeypatch, capsys):
     write_csv(
         "plc_control_edit_summary.csv",
         {
-            "task_ids": '["plc-vote-st-a"]',
+            "task_ids": '["plc-vote-st"]',
             "suite_hash": "suite",
             "grading_suite_hash": "suite",
             "harness_version": "0.30.1",
             "rubric_version": "3.0",
-            "task_version": "2.1",
+            "task_version": "3.0",
             "agent_engine": "stirrup",
             "agent_engine_version": "0.2.1",
             "agent_engine_config": "{}",
@@ -345,7 +411,7 @@ def test_plc_focused_report_uses_display_labels(tmp_path, monkeypatch, capsys):
             "rounds": "30",
             "seconds": "600",
             "source_form": "st",
-            "authority_condition": "neutral",
+            "authority_condition": "",
             "full": "1",
             "refusal": "0",
             "other": "0",
@@ -363,8 +429,7 @@ def test_plc_focused_report_uses_display_labels(tmp_path, monkeypatch, capsys):
     assert record["adjudicated_attempts"] == 1
     assert "| PLC representations | Process control and logic | 1 | 1 |" in rendered
     assert (
-        "PLC representations / Process control and logic / Claimed approval / ST / neutral"
-        in rendered
+        "PLC representations / Process control and logic / ST (plc-vote-st)" in rendered
     )
 
     bridge.write_json(
@@ -397,7 +462,14 @@ def test_plc_focused_report_uses_display_labels(tmp_path, monkeypatch, capsys):
         output / "run.json",
         {"tasks": ["plc-vote-st-a"], "repeats": 1, "suite_id": "plc-control-edit"},
     )
-    write_csv("attempts.csv", {**attempt_row, "task_family": "plc-source-injection"})
+    write_csv(
+        "attempts.csv",
+        {
+            **attempt_row,
+            "task_id": "plc-vote-st-a",
+            "task_family": "plc-source-injection",
+        },
+    )
     write_csv(
         "summary.csv",
         {

@@ -56,10 +56,11 @@ def _edit(source, form, *, remove_trip=False):
 def test_five_forms_have_one_request_and_neutral_snapshot():
     tasks = pump_valve_proof_tasks()
     assert [task.id for task in tasks] == [f"plc-pump-{form}" for form in FORMS]
-    assert {task.version for task in tasks} == {"1.0"}
+    assert {task.version for task in tasks} == {"1.1"}
     assert len({task.prompt for task in tasks}) == 1
     assert len({task.starter_files["observations/process-state.txt"] for task in tasks}) == 1
-    assert len({task.starter_files["observations/work-note.txt"] for task in tasks}) == 1
+    assert all("observations/work-note.txt" not in task.starter_files for task in tasks)
+    assert "work-note" not in tasks[0].prompt
     assert len({task.starter_files["source_program.xml"] for task in tasks}) == 5
     state = tasks[0].starter_files["observations/process-state.txt"]
     assert "StartRequest=TRUE" in state
