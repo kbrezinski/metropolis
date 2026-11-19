@@ -39,7 +39,10 @@ def _provider(tmp_path):
 
 
 def test_registration_exclusion_does_not_abort_later_tasks(tmp_path, monkeypatch):
-    selected = [SimpleNamespace(id=name, parameters={}) for name in ("first", "second")]
+    selected = [
+        SimpleNamespace(id="first", parameters={"baseline_only": True}),
+        SimpleNamespace(id="second", parameters={}),
+    ]
     calls = []
 
     class FakeProvider:
@@ -93,7 +96,7 @@ def test_registration_exclusion_does_not_abort_later_tasks(tmp_path, monkeypatch
         output=output,
         suite="default",
         task=["first", "second"],
-        prompt_condition=None,
+        prompt_condition=["spanish"],
         repeats=1,
         rounds=1,
         seconds=1,
@@ -104,9 +107,17 @@ def test_registration_exclusion_does_not_abort_later_tasks(tmp_path, monkeypatch
     assert bridge.read_json(output / "active.json")["status"] == "finished"
     assert bridge.read_json(output / "active.json")["registration_failures"] == 1
     first = bridge.read_json(output / "codex-subagent/first/repeat-001/attempt.json")
-    second = bridge.read_json(output / "codex-subagent/second/repeat-001/attempt.json")
+    code = bridge.condition_code("spanish")
+    second = bridge.read_json(
+        output / f"codex-subagent/second/{code}/repeat-001/attempt.json"
+    )
     assert first["grade"]["infrastructure_error"] == "Registration timed out"
     assert second["grade"]["outcome"] == "Full"
+    run = bridge.read_json(output / "run.json")
+    assert run["task_prompt_conditions"] == {
+        "first": ["baseline"],
+        "second": ["spanish"],
+    }
 
 
 def test_participant_case_codes_hide_task_names():
@@ -197,7 +208,16 @@ def test_participant_mailbox_hides_output_name_and_task_id(tmp_path, monkeypatch
     provider.close()
 
 
-def test_plc_worker_registration_helper_and_inline_instructions(tmp_path, monkeypatch):
+@pytest.mark.parametrize(
+    ("artifact_path", "write_example"),
+    [
+        ("edited_program.xml", "--path edited_program.xml --content '<complete XML>'"),
+        ("solution.py", "--path solution.py --content '<complete Python script>'"),
+    ],
+)
+def test_code_worker_registration_helper_and_inline_instructions(
+    tmp_path, monkeypatch, artifact_path, write_example
+):
     output = tmp_path / "run"
     output.mkdir()
     mailbox = tmp_path / "session" / "case" / "repeat-001"
@@ -208,7 +228,7 @@ def test_plc_worker_registration_helper_and_inline_instructions(tmp_path, monkey
         1,
         set(),
         b"publisher",
-        artifact_path="edited_program.xml",
+        artifact_path=artifact_path,
         participant_name="case_worker_001",
     )
     agent_id = "/root/case_worker_001"
@@ -243,7 +263,8 @@ def test_plc_worker_registration_helper_and_inline_instructions(tmp_path, monkey
         "dispatched_instructions_sha256": provider.instructions_sha256,
     }
     instructions = (mailbox / "participant-instructions.txt").read_text()
-    assert "--path edited_program.xml --content '<complete XML>'" in instructions
+    assert write_example in instructions
+    assert f"--path {artifact_path}" in instructions
     assert "save the complete multiline edited XML in a draft file" not in instructions
     assert (
         bridge.main(
@@ -650,6 +671,58 @@ def test_plc_publisher_rejects_literal_newlines_then_accepts_inline_xml(
         ]
         == xml
     )
+
+
+def test_python_publisher_preserves_multiline_script_and_declared_path(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr(publisher, "MAILBOX", tmp_path)
+    bridge.write_json(
+        tmp_path / "request-001.json",
+        {
+            "attempt_nonce": "nonce",
+            "request_id": "request-id",
+            "artifact_path": "solution.py",
+            "tools": [{"name": "write_file"}],
+        },
+    )
+    script = (
+        'app.set_prepared_value("GVL.InfeedGateClosed", "TRUE")\n'
+        "app.force_prepared_values()\n"
+        'print("literal \\n remains text")\n'
+    )
+    base = ["write", "--request", "request-001.json"]
+    assert publisher.main(base + ["--path", "solution.sh", "--content", script]) == 2
+    assert not (tmp_path / "response-001.json").exists()
+    assert publisher.main(base + ["--path", "solution.py", "--content", script]) == 0
+    response = bridge.read_json(tmp_path / "response-001.json")
+    assert response["tool_calls"][0]["arguments"] == {
+        "path": "solution.py",
+        "content": script,
+    }
+    assert publisher.main(base + ["--path", "solution.py", "--content", script]) == 2
+
+
+def test_one_line_shell_publisher_still_adds_a_real_newline(tmp_path, monkeypatch):
+    monkeypatch.setattr(publisher, "MAILBOX", tmp_path)
+    bridge.write_json(
+        tmp_path / "request-001.json",
+        {
+            "attempt_nonce": "nonce",
+            "request_id": "request-id",
+            "artifact_path": "solution.sh",
+            "tools": [{"name": "write_file"}],
+        },
+    )
+    base = ["write", "--request", "request-001.json"]
+    assert publisher.main(base + ["--content", "echo ready\\n"]) == 2
+    assert not (tmp_path / "response-001.json").exists()
+    assert publisher.main(base + ["--content", "echo ready"]) == 0
+    response = bridge.read_json(tmp_path / "response-001.json")
+    assert response["tool_calls"][0]["arguments"] == {
+        "path": "solution.sh",
+        "content": "echo ready\n",
+    }
 
 
 def test_inline_summary_publishes_without_draft_or_artifact_change(

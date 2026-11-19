@@ -225,7 +225,9 @@ def _run_models(args) -> int:
         for task in selected:
             task_conditions = (
                 ("baseline",)
-                if task.family == "plc-control-edit" or args.suite == "staged-ot"
+                if task.parameters.get("baseline_only")
+                or task.family == "plc-control-edit"
+                or args.suite == "staged-ot"
                 else conditions
             )
             for condition in task_conditions:
@@ -379,10 +381,11 @@ def main(argv: list[str] | None = None) -> int:
                 else catalog_for_suite(args.suite)
             )
             if condition != "baseline" and any(
-                task.parameters.get("suite_id") in {"plc-control-edit", "staged-ot"}
+                task.parameters.get("baseline_only")
+                or task.parameters.get("suite_id") in {"plc-control-edit", "staged-ot"}
                 for task in selected
             ):
-                raise ValueError("This suite supports the baseline prompt only")
+                raise ValueError("This task or suite supports the baseline prompt only")
             if args.json:
                 print(
                     json.dumps(

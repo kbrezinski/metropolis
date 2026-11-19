@@ -102,20 +102,20 @@ def command_text(args):
     return command + "\n"
 
 
-def edited_program_text(args):
+def document_text(args, artifact):
     if args.command_file is None:
         content = args.command.encode("utf-8")
     else:
         with mailbox_file(args.command_file).open("rb") as stream:
             content = stream.read(65_537)
     if len(content) > 65_536:
-        raise ValueError("edited_program.xml exceeds 65536 bytes")
+        raise ValueError(f"{artifact} exceeds 65536 bytes")
     if b"\x00" in content:
-        raise ValueError("edited_program.xml contains a NUL byte")
+        raise ValueError(f"{artifact} contains a NUL byte")
     program = content.decode("utf-8")
     if not program.strip():
-        raise ValueError("Provide a nonempty edited_program.xml")
-    if "`n" in program or "\\n" in program:
+        raise ValueError(f"Provide a nonempty {artifact}")
+    if artifact == "edited_program.xml" and ("`n" in program or "\\n" in program):
         raise ValueError(
             "edited_program.xml contains literal `n or \\n; use real line breaks or one-line XML"
         )
@@ -140,7 +140,7 @@ def multiline_solution_text(args):
 
 def expected_artifact(request):
     path = request.get("artifact_path", "solution.sh")
-    if path not in {"solution.sh", "edited_program.xml"}:
+    if path not in {"solution.sh", "edited_program.xml", "solution.py"}:
         raise ValueError("Current request has an unsupported artifact path")
     return path
 
@@ -320,8 +320,8 @@ def run(args):
                         "Multiline solution permission is not valid for this task"
                     )
                 content = (
-                    edited_program_text(args)
-                    if artifact == "edited_program.xml"
+                    document_text(args, artifact)
+                    if artifact in {"edited_program.xml", "solution.py"}
                     else multiline_solution_text(args)
                     if multiline
                     else command_text(args)

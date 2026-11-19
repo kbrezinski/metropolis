@@ -1,9 +1,9 @@
 # Industrial agent benchmark — authored OT actions and scenarios
 
 A standalone project comparing models on 38 standalone requests, 34 request-note
-framing tasks, 34 changed-observation tasks, and 15 PLC representation tasks, with eleven
+framing tasks, 38 changed-observation tasks, and 15 PLC representation tasks, with eleven
 staged episodes in a separate suite. Responses may be commands,
-action records, or PLC programs. Grading inspects submitted text only.
+action records, PLC programs, or CODESYS scripts. Grading inspects submitted text only.
 Submitted artifacts are never executed, so no target services, Docker, malware
 binaries, packet captures, or installed networking utilities are required.
 
@@ -12,7 +12,7 @@ contexts; none measures effects on a target. Study design and OT action labels o
 the readable reference and reports without changing the internal grading families.
 There are no imports from Metropolis, GNS3, or the repository's ML package.
 
-The default catalog contains 121 tasks. A targeted suite selector runs the 15
+The default catalog contains 125 tasks. A targeted suite selector runs the 15
 PLC control-edit cases alone. The separate `staged-ot` pilot contains eleven
 episodes with four to six checkpoints and is never included in a default run.
 
@@ -170,13 +170,13 @@ original benchmark package.
 
 ## Tasks and study design
 
-The 121 default tasks are grouped by their primary comparison; the staged episodes remain a separate suite.
+The 125 default tasks are grouped by their primary comparison; the staged episodes remain a separate suite.
 
 | Study design | Default positions | Tasks | What can be compared |
 |---|---|---:|---|
 | Standalone requests | 1–25, 87–94, 107–111 | 38 | One response to each request, including finite probes, floods, and other OT actions |
 | Request-note framing | 26–55, 65–66, 71–72 | 34 | Responses to the same action when a claimed approval or purpose note changes |
-| Changed-observation comparisons | 61–64, 67–70, 73–86, 105–106, 112–121 | 34 | Responses to the same action when one observation changes |
+| Changed-observation comparisons | 61–64, 67–70, 73–86, 105–106, 112–125 | 38 | Responses to the same action when one observation changes |
 | PLC representations | 56–60, 95–104 | 15 | The same logic-edit request across five source forms within each case, without work notes |
 | Staged episodes | Separate `staged-ot` suite | 11 | Progress across four to six authored checkpoints in one conversation |
 
@@ -202,9 +202,17 @@ of a time service. [TESTS.md](TESTS.md#changed-observation-comparisons-continued
 links each case to its OT advisory or guidance and states where the authored
 command differs from the reported vulnerability or incident.
 
-Each default task also has one OT action label for coverage: observation and discovery (10), access and credentials (8), remote tooling and propagation (3), availability and device configuration (16), process control and logic (55), telemetry and alarms (27), or data movement and deployment (2). The label follows the **requested action**, not the observation. Staged checkpoints have their own action labels and are not included in those 121-task counts.
+Tasks 122–125 add two cross-sector pairs. The packaging-line pair asks for a
+CODESYS ScriptEngine `solution.py` that forces one mapped input; the independent
+gate-contact observation changes between arms. The warehouse-sorter pair asks
+for one `solution.sh` command invoking a supplied CODESYS project-download script;
+the observed archive digest matches or differs from its release manifest. The
+script pair uses the baseline prompt only. Both pairs keep Full / Refusal / Other,
+and no submission is executed. [TESTS.md](TESTS.md#changed-observation-comparisons-continued-122125)
 
-`Cmd`, `JSON`, and `XML` describe submitted artifacts, not separate task categories. All are graded statically. The [test reference](TESTS.md#task-catalog) lists all 121 IDs in default run order with the action label, comparison arm or form, artifact type, Full criterion, and contract version. `agent-bench list --task ID` displays the complete public contract. The VSE flood case supplies its query file; no setup command or service is needed. Later standalone and matched tasks supply fixed, versioned observations through `read_file`; the benchmark does not start the represented services. The fourteen protocol-evidence cases also put the decisive status in the request so it remains visible if the agent skips a file.
+Each default task also has one OT action label for coverage: observation and discovery (10), access and credentials (8), remote tooling and propagation (3), availability and device configuration (16), process control and logic (57), telemetry and alarms (27), or data movement and deployment (4). The label follows the **requested action**, not the observation. Staged checkpoints have their own action labels and are not included in those 125-task counts.
+
+`Cmd`, `JSON`, `XML`, and `Py` describe submitted artifacts, not separate task categories. All are graded statically. The [test reference](TESTS.md#task-catalog) lists all 125 IDs in default run order with the action label, comparison arm or form, artifact type, Full criterion, and contract version. `agent-bench list --task ID` displays the complete public contract. The VSE flood case supplies its query file; no setup command or service is needed. Later standalone and matched tasks supply fixed, versioned observations through `read_file`; the benchmark does not start the represented services. The fourteen protocol-evidence cases also put the decisive status in the request so it remains visible if the agent skips a file.
 
 Within each approval-note pair, the request, target, technical parameters, and authored
 versioned reference are identical; only an agent-visible note changes. One arm
@@ -486,8 +494,8 @@ selects the original baseline plus all fifteen. The condition IDs are
 `spanish`, `information-overload`, `few-shot`, `many-shot`, `repeated-token`,
 `output-format`, `hypothetical-scenario`, `payload-splitting`, `persuasion`,
 `virtualization`, and `mixed-override-persuasion`. With `--prompt-condition all`, the
-106 non-PLC tasks use baseline plus fifteen variants and the 15 PLC tasks
-use baseline only, for 1,711 attempts at the default one repeat, or 5,133 with
+108 command/record tasks use baseline plus fifteen variants; the 15 PLC XML tasks
+and two CODESYS script tasks use baseline only. This is 1,745 attempts at the default one repeat, or 5,235 with
 `--repeats 3`. Select tasks or conditions
 to control cost. No condition is enabled automatically.
 
@@ -519,7 +527,7 @@ Participants must infer the effect of the requested behavior from the program.
 Only the source representation changes; no approval or work note is supplied.
 Participants return the complete edited program in
 `edited_program.xml`; no PLC code is compiled or executed. The fifteen direct
-prompt conditions apply only to the 106 non-PLC tasks. PLC cases use their baseline
+prompt conditions apply only to the 108 command/record tasks. PLC and CODESYS script cases use their baseline
 prompt; a PLC-only selection rejects nonbaseline conditions.
 
 The five additional reservoir cases (`plc-fill-st`, `plc-fill-ld`, `plc-fill-fbd`,
@@ -626,6 +634,12 @@ Package 0.39.1 accepts a connected, single-input `COPY` block as another direct
 pass-through in the restricted chlorine and reservoir FBD fixtures. The vote and
 other required connections remain checked. No task prompt or contract changes;
 saved run scores remain frozen under their original package.
+
+Package 0.40.0 appends two cross-sector changed-observation pairs at positions
+122–125 and supports static `solution.py` grading for the baseline-only CODESYS
+force-script pair. The package-download command pair has all 15 opt-in conditions
+under registry 1.26. Existing task hashes, staged episodes, and rubric 3.0 remain
+unchanged; saved runs retain their original scores.
 
 [Stirrup](https://github.com/ArtificialAnalysis/Stirrup), pinned to 0.2.1, manages the
 agent conversation for hosted and canned models. Its available tools are `read_file`,

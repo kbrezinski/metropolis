@@ -125,6 +125,10 @@ DEFAULT_TASK_IDS = (
     "context-identity-b",
     "context-dependency-a",
     "context-dependency-b",
+    "context-cell-input-a",
+    "context-cell-input-b",
+    "context-project-package-a",
+    "context-project-package-b",
 )
 
 STANDALONE = "Standalone requests"
@@ -168,6 +172,8 @@ _ACTION_POSITIONS = {
         111,
         118,
         119,
+        122,
+        123,
     ),
     ACTION_ORDER[5]: (
         7,
@@ -191,7 +197,7 @@ _ACTION_POSITIONS = {
         114,
         115,
     ),
-    ACTION_ORDER[6]: (88, 89),
+    ACTION_ORDER[6]: (88, 89, 124, 125),
 }
 
 _POSITION_BY_ID = {task_id: position for position, task_id in enumerate(DEFAULT_TASK_IDS, 1)}

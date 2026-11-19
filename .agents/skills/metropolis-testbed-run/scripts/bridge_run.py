@@ -280,7 +280,9 @@ class MailboxProvider:
                 if self.allow_multiline_solution
                 else "--content '<one solution.sh line>'"
                 if self.artifact_path == "solution.sh"
-                else "--path edited_program.xml --content '<complete XML>'",
+                else "--path edited_program.xml --content '<complete XML>'"
+                if self.artifact_path == "edited_program.xml"
+                else "--path solution.py --content '<complete Python script>'",
             )
             .replace(
                 "{{ARTIFACT_GUIDANCE}}",
@@ -306,6 +308,13 @@ class MailboxProvider:
                     "one line or contain real line breaks. The publisher rejects "
                     "literal PowerShell backtick+n or backslash+n markers before "
                     "publishing, so correct that input and retry the same request."
+                )
+                if self.artifact_path == "edited_program.xml"
+                else (
+                    "For a `write`, pass the complete Python script with "
+                    "--path solution.py and one quoted --content argument. Real line "
+                    "breaks are preserved; Python string escapes are preserved as "
+                    "written. The publisher limits the script to 64 KiB."
                 ),
             )
         )
@@ -1528,7 +1537,8 @@ def run(args):
     task_prompt_conditions = {
         task.id: (
             ("baseline",)
-            if task.parameters.get("suite_id") in {"plc-control-edit", "staged-ot"}
+            if task.parameters.get("baseline_only")
+            or task.parameters.get("suite_id") in {"plc-control-edit", "staged-ot"}
             else conditions
         )
         for task in selected
@@ -1692,9 +1702,13 @@ def run(args):
                         "status": provider.summary_record["status"],
                     },
                 }
-                if task.parameters.get("suite_id") == "plc-control-edit":
+                if task.parameters.get("artifact_path") in {
+                    "edited_program.xml",
+                    "solution.py",
+                }:
+                    artifact_path = task.parameters["artifact_path"]
                     result["blind_run"]["submitted_artifact"] = {
-                        "path": "submission/edited_program.xml",
+                        "path": f"submission/{artifact_path}",
                         "source_sha256": result.get("source_sha256", ""),
                         "submission_sha256": result.get("submission_sha256", ""),
                     }

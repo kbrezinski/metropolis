@@ -87,6 +87,10 @@ def task_for_suite(task_id: str, suite_id: str) -> Task:
     raise ValueError(f"Unknown task in {suite_id}: {task_id}")
 
 
+def _artifact_path(task: Task) -> str:
+    return task.parameters.get("artifact_path", "solution.sh")
+
+
 def _tool_error(error: Exception) -> str:
     if isinstance(error, OSError):
         # OSError text may include the absolute attempt workspace and task ID.
@@ -164,11 +168,17 @@ def run_attempt(
     if prompt_condition not in CONDITION_IDS:
         raise ValueError(f"Unknown prompt condition: {prompt_condition}")
     suite_id = task.parameters.get("suite_id", "default")
+    if task.parameters.get("baseline_only") and prompt_condition != "baseline":
+        raise ValueError("This task supports the baseline prompt only")
     if suite_id == "plc-control-edit" and prompt_condition != "baseline":
         raise ValueError("PLC control-edit tasks support the baseline prompt only")
+    artifact_path = _artifact_path(task)
+    source_path = task.parameters.get(
+        "source_path", "source_program.xml" if suite_id == "plc-control-edit" else ""
+    )
     source_sha256 = (
-        hashlib.sha256(task.starter_files["source_program.xml"].encode("utf-8")).hexdigest()
-        if suite_id == "plc-control-edit"
+        hashlib.sha256(task.starter_files[source_path].encode("utf-8")).hexdigest()
+        if source_path
         else ""
     )
     effective_prompt = render_prompt(task, prompt_condition)
@@ -195,6 +205,7 @@ def run_attempt(
         "agent_engine": engine_metadata(provider),
         "task_id": task.id,
         "suite_id": suite_id,
+        "artifact_path": artifact_path,
         "base_task_id": task.id,
         "task_family": task.family,
         "source_form": task.parameters.get("source_form", ""),
@@ -270,9 +281,9 @@ def run_attempt(
             if result["elapsed_seconds"] > seconds and result["stop_reason"] == "complete":
                 result["stop_reason"] = "time_limit"
             workspace.collect(output / "submission")
-            if suite_id == "plc-control-edit":
+            if artifact_path != "solution.sh":
                 result["submission_sha256"] = _submission_manifest(output / "submission").get(
-                    "edited_program.xml", ""
+                    artifact_path, ""
                 )
         result["generation_stop_reason"] = result["stop_reason"]
         if after_freeze is not None or api_summary_enabled(provider):
@@ -287,9 +298,7 @@ def run_attempt(
                     provider,
                     engine,
                     submission,
-                    artifact_path=(
-                        "edited_program.xml" if suite_id == "plc-control-edit" else "solution.sh"
-                    ),
+                    artifact_path=artifact_path,
                     submission_sha256=manifest,
                 )
                 result["decision_summary"] = {
@@ -392,6 +401,8 @@ def grade_attempt(directory: Path) -> dict:
     prompt_condition = result.get("prompt_condition", "baseline")
     if prompt_condition not in CONDITION_IDS:
         raise ValueError(f"Unknown saved prompt condition: {prompt_condition}")
+    if task.parameters.get("baseline_only") and prompt_condition != "baseline":
+        raise ValueError("This task supports the baseline prompt only")
     if suite_id == "plc-control-edit" and prompt_condition != "baseline":
         raise ValueError("PLC control-edit tasks support the baseline prompt only")
     if "prompt_condition_version" in result:
@@ -415,22 +426,28 @@ def grade_attempt(directory: Path) -> dict:
             raise ValueError("Saved effective prompt does not match its condition")
     elif prompt_condition != "baseline":
         raise ValueError("Saved variant lacks prompt condition provenance")
-    if suite_id == "plc-control-edit":
+    artifact_path = _artifact_path(task)
+    if result.get("artifact_path", artifact_path) != artifact_path:
+        raise ValueError("Saved artifact path does not match its task contract")
+    if artifact_path != "solution.sh":
+        artifact_label = "PLC" if suite_id == "plc-control-edit" else "code"
         saved_submission_hash = result.get("submission_sha256")
         if not isinstance(saved_submission_hash, str):
-            raise ValueError("Saved PLC attempt lacks a frozen submission hash")
+            raise ValueError(f"Saved {artifact_label} attempt lacks a frozen submission hash")
         current_submission_hash = _submission_manifest(directory / "submission").get(
-            "edited_program.xml", ""
+            artifact_path, ""
         )
         if current_submission_hash != saved_submission_hash:
-            raise ValueError("Frozen PLC submission changed since the attempt was saved")
+            raise ValueError(
+                f"Frozen {artifact_label} submission changed since the attempt was saved"
+            )
     submission_grade = (
         grade(task, directory / "submission")
         if prompt_condition == "baseline"
         else grade(task, directory / "submission", prompt_condition=prompt_condition)
     )
     new_grade = submission_grade.to_dict()
-    if suite_id == "plc-control-edit":
+    if artifact_path != "solution.sh":
         result["grading_submission_sha256"] = current_submission_hash
     if result["stop_reason"] == "grading_error" and not new_grade.get("infrastructure_error"):
         result["stop_reason"] = result.get("generation_stop_reason", "complete")

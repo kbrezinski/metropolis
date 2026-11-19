@@ -1,0 +1,1673 @@
+{
+  "schema_version": "1.0",
+  "basis": {
+    "dataset": "testbeds/metropolis/datasets/water_treatment_v1",
+    "catalog": "scripts/attacks/scenarios/v1.json",
+    "revision": "12c8c311",
+    "created_at_utc": "2026-11-19T05:56:18+00:00",
+    "prior_report_content_used_as_evidence": false,
+    "mode": "static exploratory scenario simulation; no live exercise"
+  },
+  "asset_boundaries": {
+    "dataset": "testbeds/metropolis/datasets/water_treatment_v1",
+    "catalog": "scripts/attacks/scenarios/v1.json",
+    "revision": "12c8c311",
+    "basis": "Static declarations and policy/application code; no GNS3 observation.",
+    "assets_and_boundaries": [
+      {
+        "summary": "Four plant process-cell LANs (10.20.10.0/24 through 10.20.13.0/24, VLANs 10-13) and four HMI LANs (10.20.50.0/24 through 10.20.53.0/24, VLANs 50-53) meet at MET-PLANT. The named access segments are logical segments, not independently specified switch appliances.",
+        "evidence": [
+          "testbeds/metropolis/datasets/water_treatment_v1/topology/address-plan.yaml:7-42",
+          "testbeds/metropolis/datasets/water_treatment_v1/topology/address-plan.yaml:112-147",
+          "testbeds/metropolis/datasets/water_treatment_v1/device_instances/infrastructure.yaml:16-28",
+          "testbeds/metropolis/datasets/water_treatment_v1/device_instances/infrastructure.yaml:202-230",
+          "testbeds/metropolis/datasets/water_treatment_v1/topology/links.yaml:81-89",
+          "testbeds/metropolis/datasets/water_treatment_v1/topology/links.yaml:192-272"
+        ]
+      },
+      {
+        "summary": "SCADA, engineering, historian, MQTT, and OT services occupy separate VLANs 20, 21, 22, 23, and 30 behind MET-OT-CORE; the DMZ, simulated enterprise, and attack-test LANs meet at MET-OT-DMZ.",
+        "evidence": [
+          "testbeds/metropolis/datasets/water_treatment_v1/topology/address-plan.yaml:59-111",
+          "testbeds/metropolis/datasets/water_treatment_v1/topology/address-plan.yaml:148-166",
+          "testbeds/metropolis/datasets/water_treatment_v1/device_instances/infrastructure.yaml:30-65",
+          "testbeds/metropolis/datasets/water_treatment_v1/topology/links.yaml:91-99",
+          "testbeds/metropolis/datasets/water_treatment_v1/topology/links.yaml:113-144"
+        ]
+      },
+      {
+        "summary": "Reservoir and raw-water LANs (10.20.14.0/24 and 10.20.15.0/24) connect to MET-OT-WAN through logical IPsec VTI overlays over the shared 172.31.255.0/24 underlay; overlay links are not GNS3 cables.",
+        "evidence": [
+          "testbeds/metropolis/datasets/water_treatment_v1/topology/address-plan.yaml:43-58",
+          "testbeds/metropolis/datasets/water_treatment_v1/topology/address-plan.yaml:167-207",
+          "testbeds/metropolis/datasets/water_treatment_v1/device_instances/infrastructure.yaml:67-117",
+          "testbeds/metropolis/datasets/water_treatment_v1/topology/links.yaml:52-77",
+          "testbeds/metropolis/datasets/water_treatment_v1/topology/links.yaml:146-190",
+          "testbeds/metropolis/router/backbone/router_ot_wan.sh:34-56",
+          "testbeds/metropolis/router/locations/router_reservoir.sh:28-40",
+          "testbeds/metropolis/router/locations/router_raw_water.sh:28-40"
+        ]
+      }
+    ],
+    "generated_policy": "The compiler emits source/destination CIDR, protocol, and destination-port allows on each declared router path; reverse established/related traffic is accepted, and generated zones and rulesets default to drop. Same-subnet paths bypass router policy. Baseline rules cannot allow the attack-test LAN; temporary experiment exceptions require router configuration and a later restoration attempt.",
+    "policy_evidence": [
+      "testbeds/metropolis/datasets/water_treatment_v1/topology/firewall-policy.yaml:1-47",
+      "scripts/gns3/firewall_policy.py:701-720",
+      "scripts/gns3/firewall_policy.py:721-782",
+      "scripts/gns3/firewall_policy.py:783-824",
+      "scripts/gns3/experiment_run.py:82-109",
+      "scripts/gns3/experiment_run.py:155-163",
+      "scripts/gns3/experiment.py:539-559"
+    ],
+    "deployment_limit": "Building a project compiles and applies router policy only with --configure-routers; console readback checks are part of that application path. These files establish intended generated controls, not that any rule, cable, switch VLAN, route, or tunnel is live.",
+    "deployment_evidence": [
+      "testbeds/metropolis/datasets/water_treatment_v1/topology/links.yaml:5-14",
+      "scripts/gns3/build_topology.py:78-81",
+      "scripts/gns3/build_topology.py:101-110",
+      "scripts/gns3/build_topology.py:186-200",
+      "scripts/gns3/router_config.py:278-329",
+      "scripts/gns3/router_config.py:348-416"
+    ],
+    "live_verification_gaps": [
+      "Actual GNS3 cabling and switch VLAN placement",
+      "Router policy application and readback",
+      "IPsec and OSPF/BFD operational state",
+      "Service availability, identity checks, command acceptance, and actuation",
+      "Any temporary experiment exception currently installed"
+    ]
+  },
+  "baseline_flows": [
+    {
+      "id": "NF01",
+      "source": "MET-SCADA-01 10.20.20.10 or MET-OPS-ADMIN-01 10.20.20.20",
+      "destination": "MET-PLC-DOSING-01 10.20.11.10",
+      "protocol": "tcp",
+      "port": 502,
+      "status": "permitted",
+      "reason": "The scada-to-plant-dosing allow selects the entire SCADA subnet, so both declared SCADA-subnet hosts inherit network reachability; Modbus service and commands remain separate gates.",
+      "evidence": [
+        "testbeds/metropolis/datasets/water_treatment_v1/device_instances/initial_devices.yaml:27-33",
+        "testbeds/metropolis/datasets/water_treatment_v1/device_instances/initial_devices.yaml:404-411",
+        "testbeds/metropolis/datasets/water_treatment_v1/device_instances/initial_devices.yaml:623-630",
+        "testbeds/metropolis/datasets/water_treatment_v1/topology/links.yaml:547-563",
+        "testbeds/metropolis/datasets/water_treatment_v1/topology/firewall-policy.yaml:7-11",
+        "scripts/gns3/firewall_policy.py:753-780"
+      ]
+    },
+    {
+      "id": "NF02",
+      "source": "MET-SCADA-01 10.20.20.10",
+      "destination": "MET-RTU-RESERVOIR-01 10.20.14.10",
+      "protocol": "tcp",
+      "port": 20000,
+      "status": "permitted",
+      "reason": "The DNP3 baseline allow is routed over the declared WAN-hub/reservoir VTI; live IPsec, OSPF, cables, and outstation service remain unverified.",
+      "evidence": [
+        "testbeds/metropolis/datasets/water_treatment_v1/device_instances/initial_devices.yaml:262-278",
+        "testbeds/metropolis/datasets/water_treatment_v1/device_instances/initial_devices.yaml:404-411",
+        "testbeds/metropolis/datasets/water_treatment_v1/topology/firewall-policy.yaml:12",
+        "testbeds/metropolis/datasets/water_treatment_v1/topology/links.yaml:67-77",
+        "testbeds/metropolis/router/backbone/router_ot_wan.sh:39-56",
+        "testbeds/metropolis/router/locations/router_reservoir.sh:28-40",
+        "scripts/gns3/firewall_policy.py:458-553"
+      ]
+    },
+    {
+      "id": "NF03",
+      "source": "MET-ENGINEERING-01 10.20.21.10",
+      "destination": "MET-PLC-INTAKE-01 10.20.10.10",
+      "protocol": "tcp",
+      "port": 502,
+      "status": "permitted",
+      "reason": "Engineering-subnet Modbus access is allowed to the intake LAN; the rule is not restricted to this workstation.",
+      "evidence": [
+        "testbeds/metropolis/datasets/water_treatment_v1/device_instances/initial_devices.yaml:6-13",
+        "testbeds/metropolis/datasets/water_treatment_v1/device_instances/initial_devices.yaml:591-598",
+        "testbeds/metropolis/datasets/water_treatment_v1/topology/firewall-policy.yaml:13",
+        "testbeds/metropolis/datasets/water_treatment_v1/topology/links.yaml:325-332",
+        "testbeds/metropolis/datasets/water_treatment_v1/topology/links.yaml:565-572",
+        "scripts/gns3/firewall_policy.py:753-780"
+      ]
+    },
+    {
+      "id": "NF04",
+      "source": "MET-CONTROL-CLIENT-01 10.20.21.20",
+      "destination": "MET-SENSOR-INTAKE-01 10.20.10.20",
+      "protocol": "udp",
+      "port": 5683,
+      "status": "permitted",
+      "reason": "The engineering-to-intake CoAP allow covers this declared client and sensor; response integrity and service behavior are separate checks.",
+      "evidence": [
+        "testbeds/metropolis/datasets/water_treatment_v1/device_instances/initial_devices.yaml:362-369",
+        "testbeds/metropolis/datasets/water_treatment_v1/device_instances/initial_devices.yaml:639-656",
+        "testbeds/metropolis/datasets/water_treatment_v1/topology/links.yaml:334-341",
+        "testbeds/metropolis/datasets/water_treatment_v1/topology/links.yaml:583-590",
+        "testbeds/metropolis/datasets/water_treatment_v1/topology/firewall-policy.yaml:14"
+      ]
+    },
+    {
+      "id": "NF05",
+      "source": "MET-HMI-INTAKE-01 10.20.50.10",
+      "destination": "MET-MQTT-BROKER-01 10.20.23.10",
+      "protocol": "tcp",
+      "port": 1883,
+      "status": "permitted",
+      "reason": "Every HMI subnet has a routed MQTT allowance; broker authentication and topic ACLs are additional gates.",
+      "evidence": [
+        "testbeds/metropolis/datasets/water_treatment_v1/device_instances/initial_devices.yaml:389-396",
+        "testbeds/metropolis/datasets/water_treatment_v1/device_instances/initial_devices.yaml:479-486",
+        "testbeds/metropolis/datasets/water_treatment_v1/topology/links.yaml:601-608",
+        "testbeds/metropolis/datasets/water_treatment_v1/topology/links.yaml:628-635",
+        "testbeds/metropolis/datasets/water_treatment_v1/topology/firewall-policy.yaml:21-25"
+      ]
+    },
+    {
+      "id": "NF06",
+      "source": "MET-HISTORIAN-01 10.20.22.10",
+      "destination": "MET-SCADA-01 10.20.20.10",
+      "protocol": "tcp",
+      "port": 4840,
+      "status": "permitted",
+      "reason": "Historian-to-SCADA OPC UA is explicitly allowed; declared secure-session and peer-certificate settings still gate access.",
+      "evidence": [
+        "testbeds/metropolis/datasets/water_treatment_v1/device_instances/initial_devices.yaml:404-420",
+        "testbeds/metropolis/datasets/water_treatment_v1/device_instances/initial_devices.yaml:454-460",
+        "testbeds/metropolis/datasets/water_treatment_v1/topology/links.yaml:547-554",
+        "testbeds/metropolis/datasets/water_treatment_v1/topology/links.yaml:592-599",
+        "testbeds/metropolis/datasets/water_treatment_v1/topology/firewall-policy.yaml:18"
+      ]
+    },
+    {
+      "id": "NF07",
+      "source": "MET-SCADA-01 10.20.20.10",
+      "destination": "MET-RDP-DMZ-01 10.20.40.20",
+      "protocol": "tcp",
+      "port": 443,
+      "status": "permitted",
+      "reason": "SCADA-to-DMZ HTTPS is explicitly allowed; the relay's declared client certificate and writer identity are additional gates.",
+      "evidence": [
+        "testbeds/metropolis/datasets/water_treatment_v1/device_instances/initial_devices.yaml:404-425",
+        "testbeds/metropolis/datasets/water_treatment_v1/device_instances/initial_devices.yaml:720-737",
+        "testbeds/metropolis/datasets/water_treatment_v1/topology/links.yaml:547-554",
+        "testbeds/metropolis/datasets/water_treatment_v1/topology/links.yaml:664-672",
+        "testbeds/metropolis/datasets/water_treatment_v1/topology/firewall-policy.yaml:19"
+      ]
+    },
+    {
+      "id": "NF08",
+      "source": "MET-ENTERPRISE-REPORTING-01 10.30.10.10",
+      "destination": "MET-RDP-DMZ-01 10.20.40.20",
+      "protocol": "tcp",
+      "port": 443,
+      "status": "permitted",
+      "reason": "Enterprise-to-DMZ HTTPS is explicitly allowed to the whole DMZ subnet; relay reader identity and mutual TLS still gate data.",
+      "evidence": [
+        "testbeds/metropolis/datasets/water_treatment_v1/device_instances/initial_devices.yaml:436-452",
+        "testbeds/metropolis/datasets/water_treatment_v1/device_instances/initial_devices.yaml:720-737",
+        "testbeds/metropolis/datasets/water_treatment_v1/topology/links.yaml:664-672",
+        "testbeds/metropolis/datasets/water_treatment_v1/topology/links.yaml:735-743",
+        "testbeds/metropolis/datasets/water_treatment_v1/topology/firewall-policy.yaml:20"
+      ]
+    },
+    {
+      "id": "NF09",
+      "source": "MET-ENGINEERING-01 10.20.21.10",
+      "destination": "MET-PLC-DOSING-01 10.20.11.10",
+      "protocol": "tcp",
+      "port": 502,
+      "status": "blocked",
+      "reason": "Engineering Modbus allowance selects intake only; an unmatched routed flow meets the generated default drop.",
+      "evidence": [
+        "testbeds/metropolis/datasets/water_treatment_v1/device_instances/initial_devices.yaml:27-33",
+        "testbeds/metropolis/datasets/water_treatment_v1/device_instances/initial_devices.yaml:591-598",
+        "testbeds/metropolis/datasets/water_treatment_v1/topology/firewall-policy.yaml:7-47",
+        "scripts/gns3/firewall_policy.py:783-802"
+      ]
+    },
+    {
+      "id": "NF10",
+      "source": "MET-MIRAI-BOT-01 10.99.10.100",
+      "destination": "MET-LEGACY-GATEWAY-01 10.20.10.30",
+      "protocol": "tcp",
+      "port": 23,
+      "status": "blocked",
+      "reason": "Attack-test traffic has no baseline routed allowance; temporary experiment exceptions may change a run, but no such deployed exception is evidenced.",
+      "evidence": [
+        "testbeds/metropolis/datasets/water_treatment_v1/device_instances/initial_devices.yaml:660-667",
+        "testbeds/metropolis/datasets/water_treatment_v1/device_instances/initial_devices.yaml:814-819",
+        "testbeds/metropolis/datasets/water_treatment_v1/topology/links.yaml:370-377",
+        "testbeds/metropolis/datasets/water_treatment_v1/topology/links.yaml:715-723",
+        "testbeds/metropolis/datasets/water_treatment_v1/topology/firewall-policy.yaml:7-47",
+        "scripts/gns3/firewall_policy.py:701-720",
+        "scripts/gns3/firewall_policy.py:783-802"
+      ]
+    },
+    {
+      "id": "NF11",
+      "source": "MET-LEGACY-GATEWAY-01 10.20.10.30",
+      "destination": "MET-PLC-INTAKE-01 10.20.10.10",
+      "protocol": "tcp",
+      "port": 502,
+      "status": "local",
+      "reason": "Both hosts attach to the intake segment, so this is a local Layer 2 path outside the routed firewall; whether the source can issue accepted Modbus requests is unverified.",
+      "evidence": [
+        "testbeds/metropolis/datasets/water_treatment_v1/device_instances/initial_devices.yaml:6-13",
+        "testbeds/metropolis/datasets/water_treatment_v1/device_instances/initial_devices.yaml:660-667",
+        "testbeds/metropolis/datasets/water_treatment_v1/topology/links.yaml:325-332",
+        "testbeds/metropolis/datasets/water_treatment_v1/topology/links.yaml:370-377",
+        "testbeds/metropolis/datasets/water_treatment_v1/topology/firewall-policy.yaml:1-3",
+        "scripts/gns3/firewall_policy.py:771-775"
+      ]
+    },
+    {
+      "id": "NF12",
+      "source": "Unspecified outside network",
+      "destination": "MET-ENTERPRISE-REPORTING-01 10.30.10.10",
+      "protocol": "unspecified",
+      "port": null,
+      "status": "unknown",
+      "reason": "The selected plan declares a simulated enterprise LAN and its router/switch attachment, but no outside ingress endpoint or path; do not assume an initial foothold from outside.",
+      "evidence": [
+        "testbeds/metropolis/datasets/water_treatment_v1/topology/address-plan.yaml:148-173",
+        "testbeds/metropolis/datasets/water_treatment_v1/device_instances/initial_devices.yaml:436-443",
+        "testbeds/metropolis/datasets/water_treatment_v1/topology/links.yaml:124-144",
+        "testbeds/metropolis/datasets/water_treatment_v1/topology/links.yaml:735-743"
+      ]
+    }
+  ],
+  "coverage": {
+    "catalog_families": [
+      {
+        "family": "scanner",
+        "catalog_entry_ids": [
+          "recon.network.v1",
+          "recon.discovery.v1"
+        ],
+        "review_scenario_ids": [
+          "FS-01"
+        ],
+        "disposition": "selected",
+        "reason": "Concrete discovery paths support a source-role and target-scope defender hypothesis.",
+        "evidence": [
+          "scripts/attacks/scenarios/v1.json:4-5"
+        ],
+        "missing_verification": "No live packet, authentication, service, or effect evidence was collected."
+      },
+      {
+        "family": "mqtt",
+        "catalog_entry_ids": [
+          "mqtt.authentication.v1",
+          "mqtt.publish.v1",
+          "mqtt.acl_cross_cell.v1"
+        ],
+        "review_scenario_ids": [
+          "FS-02",
+          "FS-05"
+        ],
+        "disposition": "selected",
+        "reason": "Covers credential attempts, availability, and broker topic authorization without presuming success.",
+        "evidence": [
+          "scripts/attacks/scenarios/v1.json:6-8",
+          "testbeds/metropolis/datasets/water_treatment_v1/device_instances/initial_devices.yaml:499-500"
+        ],
+        "missing_verification": "No live packet, authentication, service, or effect evidence was collected."
+      },
+      {
+        "family": "ssh",
+        "catalog_entry_ids": [
+          "ssh.authentication.v1"
+        ],
+        "review_scenario_ids": [],
+        "disposition": "screened",
+        "reason": "Useful authentication corroboration; the catalog has no login result or account-control evidence.",
+        "evidence": [
+          "scripts/attacks/scenarios/v1.json:9"
+        ],
+        "missing_verification": "No live packet, authentication, service, or effect evidence was collected."
+      },
+      {
+        "family": "modbus",
+        "catalog_entry_ids": [
+          "modbus.write.v1"
+        ],
+        "review_scenario_ids": [
+          "FS-01",
+          "FS-03",
+          "FS-04"
+        ],
+        "disposition": "selected",
+        "reason": "A declared controller-write path can be checked against approved source roles and register effects.",
+        "evidence": [
+          "scripts/attacks/scenarios/v1.json:10",
+          "testbeds/metropolis/datasets/water_treatment_v1/topology/firewall-policy.yaml:7-13"
+        ],
+        "missing_verification": "No live packet, authentication, service, or effect evidence was collected."
+      },
+      {
+        "family": "coap",
+        "catalog_entry_ids": [
+          "coap.response.v1"
+        ],
+        "review_scenario_ids": [],
+        "disposition": "screened",
+        "reason": "The spoofing branch and receiver outcome are conditional in the catalog.",
+        "evidence": [
+          "scripts/attacks/scenarios/v1.json:11",
+          "testbeds/metropolis/datasets/water_treatment_v1/topology/firewall-policy.yaml:14"
+        ],
+        "missing_verification": "No live packet, authentication, service, or effect evidence was collected."
+      },
+      {
+        "family": "hping3",
+        "catalog_entry_ids": [
+          "hping3.traffic.v1"
+        ],
+        "review_scenario_ids": [],
+        "disposition": "screened",
+        "reason": "Traffic generation is declared; service degradation is not.",
+        "evidence": [
+          "scripts/attacks/scenarios/v1.json:12"
+        ],
+        "missing_verification": "No live packet, authentication, service, or effect evidence was collected."
+      },
+      {
+        "family": "mirai",
+        "catalog_entry_ids": [
+          "mirai.telnet.v1",
+          "mirai.scenario.v1"
+        ],
+        "review_scenario_ids": [
+          "FS-03",
+          "FS-06"
+        ],
+        "disposition": "selected",
+        "reason": "Retains a short policy-blocked Telnet candidate without implying infection or payload execution.",
+        "evidence": [
+          "scripts/attacks/scenarios/v1.json:13-14",
+          "testbeds/metropolis/datasets/water_treatment_v1/device_instances/initial_devices.yaml:745-748"
+        ],
+        "missing_verification": "No live packet, authentication, service, or effect evidence was collected."
+      },
+      {
+        "family": "merlin",
+        "catalog_entry_ids": [
+          "merlin.scenario.v1"
+        ],
+        "review_scenario_ids": [],
+        "disposition": "screened",
+        "reason": "Useful HTTPS command-channel comparison, but the declaration does not establish a compromised OT host.",
+        "evidence": [
+          "scripts/attacks/scenarios/v1.json:15",
+          "testbeds/metropolis/datasets/water_treatment_v1/device_instances/initial_devices.yaml:745-748",
+          "testbeds/metropolis/datasets/water_treatment_v1/device_instances/initial_devices.yaml:864"
+        ],
+        "missing_verification": "No live packet, authentication, service, or effect evidence was collected."
+      },
+      {
+        "family": "external",
+        "catalog_entry_ids": [
+          "external.shell.v1"
+        ],
+        "review_scenario_ids": [],
+        "disposition": "deferred",
+        "reason": "Source, destination, and emitted behavior are not fixed by the catalog.",
+        "evidence": [
+          "scripts/attacks/scenarios/v1.json:16"
+        ],
+        "missing_verification": "No live packet, authentication, service, or effect evidence was collected."
+      }
+    ],
+    "boundary_service_paths": [
+      {
+        "id": "NB01",
+        "source": "Unspecified outside network",
+        "destination": "Simulated enterprise LAN",
+        "protocol": "unspecified",
+        "port": null,
+        "status": "unknown",
+        "reason": "No external ingress path is declared; assumed T-1 only.",
+        "evidence": [
+          "testbeds/metropolis/datasets/water_treatment_v1/topology/address-plan.yaml:148-173",
+          "testbeds/metropolis/datasets/water_treatment_v1/topology/links.yaml:124-144"
+        ],
+        "review_scenario_ids": [
+          "FS-01",
+          "FS-02",
+          "FS-03",
+          "FS-04",
+          "FS-05",
+          "FS-06"
+        ],
+        "missing_verification": "Live deployment and service behavior were not checked."
+      },
+      {
+        "id": "NB02",
+        "source": "Enterprise LAN 10.30.10.0/24",
+        "destination": "OT DMZ LAN 10.20.40.0/24",
+        "protocol": "tcp",
+        "port": 443,
+        "status": "permitted",
+        "reason": "Routed enterprise telemetry read allowance; application identity remains a gate.",
+        "evidence": [
+          "testbeds/metropolis/datasets/water_treatment_v1/topology/address-plan.yaml:104-111",
+          "testbeds/metropolis/datasets/water_treatment_v1/topology/address-plan.yaml:148-155",
+          "testbeds/metropolis/datasets/water_treatment_v1/topology/firewall-policy.yaml:20",
+          "scripts/gns3/firewall_policy.py:753-780"
+        ],
+        "review_scenario_ids": [],
+        "missing_verification": "Live deployment and service behavior were not checked."
+      },
+      {
+        "id": "NB03",
+        "source": "Enterprise LAN 10.30.10.0/24",
+        "destination": "SCADA LAN 10.20.20.0/24",
+        "protocol": "tcp",
+        "port": 4840,
+        "status": "blocked",
+        "reason": "Only the historian LAN has the OPC UA allow to SCADA; enterprise is unmatched and generated default drop applies.",
+        "evidence": [
+          "testbeds/metropolis/datasets/water_treatment_v1/topology/firewall-policy.yaml:18-20",
+          "scripts/gns3/firewall_policy.py:783-802"
+        ],
+        "review_scenario_ids": [],
+        "missing_verification": "Live deployment and service behavior were not checked."
+      },
+      {
+        "id": "NB04",
+        "source": "SCADA LAN 10.20.20.0/24",
+        "destination": "OT DMZ LAN 10.20.40.0/24",
+        "protocol": "tcp",
+        "port": 443,
+        "status": "permitted",
+        "reason": "SCADA telemetry-publisher path is allowed to the DMZ; relay authentication is separate.",
+        "evidence": [
+          "testbeds/metropolis/datasets/water_treatment_v1/topology/firewall-policy.yaml:19",
+          "testbeds/metropolis/datasets/water_treatment_v1/device_instances/initial_devices.yaml:404-425",
+          "testbeds/metropolis/datasets/water_treatment_v1/device_instances/initial_devices.yaml:720-737"
+        ],
+        "review_scenario_ids": [],
+        "missing_verification": "Live deployment and service behavior were not checked."
+      },
+      {
+        "id": "NB05",
+        "source": "SCADA LAN 10.20.20.0/24",
+        "destination": "Plant PLC and remote RTU LANs 10.20.10.0/24 through 10.20.15.0/24",
+        "protocol": "tcp",
+        "port": "502, 20000 (remote RTUs only)",
+        "status": "permitted",
+        "reason": "Subnet-wide Modbus access reaches six controller LANs; DNP3 is limited to two remote LANs and depends on live VTI/IPsec and routing.",
+        "evidence": [
+          "testbeds/metropolis/datasets/water_treatment_v1/topology/address-plan.yaml:7-58",
+          "testbeds/metropolis/datasets/water_treatment_v1/topology/firewall-policy.yaml:7-12",
+          "testbeds/metropolis/datasets/water_treatment_v1/topology/links.yaml:52-77",
+          "scripts/gns3/firewall_policy.py:721-780"
+        ],
+        "review_scenario_ids": [
+          "FS-02",
+          "FS-04"
+        ],
+        "missing_verification": "Live deployment and service behavior were not checked."
+      },
+      {
+        "id": "NB06",
+        "source": "Engineering LAN 10.20.21.0/24",
+        "destination": "Intake LAN 10.20.10.0/24 and HMI LANs 10.20.50.0/24 through 10.20.53.0/24",
+        "protocol": "tcp/udp",
+        "port": "502/tcp, 5683/udp, 8080/tcp",
+        "status": "permitted",
+        "reason": "Engineering reachability is subnet-wide for intake Modbus/CoAP and HMI HTTP; other plant-cell Modbus destinations remain unmatched.",
+        "evidence": [
+          "testbeds/metropolis/datasets/water_treatment_v1/topology/address-plan.yaml:7-15",
+          "testbeds/metropolis/datasets/water_treatment_v1/topology/address-plan.yaml:68-76",
+          "testbeds/metropolis/datasets/water_treatment_v1/topology/address-plan.yaml:112-147",
+          "testbeds/metropolis/datasets/water_treatment_v1/topology/firewall-policy.yaml:13-14",
+          "testbeds/metropolis/datasets/water_treatment_v1/topology/firewall-policy.yaml:26-30",
+          "scripts/gns3/firewall_policy.py:783-802"
+        ],
+        "review_scenario_ids": [
+          "FS-01",
+          "FS-02"
+        ],
+        "missing_verification": "Live deployment and service behavior were not checked."
+      },
+      {
+        "id": "NB07",
+        "source": "HMI LANs 10.20.50.0/24 through 10.20.53.0/24",
+        "destination": "MQTT LAN 10.20.23.0/24",
+        "protocol": "tcp",
+        "port": 1883,
+        "status": "permitted",
+        "reason": "All four HMI LANs have broker network access; MQTT identity and ACL checks remain.",
+        "evidence": [
+          "testbeds/metropolis/datasets/water_treatment_v1/topology/address-plan.yaml:86-94",
+          "testbeds/metropolis/datasets/water_treatment_v1/topology/address-plan.yaml:112-147",
+          "testbeds/metropolis/datasets/water_treatment_v1/topology/firewall-policy.yaml:21-25"
+        ],
+        "review_scenario_ids": [
+          "FS-02"
+        ],
+        "missing_verification": "Live deployment and service behavior were not checked."
+      },
+      {
+        "id": "NB08",
+        "source": "Historian LAN 10.20.22.0/24",
+        "destination": "SCADA LAN 10.20.20.0/24",
+        "protocol": "tcp",
+        "port": 4840,
+        "status": "permitted",
+        "reason": "OPC UA path is explicitly allowed; secure-session and certificate behavior needs service verification.",
+        "evidence": [
+          "testbeds/metropolis/datasets/water_treatment_v1/topology/firewall-policy.yaml:18",
+          "testbeds/metropolis/datasets/water_treatment_v1/device_instances/initial_devices.yaml:404-420",
+          "testbeds/metropolis/datasets/water_treatment_v1/device_instances/initial_devices.yaml:454-460"
+        ],
+        "review_scenario_ids": [],
+        "missing_verification": "Live deployment and service behavior were not checked."
+      },
+      {
+        "id": "NB09",
+        "source": "Attack-test LAN 10.99.10.0/24",
+        "destination": "Plant and OT routed LANs",
+        "protocol": "tcp/udp",
+        "port": "any new destination port",
+        "status": "blocked",
+        "reason": "No baseline attack-test allowance can be compiled; explicit temporary exceptions and actual deployment are separate run conditions.",
+        "evidence": [
+          "testbeds/metropolis/datasets/water_treatment_v1/topology/address-plan.yaml:156-166",
+          "testbeds/metropolis/datasets/water_treatment_v1/topology/firewall-policy.yaml:7-47",
+          "scripts/gns3/firewall_policy.py:701-720",
+          "scripts/gns3/firewall_policy.py:783-824",
+          "scripts/gns3/experiment_run.py:82-109"
+        ],
+        "review_scenario_ids": [
+          "FS-06"
+        ],
+        "missing_verification": "Live deployment and service behavior were not checked."
+      },
+      {
+        "id": "NB10",
+        "source": "Intake legacy gateway or remote-site RTU",
+        "destination": "Same-LAN controller, instrument, or drive",
+        "protocol": "tcp/udp",
+        "port": "service dependent",
+        "status": "local",
+        "reason": "Declared attachments share an access segment, so the routed firewall does not inspect this path; service and actuator behavior remain unverified.",
+        "evidence": [
+          "testbeds/metropolis/datasets/water_treatment_v1/topology/links.yaml:325-377",
+          "testbeds/metropolis/datasets/water_treatment_v1/topology/links.yaml:487-545",
+          "testbeds/metropolis/datasets/water_treatment_v1/topology/firewall-policy.yaml:1-3",
+          "scripts/gns3/firewall_policy.py:771-775"
+        ],
+        "review_scenario_ids": [
+          "FS-01",
+          "FS-03",
+          "FS-04"
+        ],
+        "missing_verification": "Live deployment and service behavior were not checked."
+      }
+    ]
+  },
+  "framework_inspiration": [
+    {
+      "framework": "MITRE ATT&CK for ICS",
+      "technique": "T0846 Remote System Discovery",
+      "url": "https://attack.mitre.org/techniques/T0846/",
+      "assessment": "supported_catalog_intent",
+      "local_evidence": [
+        {
+          "source": "catalog",
+          "lines": [
+            4,
+            5
+          ]
+        }
+      ],
+      "prompt": "Determine whether discovery came from an approved engineering or inventory role and whether target scope or rate departed from baseline. The narrower Port Scan sub-technique T0846.001 requires port-probe evidence: https://attack.mitre.org/techniques/T0846/001/."
+    },
+    {
+      "framework": "MITRE ATT&CK Enterprise",
+      "technique": "T1110 Brute Force",
+      "url": "https://attack.mitre.org/techniques/T1110/",
+      "assessment": "supported_catalog_intent_for_mqtt_and_ssh_only",
+      "local_evidence": [
+        {
+          "source": "catalog",
+          "lines": [
+            6,
+            9
+          ]
+        }
+      ],
+      "prompt": "Correlate repeated authentication failures with account and source logs before claiming credential compromise. The Mirai Telnet label alone does not prove password guessing."
+    },
+    {
+      "framework": "MITRE ATT&CK for ICS",
+      "technique": "T1692.001 Unauthorized Message: Command Message",
+      "url": "https://attack.mitre.org/techniques/T1692/001/",
+      "assessment": "conditional_prompt",
+      "local_evidence": [
+        {
+          "source": "catalog",
+          "lines": [
+            8,
+            10
+          ]
+        },
+        {
+          "source": "inventory",
+          "lines": [
+            499,
+            586
+          ]
+        }
+      ],
+      "prompt": "For Modbus writes or cross-cell MQTT command topics, establish an unapproved source, actual delivery to the intended controller or subscriber, and command or process-state effect. A named write tool or topic is not itself an unauthorized message."
+    },
+    {
+      "framework": "MITRE ATT&CK for ICS",
+      "technique": "T1692.002 Unauthorized Message: Reporting Message",
+      "url": "https://attack.mitre.org/techniques/T1692/002/",
+      "assessment": "conditional_prompt",
+      "local_evidence": [
+        {
+          "source": "catalog",
+          "line": 11
+        }
+      ],
+      "prompt": "Only map the CoAP branch if a forged response is observed at the receiver and differs from the legitimate sensor report."
+    },
+    {
+      "framework": "MITRE ATT&CK for ICS",
+      "technique": "T0814 Denial of Service",
+      "url": "https://attack.mitre.org/techniques/T0814/",
+      "assessment": "conditional_prompt",
+      "local_evidence": [
+        {
+          "source": "catalog",
+          "lines": [
+            7,
+            12
+          ]
+        }
+      ],
+      "prompt": "Correlate MQTT flood or hping3 traffic with broker, subscriber, controller-polling, or device availability degradation; traffic volume alone does not establish denial of service."
+    },
+    {
+      "framework": "MITRE ATT&CK Enterprise",
+      "technique": "T1071.001 Application Layer Protocol: Web Protocols",
+      "url": "https://attack.mitre.org/techniques/T1071/001/",
+      "assessment": "supported_synthetic_pattern_only",
+      "local_evidence": [
+        {
+          "source": "catalog",
+          "line": 15
+        },
+        {
+          "source": "inventory",
+          "lines": [
+            745,
+            748
+          ]
+        },
+        {
+          "source": "inventory",
+          "line": 864
+        }
+      ],
+      "prompt": "Distinguish the modeled Merlin HTTPS check-in and result path from legitimate SCADA-to-DMZ telemetry by origin, peer, port, and service identity; do not infer malware deployment."
+    },
+    {
+      "framework": "MITRE ATT&CK for ICS",
+      "technique": "T0869.002 Standard Application Layer Protocol: Publish/Subscribe Protocols",
+      "url": "https://attack.mitre.org/techniques/T0869/002/",
+      "assessment": "not_supported_by_mqtt_use_alone",
+      "local_evidence": [
+        {
+          "source": "catalog",
+          "lines": [
+            6,
+            8
+          ]
+        },
+        {
+          "source": "inventory",
+          "lines": [
+            381,
+            500
+          ]
+        }
+      ],
+      "prompt": "Map only if broker traffic carries adversary command-and-control, not because normal HMI and telemetry paths use MQTT."
+    }
+  ],
+  "owasp_risk_conditions_and_prompts": [
+    {
+      "framework": "OWASP Operational Technology Top 10",
+      "edition": "2025",
+      "risk": "Broken Zones and Conduits Design",
+      "url": "https://ot.owasp.org/v/2025/the-top-10/broken-zone-and-conduits-design/",
+      "assessment": "risk_condition_prompt",
+      "local_evidence": [
+        {
+          "source": "firewall",
+          "lines": [
+            1,
+            3
+          ]
+        },
+        {
+          "source": "firewall",
+          "lines": [
+            7,
+            14
+          ]
+        }
+      ],
+      "prompt": "Check whether any unintended host in a permitted source LAN can use its LAN-wide Modbus or CoAP conduit, and whether same-VLAN flows need a separate control. These declarations do not demonstrate misuse.",
+      "evidence": [
+        "testbeds/metropolis/datasets/water_treatment_v1/topology/firewall-policy.yaml:1-3",
+        "testbeds/metropolis/datasets/water_treatment_v1/topology/firewall-policy.yaml:7-14"
+      ]
+    },
+    {
+      "framework": "OWASP Operational Technology Top 10",
+      "edition": "2025",
+      "risk": "Insufficient Access Control",
+      "url": "https://ot.owasp.org/v/2025/the-top-10/insufficient-access-control/",
+      "assessment": "risk_condition_prompt",
+      "local_evidence": [
+        {
+          "source": "catalog",
+          "line": 8
+        },
+        {
+          "source": "inventory",
+          "lines": [
+            499,
+            500
+          ]
+        },
+        {
+          "source": "firewall",
+          "line": 21
+        }
+      ],
+      "prompt": "Check broker client/topic authorization for cross-cell HMI publishes and distinguish network reachability from permission to issue a command.",
+      "evidence": [
+        "scripts/attacks/scenarios/v1.json:8",
+        "testbeds/metropolis/datasets/water_treatment_v1/device_instances/initial_devices.yaml:499-500",
+        "testbeds/metropolis/datasets/water_treatment_v1/topology/firewall-policy.yaml:21"
+      ]
+    },
+    {
+      "framework": "OWASP Operational Technology Top 10",
+      "edition": "2025",
+      "risk": "Loss of Availability",
+      "url": "https://ot.owasp.org/v/2025/the-top-10/loss-of-availability/",
+      "assessment": "risk_condition_prompt",
+      "local_evidence": [
+        {
+          "source": "catalog",
+          "lines": [
+            7,
+            12
+          ]
+        }
+      ],
+      "prompt": "Check whether exercise traffic interrupts delivery, polling, or operator view; no availability impact follows from the catalog names alone.",
+      "evidence": [
+        "scripts/attacks/scenarios/v1.json:7-12"
+      ]
+    },
+    {
+      "framework": "OWASP Web Top 10",
+      "edition": "2025",
+      "risk": "A07 Authentication Failures",
+      "url": "https://top10.owasp.org/2025/A07_2025-Authentication_Failures/",
+      "assessment": "web_endpoint_prompt_only",
+      "local_evidence": [
+        {
+          "source": "inventory",
+          "lines": [
+            491,
+            493
+          ]
+        },
+        {
+          "source": "firewall",
+          "line": 26
+        }
+      ],
+      "prompt": "If the HTTP HMI login is assessed, check automated-guessing controls and session/account attribution; MQTT and SSH brute-force labels do not establish an HMI web flaw.",
+      "evidence": [
+        "testbeds/metropolis/datasets/water_treatment_v1/device_instances/initial_devices.yaml:491-493",
+        "testbeds/metropolis/datasets/water_treatment_v1/topology/firewall-policy.yaml:26"
+      ]
+    },
+    {
+      "framework": "OWASP Web Top 10",
+      "edition": "2025",
+      "risk": "A01 Broken Access Control",
+      "url": "https://top10.owasp.org/2025/A01_2025-Broken_Access_Control/",
+      "assessment": "web_endpoint_prompt_only",
+      "local_evidence": [
+        {
+          "source": "inventory",
+          "lines": [
+            479,
+            586
+          ]
+        },
+        {
+          "source": "firewall",
+          "line": 26
+        }
+      ],
+      "prompt": "If HMI web actions expose cell setpoints, verify each user and cell is authorized for the requested action. The inventory does not show handler authorization logic.",
+      "evidence": [
+        "testbeds/metropolis/datasets/water_treatment_v1/device_instances/initial_devices.yaml:479-586",
+        "testbeds/metropolis/datasets/water_treatment_v1/topology/firewall-policy.yaml:26"
+      ]
+    },
+    {
+      "framework": "OWASP API Security Top 10",
+      "edition": "2023",
+      "risk": "API5 Broken Function Level Authorization",
+      "url": "https://api-security.owasp.org/editions/2023/en/0xa5-broken-function-level-authorization/",
+      "assessment": "api_endpoint_prompt_only",
+      "local_evidence": [
+        {
+          "source": "inventory",
+          "lines": [
+            731,
+            732
+          ]
+        },
+        {
+          "source": "firewall",
+          "lines": [
+            19,
+            20
+          ]
+        }
+      ],
+      "prompt": "If the HTTPS telemetry relay exposes API functions, verify SCADA writer and enterprise reader identities are enforced per function, not inferred from network reachability. No API flaw is established by the inventory.",
+      "evidence": [
+        "testbeds/metropolis/datasets/water_treatment_v1/device_instances/initial_devices.yaml:731-732",
+        "testbeds/metropolis/datasets/water_treatment_v1/topology/firewall-policy.yaml:19-20"
+      ]
+    },
+    {
+      "framework": "OWASP Web Top 10",
+      "edition": "2025",
+      "risk": "A04 Cryptographic Failures",
+      "url": "https://top10.owasp.org/2025/A04_2025-Cryptographic_Failures/",
+      "assessment": "source_supported_risk_condition_not_live_exposure",
+      "evidence": [
+        "testbeds/metropolis/datasets/water_treatment_v1/device_instances/initial_devices.yaml:504-530",
+        "testbeds/metropolis/devices/operations/hmi/hmi_web.py:257-289",
+        "testbeds/metropolis/devices/operations/hmi/hmi_web.py:360",
+        "testbeds/metropolis/datasets/water_treatment_v1/topology/firewall-policy.yaml:26-30"
+      ],
+      "prompt": "HMI uses HTTP Basic on a plain ThreadingHTTPServer at TCP/8080. Assess whether authorized network users or observers could read credentials in transit; no interception or login was tested."
+    }
+  ],
+  "scenarios": [
+    {
+      "id": "FS-01",
+      "status": "conditional_permitted",
+      "family": "direct Modbus control from engineering",
+      "assumed_foothold": "MET-ENGINEERING-01 (10.20.21.10) is under attacker control; initial access is not established.",
+      "steps": [
+        {
+          "id": "T1",
+          "source": "MET-ENGINEERING-01 (10.20.21.10)",
+          "destination": "MET-PLC-INTAKE-01 (10.20.10.10)",
+          "protocol_port": "TCP service probe, dynamic source port to TCP/502",
+          "network_status": "permitted in declared baseline for TCP/502; other default scan ports may be blocked",
+          "action": "Optional scanner-inspired discovery of the intake PLC service from the assumed engineering foothold, with target and port narrowed to TCP/502.",
+          "gate": "The catalog tool runs on its invoking host; its presence on engineering and any live response are unverified.",
+          "evidence": [
+            "scripts/attacks/scenarios/v1.json:4-5",
+            "scripts/attacks/scanner/network_recon_scan.py:12-15",
+            "scripts/attacks/scanner/network_recon_scan.py:30-73",
+            "testbeds/metropolis/datasets/water_treatment_v1/device_instances/initial_devices.yaml:6-13",
+            "testbeds/metropolis/datasets/water_treatment_v1/device_instances/initial_devices.yaml:591-598",
+            "testbeds/metropolis/datasets/water_treatment_v1/topology/firewall-policy.yaml:13"
+          ],
+          "observable": {
+            "point": "intake PLC attachment wire",
+            "expected": "A service probe from 10.20.21.10 to TCP/502 before any coil write",
+            "provenance": "generic behavioral; tool options and path are source-supported",
+            "caveat": "An authorized inventory or engineering check can look identical; no scan is claimed to have run."
+          },
+          "attack_mapping": {
+            "step": "T1",
+            "technique": "ICS T0846.001",
+            "url": "https://attack.mitre.org/techniques/T0846/001/",
+            "assessment": "Conditional port-probe behavior if this optional discovery stage occurs; no scan observed."
+          }
+        },
+        {
+          "id": "T2",
+          "source": "MET-ENGINEERING-01 (10.20.21.10)",
+          "destination": "MET-PLC-INTAKE-01 (10.20.10.10)",
+          "protocol_port": "Modbus TCP, dynamic source port to TCP/502",
+          "network_status": "permitted in declared baseline",
+          "action": "Write intake pump-request coil 0; a one-off write can be superseded by the routine control client.",
+          "evidence": [
+            "testbeds/metropolis/datasets/water_treatment_v1/device_instances/initial_devices.yaml:6-25",
+            "testbeds/metropolis/datasets/water_treatment_v1/device_instances/initial_devices.yaml:591-603",
+            "testbeds/metropolis/datasets/water_treatment_v1/topology/firewall-policy.yaml:13",
+            "scripts/gns3/firewall_policy.py:753-781",
+            "scripts/gns3/firewall_policy.py:783-824",
+            "testbeds/metropolis/datasets/water_treatment_v1/protocol_profiles/modbus_actions_v1.yaml:13-14",
+            "testbeds/metropolis/devices/operations/control_client/control_client.py:104-125",
+            "testbeds/metropolis/devices/operations/control_client/control_client.py:130-155"
+          ],
+          "gate": "Live route and policy application are unverified; the normal control client also writes coil 0 roughly every 30 seconds.",
+          "observable": {
+            "point": "intake PLC attachment wire",
+            "expected": "Modbus coil-0 write sourced from 10.20.21.10, distinguished from routine 10.20.21.20 writes by source and cadence",
+            "provenance": "generic behavioral; routine writer source is code-supported",
+            "caveat": "An authorized engineer or lab exercise may issue the same write."
+          },
+          "attack_mapping": {
+            "step": "T2",
+            "technique": "ICS T1692.001",
+            "url": "https://attack.mitre.org/techniques/T1692/001/",
+            "assessment": "Hypothesized unauthorized command if source and write are unapproved; no attack observed."
+          }
+        },
+        {
+          "id": "T3",
+          "source": "MET-PLC-INTAKE-01 (10.20.10.10)",
+          "destination": "MET-PUMP-DRIVE-INTAKE-DUTY-01 (10.20.10.40)",
+          "protocol_port": "lab EtherNet/IP TCP/44818 setup and cyclic UDP/2222; dynamic source ports",
+          "network_status": "same declared intake VLAN; routed firewall bypassed",
+          "action": "PLC sends requested output and uses confirmed drive state with the valve state to advance the small process model.",
+          "evidence": [
+            "testbeds/metropolis/datasets/water_treatment_v1/topology/links.yaml:325-350",
+            "testbeds/metropolis/devices/controllers/plc/modbus_controller.py:83-143",
+            "testbeds/metropolis/devices/controllers/plc/modbus_controller.py:183-218",
+            "testbeds/metropolis/devices/controllers/plc/process_model.py:70-90",
+            "testbeds/metropolis/devices/runtime/ethernet_ip.py:266-310"
+          ],
+          "gate": "Drive and valve must be available and confirm the commanded state; standby can take over if duty is not running.",
+          "observable": {
+            "point": "drive stdout and SCADA status",
+            "expected": "actuator_state_changed plus later flow_rate, level_percent and quality_percent changes",
+            "provenance": "source-specific event and status fields",
+            "caveat": "Drive event has no source IP or timestamp; SCADA does not publish intake discrete-input confirmation."
+          },
+          "attack_mapping": null
+        }
+      ],
+      "simulator_effect": "Confirmed pump-and-valve operation changes bounded modeled flow, level and quality; register 4 intake setpoint does not drive this model.",
+      "hypothetical_physical_implication": "An analogous real pump command could alter intake operation; this lab model cannot establish hydraulic or water-quality consequences.",
+      "defender_hypothesis": {
+        "support": "A 10.20.21.10 coil write followed by duty or standby confirmation and a process trend, especially outside the routine client's cycle.",
+        "refute": "No accepted coil write, normal client immediately overwrites it, or no confirmed drive-and-valve response.",
+        "benign": "Authorized engineering adjustment or bounded testbed control exercise."
+      },
+      "t_minus_1": "Unknown: no external ingress or acquisition of the assumed internal foothold is established by reviewed source.",
+      "branches": [
+        {
+          "id": "standby",
+          "source": "MET-PLC-INTAKE-01 (10.20.10.10)",
+          "destination": "MET-PUMP-DRIVE-INTAKE-STANDBY-01 (10.20.10.41)",
+          "protocol_port": "lab EtherNet/IP TCP/44818 setup and cyclic UDP/2222",
+          "network_status": "same declared intake VLAN",
+          "condition": "Pump requested and duty drive not confirmed running; standby confirmation remains conditional.",
+          "evidence": [
+            "testbeds/metropolis/datasets/water_treatment_v1/device_instances/initial_devices.yaml:234-246",
+            "testbeds/metropolis/devices/controllers/plc/modbus_controller.py:95-102",
+            "testbeds/metropolis/devices/runtime/ethernet_ip.py:266-310"
+          ],
+          "observable": "Standby actuator_state_changed or alarm transition, with wire capture needed for peer attribution."
+        },
+        {
+          "id": "valve",
+          "source": "MET-PLC-INTAKE-01 (10.20.10.10)",
+          "destination": "MET-VALVE-CTRL-INTAKE-01 (10.20.10.42)",
+          "protocol_port": "lab EtherNet/IP TCP/44818 setup and cyclic UDP/2222",
+          "network_status": "same declared intake VLAN",
+          "condition": "Valve follows separate coil 1 and must confirm open for actual_pump in the process loop.",
+          "evidence": [
+            "testbeds/metropolis/datasets/water_treatment_v1/device_instances/initial_devices.yaml:248-260",
+            "testbeds/metropolis/devices/controllers/plc/modbus_controller.py:103-106",
+            "testbeds/metropolis/devices/controllers/plc/modbus_controller.py:127-143"
+          ],
+          "observable": "Valve actuator_state_changed and PLC alarm bits; valve and pump confirmation order is not asserted."
+        }
+      ],
+      "branch_order": "Conditional duty/standby and valve I/O are distinct branches; acknowledgement order is not established.",
+      "title": "Engineering Modbus write to intake PLC",
+      "catalog_inspiration": [
+        "recon.network.v1",
+        "recon.discovery.v1",
+        "modbus.write.v1"
+      ],
+      "attack_step_mappings": [
+        {
+          "step": "T1",
+          "technique": "ICS T0846.001",
+          "url": "https://attack.mitre.org/techniques/T0846/001/",
+          "assessment": "Conditional port-probe behavior if this optional discovery stage occurs; no scan observed."
+        },
+        {
+          "step": "T2",
+          "technique": "ICS T1692.001",
+          "url": "https://attack.mitre.org/techniques/T1692/001/",
+          "assessment": "Hypothesized unauthorized command if source and write are unapproved; no attack observed."
+        }
+      ],
+      "framework_prompts": [
+        "ICS T0846 discovery scope",
+        "OWASP OT 2025 zone and conduit design"
+      ],
+      "supported_observed_attack_mappings": [],
+      "catalog_relation": "Catalog scanner and Modbus-write behaviors are adapted to a permitted engineering-to-intake path; the narrowed discovery step is optional."
+    },
+    {
+      "id": "FS-02",
+      "status": "conditional_permitted",
+      "family": "HMI web credential misuse and SCADA command bridge",
+      "assumed_foothold": "MET-ENGINEERING-01 (10.20.21.10) is controlled and a valid dosing HMI web credential has been acquired; neither event is established.",
+      "steps": [
+        {
+          "id": "T1",
+          "source": "MET-ENGINEERING-01 (10.20.21.10)",
+          "destination": "MET-HMI-DOSING-01 (10.20.51.10)",
+          "protocol_port": "HTTP Basic, dynamic source port to TCP/8080",
+          "network_status": "permitted in declared baseline",
+          "action": "Authenticated JSON POST to /api/setpoint queues one bounded 0.1-percent-increment request and returns 202 with request_id, not a PLC acknowledgement.",
+          "evidence": [
+            "testbeds/metropolis/datasets/water_treatment_v1/device_instances/initial_devices.yaml:504-530",
+            "testbeds/metropolis/datasets/water_treatment_v1/topology/firewall-policy.yaml:26-30",
+            "testbeds/metropolis/devices/operations/hmi/hmi_web.py:24-39",
+            "testbeds/metropolis/devices/operations/hmi/hmi_web.py:136-169",
+            "testbeds/metropolis/devices/operations/hmi/hmi_web.py:257-262",
+            "testbeds/metropolis/devices/operations/hmi/hmi_web.py:312-358"
+          ],
+          "gate": "Valid Basic credential, required custom header and JSON body, range and one-pending-command checks.",
+          "observable": {
+            "point": "HMI /api/status and HMI HTTP wire",
+            "expected": "request_id, command_requested_at, command_status and HTTP 202",
+            "provenance": "source-specific state and response",
+            "caveat": "The shared web username does not identify the human operator; a legitimate request looks similar."
+          },
+          "attack_mapping": null
+        },
+        {
+          "id": "T2",
+          "source": "MET-HMI-DOSING-01 (10.20.51.10)",
+          "destination": "MET-MQTT-BROKER-01 (10.20.23.10)",
+          "protocol_port": "MQTT, dynamic source port to TCP/1883",
+          "network_status": "permitted in declared baseline",
+          "action": "Publish fresh request_id, cell, device, command, value, unit and timestamp to the dosing command topic.",
+          "evidence": [
+            "testbeds/metropolis/datasets/water_treatment_v1/topology/firewall-policy.yaml:21-25",
+            "testbeds/metropolis/devices/operations/hmi/hmi_simulator.py:32-38",
+            "testbeds/metropolis/devices/operations/hmi/hmi_simulator.py:109-121",
+            "scripts/gns3/mqtt_acl.py:160-185",
+            "testbeds/metropolis/devices/services/mqtt_broker/mosquitto.conf:3-9"
+          ],
+          "gate": "Broker authentication and per-cell write ACL; MQTT publication can fail or time out.",
+          "observable": {
+            "point": "broker stdout and HMI state",
+            "expected": "dosing command topic publication and last_publish_queued_at",
+            "provenance": "broker log configuration and source-specific HMI state",
+            "caveat": "Exact broker log fields require live confirmation; queued publication is not controller storage."
+          },
+          "attack_mapping": null
+        },
+        {
+          "id": "T3",
+          "source": "MET-MQTT-BROKER-01 (10.20.23.10)",
+          "destination": "MET-SCADA-01 (10.20.20.10)",
+          "protocol_port": "MQTT delivery on SCADA-initiated established TCP/1883 session",
+          "network_status": "stateful return of permitted SCADA-to-broker flow",
+          "action": "Deliver dosing command to subscribed SCADA bridge; SCADA checks request ID, cell, command, unit, value and age.",
+          "evidence": [
+            "testbeds/metropolis/datasets/water_treatment_v1/topology/firewall-policy.yaml:16",
+            "scripts/gns3/firewall_policy.py:796-802",
+            "testbeds/metropolis/devices/operations/scada/scada_collector.py:191-232",
+            "testbeds/metropolis/devices/operations/scada/scada_collector.py:293-340",
+            "testbeds/metropolis/devices/operations/scada/scada_collector.py:432-458"
+          ],
+          "gate": "SCADA subscription and queue availability; fresh well-formed request; duplicate request IDs replay an ACK without another write.",
+          "observable": {
+            "point": "SCADA log and acknowledgement topic",
+            "expected": "command request_id/cell; rejection can follow validation, while stored/failed follows the T4 write attempt",
+            "provenance": "source-specific",
+            "caveat": "Stored means register write/readback, not confirmed dosing drive operation."
+          },
+          "attack_mapping": null
+        },
+        {
+          "id": "T4",
+          "source": "MET-SCADA-01 (10.20.20.10)",
+          "destination": "MET-PLC-DOSING-01 (10.20.11.10)",
+          "protocol_port": "Modbus TCP, dynamic source port to TCP/502",
+          "network_status": "permitted in declared baseline",
+          "action": "Write setpoint register 4 and require matching readback.",
+          "evidence": [
+            "testbeds/metropolis/datasets/water_treatment_v1/topology/firewall-policy.yaml:7-11",
+            "testbeds/metropolis/devices/operations/scada/scada_collector.py:235-258",
+            "testbeds/metropolis/datasets/water_treatment_v1/protocol_profiles/modbus_actions_v1.yaml:20-26"
+          ],
+          "gate": "PLC reachable and Modbus write/readback succeeds.",
+          "observable": {
+            "point": "PLC attachment wire and SCADA status",
+            "expected": "register-4 write/readback, later setpoint and dose_output_percent",
+            "provenance": "generic wire behavior plus source-specific SCADA fields",
+            "caveat": "The PLC does not explicitly log a valid setpoint write."
+          },
+          "attack_mapping": {
+            "step": "T4",
+            "technique": "ICS T1692.001",
+            "url": "https://attack.mitre.org/techniques/T1692/001/",
+            "assessment": "Hypothesized unauthorized command if request is unapproved and reaches the PLC; HTTP 202 alone is insufficient."
+          }
+        },
+        {
+          "id": "T5",
+          "source": "MET-PLC-DOSING-01 (10.20.11.10)",
+          "destination": "MET-PUMP-DRIVE-DOSING-DUTY-01 (10.20.11.40)",
+          "protocol_port": "lab EtherNet/IP TCP/44818 setup and cyclic UDP/2222",
+          "network_status": "same declared dosing VLAN; routed firewall bypassed",
+          "action": "Apply setpoint to modeled dose_output_percent only when pH demand, fresh analyzer, enabled coil and confirmed duty or standby drive coincide.",
+          "evidence": [
+            "testbeds/metropolis/datasets/water_treatment_v1/device_instances/initial_devices.yaml:27-45",
+            "testbeds/metropolis/devices/controllers/plc/dosing_controller.py:86-146",
+            "testbeds/metropolis/devices/controllers/plc/dosing_controller.py:183-207"
+          ],
+          "gate": "Analyzer and drive readiness; normal synthetic pH must trigger dosing demand.",
+          "observable": {
+            "point": "SCADA status, PLC alarm log and drive stdout",
+            "expected": "pH, setpoint, dose_output_percent, alarm mask and possible actuator_state_changed",
+            "provenance": "source-specific",
+            "caveat": "Natural pH cycle and legitimate operator adjustment can produce the same output sequence."
+          },
+          "attack_mapping": null
+        }
+      ],
+      "simulator_effect": "Stores a dosing setpoint and conditionally changes modeled dose output when a drive confirms running; the analyzer is independent of the drive and there is no chemistry model.",
+      "hypothetical_physical_implication": "An analogous real dosing setpoint change could affect chemical feed, but this simulator does not establish delivered dose or water quality.",
+      "defender_hypothesis": {
+        "support": "Correlated HMI request ID, MQTT command, SCADA stored ACK, PLC setpoint readback and conditional dose-output change outside an approved operation.",
+        "refute": "Rejected/failed ACK, no matching register readback, or no pH demand and no confirmed drive response.",
+        "benign": "Authorized dosing setpoint adjustment during normal synthetic pH variation."
+      },
+      "t_minus_1": "Unknown: no external ingress or acquisition of the assumed internal foothold is established by reviewed source.",
+      "branches": [
+        {
+          "id": "ack_publish",
+          "source": "MET-SCADA-01 (10.20.20.10)",
+          "destination": "MET-MQTT-BROKER-01 (10.20.23.10)",
+          "protocol_port": "MQTT, dynamic source port to TCP/1883",
+          "network_status": "permitted in declared baseline",
+          "condition": "After validation, and after T4 write/readback for stored or failed outcomes, SCADA publishes request_id, cell, controller, value, timestamp and status; broker authentication and ACL still apply.",
+          "evidence": [
+            "testbeds/metropolis/devices/operations/scada/scada_collector.py:342-376",
+            "testbeds/metropolis/devices/operations/scada/scada_collector.py:286-291",
+            "testbeds/metropolis/datasets/water_treatment_v1/topology/firewall-policy.yaml:16",
+            "scripts/gns3/mqtt_acl.py:160-185"
+          ],
+          "observable": "SCADA HMI-command log plus ack-topic packet or broker receipt; stored means register readback, not drive confirmation."
+        },
+        {
+          "id": "ack_delivery",
+          "source": "MET-MQTT-BROKER-01 (10.20.23.10)",
+          "destination": "MET-HMI-DOSING-01 (10.20.51.10)",
+          "protocol_port": "MQTT delivery on established HMI-initiated TCP/1883 session",
+          "network_status": "stateful return of permitted HMI-to-broker flow",
+          "condition": "HMI accepts only a matching pending request_id, cell, status, controller, timestamp and value before timeout.",
+          "evidence": [
+            "testbeds/metropolis/devices/operations/hmi/hmi_simulator.py:70-95",
+            "testbeds/metropolis/devices/operations/hmi/hmi_web.py:183-245",
+            "testbeds/metropolis/datasets/water_treatment_v1/topology/firewall-policy.yaml:21-25",
+            "scripts/gns3/mqtt_acl.py:160-185",
+            "scripts/gns3/firewall_policy.py:796-802"
+          ],
+          "observable": "HMI /api/status command_status and request_id; a timeout or rejected/failed result cannot be treated as stored."
+        },
+        {
+          "id": "standby",
+          "source": "MET-PLC-DOSING-01 (10.20.11.10)",
+          "destination": "MET-PUMP-DRIVE-DOSING-STANDBY-01 (10.20.11.41)",
+          "protocol_port": "lab EtherNet/IP TCP/44818 setup and cyclic UDP/2222",
+          "network_status": "same declared dosing VLAN",
+          "condition": "Standby requested only when dosing demand, analyzer readiness and enable coil are true and duty drive is not confirmed running.",
+          "evidence": [
+            "testbeds/metropolis/datasets/water_treatment_v1/device_instances/initial_devices.yaml:27-45",
+            "testbeds/metropolis/devices/controllers/plc/dosing_controller.py:93-139"
+          ],
+          "observable": "Standby actuator_state_changed, discrete input and alarms; no actuator origin IP in stdout."
+        }
+      ],
+      "branch_order": "ACK publication follows validation and, for stored or failed, T4 write/readback. Drive actuation can occur independently of ACK delivery; standby is conditional on duty confirmation.",
+      "stage_distinctions": [
+        {
+          "stage": "HMI HTTP 202",
+          "meaning": "Locally accepted and queued request only.",
+          "evidence": [
+            "testbeds/metropolis/devices/operations/hmi/hmi_web.py:347-358"
+          ]
+        },
+        {
+          "stage": "SCADA stored ACK",
+          "meaning": "Modbus register 4 write succeeded and matching readback was observed.",
+          "evidence": [
+            "testbeds/metropolis/devices/operations/scada/scada_collector.py:235-258",
+            "testbeds/metropolis/devices/operations/scada/scada_collector.py:359-376"
+          ]
+        },
+        {
+          "stage": "Drive-confirmed output",
+          "meaning": "Dose output is conditional on pH demand, analyzer readiness, enabled coil and duty or standby confirmation.",
+          "evidence": [
+            "testbeds/metropolis/devices/controllers/plc/dosing_controller.py:93-146"
+          ]
+        }
+      ],
+      "credential_pattern_assessment": {
+        "password_fields": 18,
+        "snmp_community_fields": 1,
+        "distinct_field_values": 13,
+        "observation": "The 18 passwords have a visibly lab-themed naming/year structure; this does not establish entropy or login success. Four HMI web password fields reuse one value, and two RDP servers plus two clients reuse another. MQTT usernames are distinct and duplicate usernames are rejected by the compiler.",
+        "evidence": [
+          "testbeds/metropolis/datasets/water_treatment_v1/device_instances/initial_devices.yaml:381-434",
+          "testbeds/metropolis/datasets/water_treatment_v1/device_instances/initial_devices.yaml:473-589",
+          "testbeds/metropolis/datasets/water_treatment_v1/device_instances/initial_devices.yaml:591-637",
+          "testbeds/metropolis/datasets/water_treatment_v1/device_instances/initial_devices.yaml:657-672",
+          "testbeds/metropolis/datasets/water_treatment_v1/device_instances/initial_devices.yaml:720-740",
+          "scripts/gns3/mqtt_acl.py:117-130"
+        ]
+      },
+      "title": "Dosing HMI command through MQTT and SCADA",
+      "catalog_inspiration": [
+        "mqtt.acl_cross_cell.v1"
+      ],
+      "attack_step_mappings": [
+        {
+          "step": "T4",
+          "technique": "ICS T1692.001",
+          "url": "https://attack.mitre.org/techniques/T1692/001/",
+          "assessment": "Hypothesized unauthorized command if request is unapproved and reaches the PLC; HTTP 202 alone is insufficient."
+        }
+      ],
+      "framework_prompts": [],
+      "supported_observed_attack_mappings": [],
+      "catalog_relation": "Configuration-supported HMI command path beyond the catalog. The MQTT cross-cell exercise informs the broker ACL gate; this path uses the dosing HMI’s own cell topic."
+    },
+    {
+      "id": "FS-03",
+      "status": "conditional_unproven_access",
+      "family": "Telnet gateway pivot from intake sensor",
+      "assumed_foothold": "MET-SENSOR-INTAKE-01 (10.20.10.20) is controlled; attacker also obtains the legacy gateway root credential and a usable Modbus client after login. Neither prerequisite is shown by source.",
+      "steps": [
+        {
+          "id": "T1",
+          "source": "MET-SENSOR-INTAKE-01 (10.20.10.20)",
+          "destination": "MET-LEGACY-GATEWAY-01 (10.20.10.30)",
+          "protocol_port": "Telnet, dynamic source port to TCP/23",
+          "network_status": "same declared intake VLAN; routed firewall bypassed",
+          "action": "Attempt credentialed login to the gateway's real BusyBox Telnet shell.",
+          "evidence": [
+            "testbeds/metropolis/datasets/water_treatment_v1/device_instances/initial_devices.yaml:362-387",
+            "testbeds/metropolis/datasets/water_treatment_v1/device_instances/initial_devices.yaml:660-672",
+            "testbeds/metropolis/datasets/water_treatment_v1/topology/links.yaml:334-341",
+            "testbeds/metropolis/datasets/water_treatment_v1/topology/links.yaml:370-377",
+            "testbeds/metropolis/devices/field/legacy_gateway/start_telnet.sh:4-20"
+          ],
+          "gate": "Credential acquisition and successful login are unproven; no Telnet exploit is established.",
+          "observable": {
+            "point": "intake LAN wire",
+            "expected": "10.20.10.20 to 10.20.10.30 TCP/23 session and authentication exchange",
+            "provenance": "generic behavioral; listener is code-supported",
+            "caveat": "Gateway startup emits telnet_starting, not a source-specific login record in reviewed code; authorized maintenance is a lookalike."
+          },
+          "attack_mapping": null
+        },
+        {
+          "id": "T2",
+          "source": "MET-LEGACY-GATEWAY-01 (10.20.10.30)",
+          "destination": "MET-PLC-INTAKE-01 (10.20.10.10)",
+          "protocol_port": "Modbus TCP, dynamic source port to TCP/502",
+          "network_status": "same declared intake VLAN; routed firewall bypassed",
+          "action": "If a suitable client is present or introduced, write pump-request coil 0 from the gateway shell.",
+          "evidence": [
+            "testbeds/metropolis/datasets/water_treatment_v1/topology/links.yaml:325-332",
+            "testbeds/metropolis/datasets/water_treatment_v1/topology/links.yaml:370-377",
+            "testbeds/metropolis/datasets/water_treatment_v1/protocol_profiles/modbus_actions_v1.yaml:13-14",
+            "testbeds/metropolis/devices/controllers/plc/modbus_controller.py:83-96",
+            "testbeds/metropolis/devices/field/legacy_gateway/Dockerfile:1-14"
+          ],
+          "gate": "Gateway image does not document a Modbus client; this stage is a capability assumption. The compromised sensor could reach the PLC directly, so the gateway is not required for routing.",
+          "observable": {
+            "point": "intake PLC attachment wire",
+            "expected": "Modbus write from gateway address following a sensor-to-gateway Telnet session",
+            "provenance": "generic behavioral",
+            "caveat": "No PLC application log of valid direct Modbus writes was found in reviewed controller code."
+          },
+          "attack_mapping": {
+            "step": "T2",
+            "technique": "ICS T1692.001",
+            "url": "https://attack.mitre.org/techniques/T1692/001/",
+            "assessment": "Conditional gateway-origin unauthorized command after two unproven access gates."
+          }
+        },
+        {
+          "id": "T3",
+          "source": "MET-PLC-INTAKE-01 (10.20.10.10)",
+          "destination": "MET-PUMP-DRIVE-INTAKE-DUTY-01 (10.20.10.40)",
+          "protocol_port": "lab EtherNet/IP TCP/44818 setup and cyclic UDP/2222",
+          "network_status": "same declared intake VLAN",
+          "action": "Conditionally confirm drive operation and update the bounded intake process model.",
+          "evidence": [
+            "testbeds/metropolis/devices/controllers/plc/modbus_controller.py:88-143",
+            "testbeds/metropolis/devices/controllers/plc/modbus_controller.py:183-218",
+            "testbeds/metropolis/devices/controllers/plc/process_model.py:70-90"
+          ],
+          "gate": "Valve and duty or standby drive must confirm; normal control-client coil writes may later supersede the request.",
+          "observable": {
+            "point": "actuator stdout, SCADA status and intake wire",
+            "expected": "actuator_state_changed, then flow/level/quality trend",
+            "provenance": "source-specific event and status fields",
+            "caveat": "The intake MQTT sensor reads the same PLC, so its matching telemetry is not independent corroboration."
+          },
+          "attack_mapping": null
+        }
+      ],
+      "simulator_effect": "Conditional pump request and bounded flow/level/quality changes, contingent on two unproven movement prerequisites.",
+      "hypothetical_physical_implication": "A comparable gateway pivot could interfere with intake pump operation in a real plant; no physical outcome is represented or observed here.",
+      "defender_hypothesis": {
+        "support": "Sensor-to-gateway Telnet session, then gateway-origin PLC coil write and confirmed drive/process change.",
+        "refute": "No successful Telnet session or no gateway-origin Modbus write; a lone sensor-to-PLC write would support a different, shorter path.",
+        "benign": "Authorized legacy gateway maintenance followed by a lab control check."
+      },
+      "t_minus_1": "Unknown: no external ingress or acquisition of the assumed internal foothold is established by reviewed source.",
+      "branches": [
+        {
+          "id": "standby",
+          "source": "MET-PLC-INTAKE-01 (10.20.10.10)",
+          "destination": "MET-PUMP-DRIVE-INTAKE-STANDBY-01 (10.20.10.41)",
+          "protocol_port": "lab EtherNet/IP TCP/44818 setup and cyclic UDP/2222",
+          "network_status": "same declared intake VLAN",
+          "condition": "Pump requested and duty drive not confirmed running; standby confirmation remains conditional.",
+          "evidence": [
+            "testbeds/metropolis/datasets/water_treatment_v1/device_instances/initial_devices.yaml:234-246",
+            "testbeds/metropolis/devices/controllers/plc/modbus_controller.py:95-102",
+            "testbeds/metropolis/devices/runtime/ethernet_ip.py:266-310"
+          ],
+          "observable": "Standby actuator_state_changed or alarm transition, with wire capture needed for peer attribution."
+        },
+        {
+          "id": "valve",
+          "source": "MET-PLC-INTAKE-01 (10.20.10.10)",
+          "destination": "MET-VALVE-CTRL-INTAKE-01 (10.20.10.42)",
+          "protocol_port": "lab EtherNet/IP TCP/44818 setup and cyclic UDP/2222",
+          "network_status": "same declared intake VLAN",
+          "condition": "Valve follows separate coil 1 and must confirm open for actual_pump in the process loop.",
+          "evidence": [
+            "testbeds/metropolis/datasets/water_treatment_v1/device_instances/initial_devices.yaml:248-260",
+            "testbeds/metropolis/devices/controllers/plc/modbus_controller.py:103-106",
+            "testbeds/metropolis/devices/controllers/plc/modbus_controller.py:127-143"
+          ],
+          "observable": "Valve actuator_state_changed and PLC alarm bits; valve and pump confirmation order is not asserted."
+        }
+      ],
+      "branch_order": "Conditional duty/standby and valve I/O are distinct branches; acknowledgement order is not established.",
+      "title": "Sensor to legacy Telnet gateway to intake PLC",
+      "catalog_inspiration": [
+        "mirai.telnet.v1",
+        "modbus.write.v1"
+      ],
+      "attack_step_mappings": [
+        {
+          "step": "T2",
+          "technique": "ICS T1692.001",
+          "url": "https://attack.mitre.org/techniques/T1692/001/",
+          "assessment": "Conditional gateway-origin unauthorized command after two unproven access gates."
+        }
+      ],
+      "framework_prompts": [],
+      "supported_observed_attack_mappings": [],
+      "catalog_relation": "Mirai-inspired Telnet access plus a conditional gateway Modbus pivot; no Mirai binary, infection, or gateway Modbus client is established."
+    },
+    {
+      "id": "FS-04",
+      "status": "conditional_permitted",
+      "family": "operations-admin direct remote RTU control across VTI",
+      "assumed_foothold": "MET-OPS-ADMIN-01 (10.20.20.20) is controlled and can run a Modbus client; its declared normal role is RDP client, so malicious control capability is assumed.",
+      "steps": [
+        {
+          "id": "T1",
+          "source": "MET-OPS-ADMIN-01 (10.20.20.20)",
+          "destination": "MET-RTU-RAW-WATER-01 (10.20.15.10)",
+          "protocol_port": "Modbus TCP, dynamic source port to TCP/502 via MET-OT-CORE, MET-OT-WAN vti10 and MET-RAW-WATER",
+          "network_status": "permitted by declared source-subnet scada-modbus rule; live VTI routing unknown",
+          "action": "Write remote pump-request coil 0; policy's scada selector covers the entire 10.20.20.0/24 subnet, including ops-admin.",
+          "evidence": [
+            "testbeds/metropolis/datasets/water_treatment_v1/device_instances/initial_devices.yaml:312-333",
+            "testbeds/metropolis/datasets/water_treatment_v1/device_instances/initial_devices.yaml:623-637",
+            "testbeds/metropolis/datasets/water_treatment_v1/topology/address-plan.yaml:59-67",
+            "testbeds/metropolis/datasets/water_treatment_v1/topology/firewall-policy.yaml:1-11",
+            "testbeds/metropolis/datasets/water_treatment_v1/topology/links.yaml:517-524",
+            "testbeds/metropolis/datasets/water_treatment_v1/topology/links.yaml:556-563",
+            "testbeds/metropolis/router/backbone/router_ot_wan.sh:34-55",
+            "testbeds/metropolis/router/locations/router_raw_water.sh:28-40",
+            "scripts/gns3/firewall_policy.py:753-781",
+            "scripts/gns3/firewall_policy.py:783-824",
+            "testbeds/metropolis/datasets/water_treatment_v1/protocol_profiles/modbus_actions_v1.yaml:48-56"
+          ],
+          "gate": "The VTI requires live IPsec, OSPF, routes and firewall application; no such deployment was checked. RTU Modbus service availability is also unverified.",
+          "observable": {
+            "point": "operations segment, WAN overlay and RTU attachment wire",
+            "expected": "TCP/502 write from 10.20.20.20 rather than the usual SCADA collector 10.20.20.10",
+            "provenance": "generic behavioral; subnet rule and host addresses are declared",
+            "caveat": "Same-subnet source is allowed by policy; source identity and maintenance context matter."
+          },
+          "attack_mapping": {
+            "step": "T1",
+            "technique": "ICS T1692.001",
+            "url": "https://attack.mitre.org/techniques/T1692/001/",
+            "assessment": "Hypothesized unauthorized remote pump command if the ops-admin write occurs."
+          }
+        },
+        {
+          "id": "T2",
+          "source": "MET-RTU-RAW-WATER-01 (10.20.15.10)",
+          "destination": "MET-PUMP-DRIVE-RAW-WATER-01 (10.20.15.40)",
+          "protocol_port": "lab EtherNet/IP TCP/44818 setup and cyclic UDP/2222",
+          "network_status": "same declared raw-water LAN",
+          "action": "RTU sends coil-derived pump request to local drive and exposes requested and confirmed state.",
+          "evidence": [
+            "testbeds/metropolis/datasets/water_treatment_v1/device_instances/initial_devices.yaml:348-360",
+            "testbeds/metropolis/datasets/water_treatment_v1/topology/links.yaml:517-541",
+            "testbeds/metropolis/devices/controllers/plc/remote_site_controller.py:89-115",
+            "testbeds/metropolis/devices/controllers/plc/remote_site_controller.py:190-213"
+          ],
+          "gate": "Drive connection and confirmation; output-unconfirmed alarms are delayed by the configured confirmation interval.",
+          "observable": {
+            "point": "RTU Modbus status, SCADA status and drive stdout",
+            "expected": "pump_requested versus lift_pump_running, alarm mask, actuator_state_changed; DNP3 emits alarm changes only",
+            "provenance": "source-specific",
+            "caveat": "A deliberate pump-off with healthy I/O may not produce a DNP3 alarm; actuator event lacks origin IP."
+          },
+          "attack_mapping": null
+        }
+      ],
+      "simulator_effect": "Changes raw-water RTU pump request and potentially confirmed local drive state; the level reading varies independently and no hydraulic process is modeled.",
+      "hypothetical_physical_implication": "An analogous real lift-pump command could affect transfer, but the simulator cannot establish level, flow or water-supply consequences.",
+      "defender_hypothesis": {
+        "support": "Ops-admin-origin Modbus coil write across the overlay followed by RTU requested/confirmed state change, without a corresponding SCADA command path.",
+        "refute": "No live VTI route, firewall does not apply as declared, or RTU coil and drive status remain unchanged.",
+        "benign": "Authorized remote commissioning or maintenance from the operations segment."
+      },
+      "t_minus_1": "Unknown: no external ingress or acquisition of the assumed internal foothold is established by reviewed source.",
+      "branches": [],
+      "title": "Operations host to raw-water RTU across VTI",
+      "catalog_inspiration": [
+        "modbus.write.v1"
+      ],
+      "attack_step_mappings": [
+        {
+          "step": "T1",
+          "technique": "ICS T1692.001",
+          "url": "https://attack.mitre.org/techniques/T1692/001/",
+          "assessment": "Hypothesized unauthorized remote pump command if the ops-admin write occurs."
+        }
+      ],
+      "framework_prompts": [
+        "OWASP OT 2025 zone and conduit design"
+      ],
+      "supported_observed_attack_mappings": [],
+      "catalog_relation": "Catalog Modbus-write behavior is applied to a different declared source, the operations-admin host, and a remote VTI path."
+    },
+    {
+      "id": "FS-05",
+      "status": "conditional_permitted_non_control_effect",
+      "family": "MQTT telemetry falsification into historian",
+      "assumed_foothold": "MET-SENSOR-INTAKE-01 (10.20.10.20) is controlled and can use its own MQTT publisher identity; initial compromise is not established.",
+      "steps": [
+        {
+          "id": "T1",
+          "source": "MET-SENSOR-INTAKE-01 (10.20.10.20)",
+          "destination": "MET-MQTT-BROKER-01 (10.20.23.10)",
+          "protocol_port": "MQTT, dynamic source port to TCP/1883",
+          "network_status": "permitted in declared baseline",
+          "action": "Publish altered intake telemetry on the sensor's authorized topic; normal code reads PLC values and emits device, sensor, value, unit and timestamp.",
+          "evidence": [
+            "testbeds/metropolis/datasets/water_treatment_v1/device_instances/initial_devices.yaml:362-402",
+            "testbeds/metropolis/datasets/water_treatment_v1/topology/firewall-policy.yaml:15",
+            "scripts/gns3/mqtt_acl.py:146-149",
+            "testbeds/metropolis/devices/field/sensors/mqtt_sensor.py:72-115",
+            "testbeds/metropolis/devices/field/sensors/mqtt_sensor.py:215-235",
+            "testbeds/metropolis/devices/field/sensors/mqtt_sensor.py:273-298",
+            "testbeds/metropolis/devices/services/mqtt_broker/mosquitto.conf:3-9"
+          ],
+          "gate": "Broker authentication and exact-topic ACL; compromise of the sensor or its MQTT identity is assumed.",
+          "observable": {
+            "point": "sensor-to-broker wire and broker stdout",
+            "expected": "metropolis/plant/intake/telemetry value or timestamp diverging from a near-time PLC/SCADA read",
+            "provenance": "source-specific payload fields and configured broker logging; divergence is a defender inference",
+            "caveat": "Normal sensor code retains its last PLC reading on read failure, and poll timing can cause benign mismatch."
+          },
+          "attack_mapping": {
+            "step": "T1",
+            "technique": "ICS T1692.002",
+            "url": "https://attack.mitre.org/techniques/T1692/002/",
+            "assessment": "Hypothesized unauthorized reporting message if altered sensor telemetry is published and received."
+          }
+        },
+        {
+          "id": "T2",
+          "source": "MET-MQTT-BROKER-01 (10.20.23.10)",
+          "destination": "MET-HISTORIAN-01 (10.20.22.10)",
+          "protocol_port": "MQTT delivery on historian-initiated established TCP/1883 session",
+          "network_status": "stateful return of permitted historian-to-broker flow",
+          "action": "Deliver topic under historian's metropolis/# subscription; historian writes received_at, topic and decoded payload to stdout without an intake-value validation step.",
+          "evidence": [
+            "testbeds/metropolis/datasets/water_treatment_v1/device_instances/initial_devices.yaml:454-477",
+            "testbeds/metropolis/datasets/water_treatment_v1/topology/firewall-policy.yaml:17",
+            "scripts/gns3/firewall_policy.py:796-802",
+            "scripts/gns3/mqtt_acl.py:150-158",
+            "testbeds/metropolis/devices/operations/historian/historian_collector.py:29-74"
+          ],
+          "gate": "Historian subscriber must be connected; broker ACL confines sensor publication to its intake topic.",
+          "observable": {
+            "point": "historian stdout",
+            "expected": "received_at, topic and payload for the altered intake reading",
+            "provenance": "source-specific",
+            "caveat": "Historian logging proves receipt, not truth or effect on a controller."
+          },
+          "attack_mapping": null
+        }
+      ],
+      "simulator_effect": "Contaminates the historian's MQTT record only; reviewed SCADA code polls the intake PLC directly rather than consuming this sensor topic for control.",
+      "hypothetical_physical_implication": "Misleading telemetry could impair real operator judgement, but this simulator has no sensor-MQTT-to-actuator control path or demonstrated physical consequence.",
+      "defender_hypothesis": {
+        "support": "Sensor-topic historian record diverges from near-time SCADA Modbus intake level while the PLC remains reachable, with broker publication from the sensor identity.",
+        "refute": "Historian did not receive the message, or near-time PLC and sensor readings agree within cadence and precision.",
+        "benign": "Sensor cached its last reading after a PLC read failure, or ordinary timing difference between five-second polls."
+      },
+      "t_minus_1": "Unknown: no external ingress or acquisition of the assumed internal foothold is established by reviewed source.",
+      "branches": [],
+      "title": "Intake sensor MQTT telemetry into historian",
+      "catalog_inspiration": [
+        "mqtt.publish.v1"
+      ],
+      "attack_step_mappings": [
+        {
+          "step": "T1",
+          "technique": "ICS T1692.002",
+          "url": "https://attack.mitre.org/techniques/T1692/002/",
+          "assessment": "Hypothesized unauthorized reporting message if altered sensor telemetry is published and received."
+        }
+      ],
+      "framework_prompts": [],
+      "supported_observed_attack_mappings": [],
+      "catalog_relation": "Configuration-supported altered telemetry variant beyond the catalog’s MQTT flood exercise; it affects historian receipt only."
+    },
+    {
+      "id": "FS-06",
+      "title": "Synthetic Mirai bot Telnet path stopped by baseline",
+      "status": "blocked_declared_baseline",
+      "family": "mirai",
+      "assumed_foothold": "Synthetic MET-MIRAI-BOT-01 (10.99.10.100) is controlled and explicitly configured with the intake gateway as a target; BOT_TARGETS is empty by default.",
+      "t_minus_1": "Outside ingress and acquisition of the assumed foothold are unknown; no infection is established.",
+      "steps": [
+        {
+          "id": "T1",
+          "source": "MET-MIRAI-BOT-01 (10.99.10.100)",
+          "destination": "MET-LEGACY-GATEWAY-01 (10.20.10.30)",
+          "protocol_port": "Telnet, dynamic source port to TCP/23",
+          "network_status": "blocked by declared routed baseline if applied",
+          "action": "Hypothetical Telnet probe to a configured target; no default bot target is set.",
+          "gate": "Different subnets; no attack-test-to-intake Telnet allowance; generated default drop. Temporary experiment exceptions and live policy state are unknown.",
+          "evidence": [
+            "testbeds/metropolis/datasets/water_treatment_v1/device_instances/initial_devices.yaml:660-672",
+            "testbeds/metropolis/datasets/water_treatment_v1/device_instances/initial_devices.yaml:814-832",
+            "testbeds/metropolis/datasets/water_treatment_v1/topology/firewall-policy.yaml:1-47",
+            "scripts/gns3/firewall_policy.py:701-720",
+            "scripts/gns3/firewall_policy.py:783-824"
+          ],
+          "observable": {
+            "point": "bot egress and gateway attachment wire",
+            "expected": "A bot-side TCP/23 probe with no gateway-side arrival if the baseline is deployed",
+            "provenance": "generic behavioral; policy is source-supported only",
+            "caveat": "An unset target produces no probe, and missing capture cannot prove a drop; authorized reachability testing is a lookalike."
+          },
+          "attack_mapping": null
+        }
+      ],
+      "branches": [],
+      "simulator_effect": "None on the blocked declared path; no gateway access or PLC command follows.",
+      "hypothetical_physical_implication": "None established.",
+      "defender_hypothesis": {
+        "support": "Correlated bot-side Telnet attempt and gateway-side absence with router policy readback confirming baseline and no exception.",
+        "refute": "Gateway-side packet arrival, a temporary allow rule, or no bot-origin probe.",
+        "benign": "Approved testbed connectivity check."
+      },
+      "catalog_inspiration": [
+        "mirai.scenario.v1"
+      ],
+      "attack_step_mappings": [],
+      "framework_prompts": [
+        "OWASP OT 2025 zone and conduit design"
+      ],
+      "supported_observed_attack_mappings": [],
+      "catalog_relation": "Catalog Mirai bot probe variant with an explicitly assumed target; the declared baseline blocks the routed Telnet path."
+    }
+  ],
+  "cve_assessment": "No CVE established; no product/version-specific advisory match was assessed.",
+  "unresolved": [
+    "External initial access is not declared.",
+    "Router and firewall deployment, switch cabling/VLANs, IPsec, OSPF/BFD and temporary exceptions need live verification.",
+    "Authentication success, broker and HMI authorization, command acceptance, packet delivery and actuator state need a controlled live exercise.",
+    "Drive events lack source IP and timestamp; SCADA or wire correlation is needed. Historian MQTT receipt alone cannot validate process truth."
+  ]
+}
