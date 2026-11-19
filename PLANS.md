@@ -6,6 +6,8 @@ Record future ideas and decisions here. Earlier items have higher priority. Only
 
 Expand one cell at a time, prioritizing credible packet timing, polling, and value-change patterns over physical process accuracy. Check images, wiring, routing, firewall permissions, and capture coverage. Retain syslog as research telemetry and Docker output as simulator diagnostics. See [README.md](README.md) for current capabilities.
 
+Keep agent-authored blue-team results and future on-demand security reviews under [agent-blue](scripts/agent-blue/README.md). Make scenario reviews exploratory: test malware-inspired ATT&CK and applicable OWASP prompts against the selected testbed, with explicit catalog/boundary coverage and source-linked defender observables. Keep the REA investigation guide under [agent-red](scripts/agent-red/README.md).
+
 ### GNS3 tooling and cleanup
 
 - [ ] Review the remaining 26-case gap in the 20% test-reduction target; retain primary regression checks.

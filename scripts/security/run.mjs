@@ -15,7 +15,7 @@ Usage:
 
 The SDK scan and theoretical scenarios use declared repository settings only.
 Daybreak Blue is selected for scans; the model defaults to gpt-6-sol.
-Results are saved outside the Git worktree. No GNS3 or attack commands run.
+Results are saved under scripts/agent-blue/security-reviews by default. No GNS3 or attack commands run.
 `);
 }
 

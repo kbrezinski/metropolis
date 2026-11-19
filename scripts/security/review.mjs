@@ -315,11 +315,10 @@ function isInside(directory, candidate) {
 }
 
 export function resolveOutputRoot(repoRoot, requested) {
-  const result = path.resolve(
-    requested ?? path.join(path.dirname(repoRoot), "metropolis-security-results"),
-  );
-  if (isInside(repoRoot, result)) {
-    throw new Error("Security review output must be outside the repository");
+  const blueRoot = path.join(repoRoot, "scripts", "agent-blue");
+  const result = path.resolve(requested ?? path.join(blueRoot, "security-reviews"));
+  if (isInside(repoRoot, result) && !isInside(blueRoot, result)) {
+    throw new Error("Security review output inside the repository must be under scripts/agent-blue");
   }
   return result;
 }

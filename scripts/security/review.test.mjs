@@ -266,8 +266,13 @@ test("scenario validation checks family coverage, evidence paths, and CVE basis"
   assert.throws(() => validateScenarioReport(badCve, families, targetPaths), /version_evidence/);
 });
 
-test("the output root cannot be inside the repository", () => {
-  assert.throws(() => resolveOutputRoot(repoRoot, path.join(repoRoot, "reports")), /outside/);
+test("the output root defaults to scripts/agent-blue and restricts other repository paths", () => {
+  assert.equal(resolveOutputRoot(repoRoot), path.join(repoRoot, "scripts", "agent-blue", "security-reviews"));
+  assert.equal(
+    resolveOutputRoot(repoRoot, path.join(repoRoot, "scripts", "agent-blue", "custom")),
+    path.join(repoRoot, "scripts", "agent-blue", "custom"),
+  );
+  assert.throws(() => resolveOutputRoot(repoRoot, path.join(repoRoot, "reports")), /scripts\/agent-blue/);
 });
 
 test("discovery follows a renamed testbed, new dataset, and added routers", async (t) => {

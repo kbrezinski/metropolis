@@ -256,7 +256,8 @@ The run metadata records the publisher source hash. For `solution.sh`, the publi
 sends the literal one-line content and adds a real line ending, except in the two
 staged filtration-chain episodes where it preserves multiline HTTP text or one-line
 commands from a mailbox draft file. For
-`edited_program.xml`, it sends complete multiline text up to 64 KiB. It validates
+`edited_program.xml`, it sends complete text up to 64 KiB, preserving real line
+breaks when present. It validates
 the path advertised in the current request and executes neither artifact. The frozen
 submission, source and submitted-artifact hashes, response bytes, and decision summary
 are retained for each PLC attempt.

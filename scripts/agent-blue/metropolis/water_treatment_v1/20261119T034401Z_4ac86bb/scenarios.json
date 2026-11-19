@@ -1,0 +1,840 @@
+{
+  "review_type": "declared-configuration blue-team scenario assessment",
+  "dataset": "testbeds/metropolis/datasets/water_treatment_v1",
+  "catalog": "scripts/attacks/scenarios/v1.json",
+  "created_utc": "2026-11-19T03:44:01.065278+00:00",
+  "network_summary_evidence": [
+    "testbeds/metropolis/datasets/water_treatment_v1/topology/address-plan.yaml:7-208",
+    "testbeds/metropolis/datasets/water_treatment_v1/device_instances/infrastructure.yaml:16-245",
+    "testbeds/metropolis/datasets/water_treatment_v1/topology/links.yaml:19-323",
+    "testbeds/metropolis/router/backbone/router_ot_wan.sh:24-56"
+  ],
+  "baseline_flow_matrix": [
+    {
+      "source": "SCADA subnet 10.20.20.0/24",
+      "destination": "six process LANs; remote sites over VTI",
+      "protocol_port": "TCP/502; TCP/20000 remote DNP3",
+      "status": "permitted",
+      "evidence": [
+        "testbeds/metropolis/datasets/water_treatment_v1/topology/address-plan.yaml:7-58,59-68",
+        "testbeds/metropolis/datasets/water_treatment_v1/topology/firewall-policy.yaml:7-12",
+        "testbeds/metropolis/datasets/water_treatment_v1/topology/links.yaml:55-77",
+        "testbeds/metropolis/router/backbone/router_ot_wan.sh:34-56"
+      ]
+    },
+    {
+      "source": "engineering subnet 10.20.21.0/24",
+      "destination": "intake 10.20.10.0/24; four HMI LANs",
+      "protocol_port": "TCP/502, UDP/5683; TCP/8080",
+      "status": "permitted",
+      "evidence": [
+        "testbeds/metropolis/datasets/water_treatment_v1/topology/address-plan.yaml:7-24,68-76,112-147",
+        "testbeds/metropolis/datasets/water_treatment_v1/topology/firewall-policy.yaml:13-14,26-30"
+      ]
+    },
+    {
+      "source": "intake; SCADA; historian; four HMI LANs",
+      "destination": "MQTT subnet 10.20.23.0/24",
+      "protocol_port": "TCP/1883",
+      "status": "permitted",
+      "evidence": [
+        "testbeds/metropolis/datasets/water_treatment_v1/topology/firewall-policy.yaml:15-25",
+        "testbeds/metropolis/datasets/water_treatment_v1/topology/address-plan.yaml:79-103"
+      ]
+    },
+    {
+      "source": "historian 10.20.22.0/24",
+      "destination": "SCADA 10.20.20.0/24",
+      "protocol_port": "TCP/4840",
+      "status": "permitted",
+      "evidence": [
+        "testbeds/metropolis/datasets/water_treatment_v1/topology/firewall-policy.yaml:18",
+        "testbeds/metropolis/datasets/water_treatment_v1/topology/address-plan.yaml:59-88"
+      ]
+    },
+    {
+      "source": "SCADA 10.20.20.0/24; enterprise 10.30.10.0/24",
+      "destination": "DMZ 10.20.40.0/24",
+      "protocol_port": "TCP/443",
+      "status": "permitted",
+      "evidence": [
+        "testbeds/metropolis/datasets/water_treatment_v1/topology/firewall-policy.yaml:19-20",
+        "testbeds/metropolis/datasets/water_treatment_v1/topology/address-plan.yaml:104-111,148-155"
+      ]
+    },
+    {
+      "source": "engineering 10.20.21.0/24; SCADA 10.20.20.0/24",
+      "destination": "DMZ; engineering",
+      "protocol_port": "RDP TCP+UDP/3389",
+      "status": "permitted",
+      "evidence": [
+        "testbeds/metropolis/datasets/water_treatment_v1/topology/firewall-policy.yaml:31-34",
+        "testbeds/metropolis/datasets/water_treatment_v1/topology/address-plan.yaml:59-78,104-114"
+      ]
+    },
+    {
+      "source": "engineering 10.20.21.0/24",
+      "destination": "OT services 10.20.30.0/24",
+      "protocol_port": "DNS TCP+UDP/53; NTP UDP/123",
+      "status": "permitted",
+      "evidence": [
+        "testbeds/metropolis/datasets/water_treatment_v1/topology/firewall-policy.yaml:35-37",
+        "testbeds/metropolis/datasets/water_treatment_v1/topology/address-plan.yaml:89-103"
+      ]
+    },
+    {
+      "source": "control-client 10.20.21.20/32; six named routers",
+      "destination": "listed router interfaces; OT services",
+      "protocol_port": "SNMP UDP/161; syslog UDP/514",
+      "status": "permitted",
+      "evidence": [
+        "testbeds/metropolis/datasets/water_treatment_v1/topology/firewall-policy.yaml:38-47",
+        "testbeds/metropolis/datasets/water_treatment_v1/device_instances/initial_devices.yaml:639-646"
+      ]
+    },
+    {
+      "source": "attack-lab 10.99.10.0/24",
+      "destination": "OT/DMZ/enterprise routed LANs",
+      "protocol_port": "any new traffic",
+      "status": "unknown under declared settings",
+      "evidence": [
+        "testbeds/metropolis/datasets/water_treatment_v1/topology/address-plan.yaml:156-166",
+        "testbeds/metropolis/datasets/water_treatment_v1/topology/firewall-policy.yaml:7-47",
+        "testbeds/metropolis/router/backbone/router_ot_dmz.sh:10-12"
+      ]
+    },
+    {
+      "source": "engineering 10.20.21.0/24",
+      "destination": "dosing 10.20.11.0/24",
+      "protocol_port": "TCP/502",
+      "status": "unknown under declared settings",
+      "evidence": [
+        "testbeds/metropolis/datasets/water_treatment_v1/topology/address-plan.yaml:20-29,69-78",
+        "testbeds/metropolis/datasets/water_treatment_v1/topology/firewall-policy.yaml:7-12"
+      ]
+    },
+    {
+      "source": "same access VLAN",
+      "destination": "same access VLAN",
+      "protocol_port": "local declared services",
+      "status": "permitted",
+      "evidence": [
+        "testbeds/metropolis/datasets/water_treatment_v1/topology/firewall-policy.yaml:1-3",
+        "testbeds/metropolis/datasets/water_treatment_v1/topology/links.yaml:325-377,565-590"
+      ]
+    },
+    {
+      "source": "any attached host",
+      "destination": "MET-DEBUG-DMZ-01 10.20.40.10",
+      "protocol_port": "any",
+      "status": "blocked",
+      "evidence": [
+        "testbeds/metropolis/datasets/water_treatment_v1/device_instances/initial_devices.yaml:706-714",
+        "testbeds/metropolis/datasets/water_treatment_v1/topology/links.yaml:664-672"
+      ]
+    }
+  ],
+  "scenarios": [
+    {
+      "id": "BT-01",
+      "family": "modbus",
+      "rank": 1,
+      "assumed_foothold": "Conditional compromise of MET-OPS-ADMIN-01 (10.20.20.20) on the SCADA subnet. No initial compromise route is established.",
+      "candidate_nodes": [
+        "MET-OPS-ADMIN-01 10.20.20.20",
+        "MET-PLC-DOSING-01 10.20.11.10",
+        "MET-RTU-RAW-WATER-01 10.20.15.10"
+      ],
+      "movement_summary": "SCADA-subnet to dosing and raw-water TCP/502 is permitted by a network-wide selector. Remote-site delivery also requires a working IPsec VTI. No write authorization or process effect is established.",
+      "protocols": [
+        "Modbus TCP/502"
+      ],
+      "possible_effect": "A successful unauthorized dosing setpoint or remote pump request could alter process behavior; profile notes that writes may not persist.",
+      "evidence": [
+        "testbeds/metropolis/datasets/water_treatment_v1/device_instances/initial_devices.yaml:27-34,312-319,623-630",
+        "testbeds/metropolis/datasets/water_treatment_v1/topology/firewall-policy.yaml:7-12",
+        "testbeds/metropolis/datasets/water_treatment_v1/protocol_profiles/modbus_actions_v1.yaml:1-3,21-56",
+        "testbeds/metropolis/datasets/water_treatment_v1/topology/links.yaml:19-77,517-525"
+      ],
+      "steps": [
+        {
+          "phase": "discovery",
+          "source": "MET-OPS-ADMIN-01 10.20.20.20",
+          "destination": "MET-PLC-DOSING-01 10.20.11.10",
+          "protocol_port": "TCP/502",
+          "status": "permitted",
+          "prerequisite": "Conditional host compromise; plant/core routing and firewall configuration applied.",
+          "attack": [
+            {
+              "matrix": "ICS",
+              "id": "T0846.001",
+              "name": "Port Scan",
+              "url": "https://attack.mitre.org/techniques/T0846/001/"
+            }
+          ],
+          "owasp": [],
+          "evidence": [
+            "testbeds/metropolis/datasets/water_treatment_v1/device_instances/initial_devices.yaml:27-34,623-630",
+            "testbeds/metropolis/datasets/water_treatment_v1/topology/firewall-policy.yaml:7-12",
+            "testbeds/metropolis/datasets/water_treatment_v1/topology/links.yaml:19-38,203-323"
+          ],
+          "defensive_observable": "New TCP/502 initiations from an operations-admin IP; PLC connection and syslog records."
+        },
+        {
+          "phase": "access / potential effect",
+          "source": "MET-OPS-ADMIN-01 10.20.20.20",
+          "destination": "MET-PLC-DOSING-01 10.20.11.10",
+          "protocol_port": "Modbus TCP/502",
+          "status": "permitted",
+          "prerequisite": "The endpoint accepts the request and the attempted register/coil write is effective; network permission alone does not establish either.",
+          "attack": [
+            {
+              "matrix": "ICS",
+              "id": "T1692.001",
+              "name": "Unauthorized Command",
+              "url": "https://attack.mitre.org/techniques/T1692/001/"
+            },
+            {
+              "matrix": "ICS",
+              "id": "T0836",
+              "name": "Modify Parameter",
+              "url": "https://attack.mitre.org/techniques/T0836/"
+            }
+          ],
+          "owasp": [],
+          "evidence": [
+            "testbeds/metropolis/datasets/water_treatment_v1/topology/firewall-policy.yaml:7-12",
+            "testbeds/metropolis/datasets/water_treatment_v1/protocol_profiles/modbus_actions_v1.yaml:21-29"
+          ],
+          "defensive_observable": "Modbus function codes and target register/coil changes; controller telemetry discrepancies."
+        },
+        {
+          "phase": "remote movement",
+          "source": "MET-OPS-ADMIN-01 10.20.20.20",
+          "destination": "MET-RTU-RAW-WATER-01 10.20.15.10",
+          "protocol_port": "TCP/502",
+          "status": "permitted",
+          "prerequisite": "The declared VTI/IPsec and OSPF route are established in live equipment.",
+          "attack": [],
+          "owasp": [],
+          "evidence": [
+            "testbeds/metropolis/datasets/water_treatment_v1/topology/firewall-policy.yaml:7-12",
+            "testbeds/metropolis/datasets/water_treatment_v1/topology/links.yaml:55-77,517-525",
+            "testbeds/metropolis/router/backbone/router_ot_wan.sh:34-56",
+            "testbeds/metropolis/router/locations/router_raw_water.sh:28-40"
+          ],
+          "defensive_observable": "TCP/502 on the station LAN, VTI counters, tunnel/OSPF/BFD logs."
+        }
+      ],
+      "limits": "No exploited flaw or physical process outcome is demonstrated."
+    },
+    {
+      "id": "BT-02",
+      "family": "mqtt",
+      "rank": 2,
+      "assumed_foothold": "Conditional compromise of MET-HMI-DOSING-01 (10.20.51.10); broker credentials/authorization are not assumed.",
+      "candidate_nodes": [
+        "MET-HMI-DOSING-01 10.20.51.10",
+        "MET-MQTT-BROKER-01 10.20.23.10",
+        "MET-SCADA-01 10.20.20.10"
+      ],
+      "movement_summary": "HMI-subnet to broker TCP/1883 is permitted. Publish to another cell or high-rate traffic is possible at the network layer, while broker authentication, topic ACLs, and subscriber acceptance are unknown. Engineering-subnet broker access is unmatched and unknown.",
+      "protocols": [
+        "MQTT TCP/1883"
+      ],
+      "possible_effect": "If the broker accepts unauthorized cross-cell command topics, command/telemetry integrity could change; high-volume publishes could disturb broker availability.",
+      "evidence": [
+        "testbeds/metropolis/datasets/water_treatment_v1/device_instances/initial_devices.yaml:389-411,504-529",
+        "testbeds/metropolis/datasets/water_treatment_v1/topology/firewall-policy.yaml:12-28",
+        "testbeds/metropolis/datasets/water_treatment_v1/topology/links.yaml:278-323,637-644",
+        "scripts/attacks/scenarios/v1.json:4-8"
+      ],
+      "steps": [
+        {
+          "phase": "access",
+          "source": "MET-HMI-DOSING-01 10.20.51.10",
+          "destination": "MET-MQTT-BROKER-01 10.20.23.10",
+          "protocol_port": "TCP/1883",
+          "status": "permitted",
+          "prerequisite": "Conditional HMI compromise; broker credentials and ACL checks remain separate.",
+          "attack": [],
+          "owasp": [],
+          "evidence": [
+            "testbeds/metropolis/datasets/water_treatment_v1/device_instances/initial_devices.yaml:389-396,504-529",
+            "testbeds/metropolis/datasets/water_treatment_v1/topology/firewall-policy.yaml:21-25",
+            "testbeds/metropolis/datasets/water_treatment_v1/topology/links.yaml:278-323,637-644"
+          ],
+          "defensive_observable": "MQTT CONNECT/auth results by client and source IP."
+        },
+        {
+          "phase": "cross-cell publish",
+          "source": "MET-HMI-DOSING-01 10.20.51.10",
+          "destination": "Broker 10.20.23.10 \u2192 SCADA 10.20.20.10",
+          "protocol_port": "MQTT TCP/1883",
+          "status": "unknown under declared settings",
+          "prerequisite": "Network path to broker is allowed, but cross-cell publish authorization and application effect are not specified by the selected YAML.",
+          "attack": [
+            {
+              "matrix": "ICS",
+              "id": "T1692.001",
+              "name": "Unauthorized Command",
+              "url": "https://attack.mitre.org/techniques/T1692/001/"
+            }
+          ],
+          "owasp": [],
+          "evidence": [
+            "testbeds/metropolis/datasets/water_treatment_v1/device_instances/initial_devices.yaml:404-411,504-529",
+            "testbeds/metropolis/datasets/water_treatment_v1/topology/firewall-policy.yaml:15-25"
+          ],
+          "defensive_observable": "Broker topic, client identity, publish rate, ACL denies, subscriber/SCADA acknowledgments."
+        },
+        {
+          "phase": "service pressure",
+          "source": "MET-HMI-DOSING-01 10.20.51.10",
+          "destination": "MET-MQTT-BROKER-01 10.20.23.10",
+          "protocol_port": "MQTT TCP/1883",
+          "status": "permitted",
+          "prerequisite": "High-rate traffic is assumed; no throughput/capacity or outage evidence is declared.",
+          "attack": [
+            {
+              "matrix": "ICS",
+              "id": "T0814",
+              "name": "Denial of Service",
+              "url": "https://attack.mitre.org/techniques/T0814/"
+            }
+          ],
+          "owasp": [],
+          "evidence": [
+            "testbeds/metropolis/datasets/water_treatment_v1/topology/firewall-policy.yaml:21-25",
+            "scripts/attacks/scenarios/v1.json:6-8"
+          ],
+          "defensive_observable": "Connection and publish bursts, broker errors, dropped subscriptions."
+        }
+      ],
+      "limits": "The inventory declares MQTT roles/topics, but this review does not establish working credentials, broker ACL enforcement, or delivery of a malicious command."
+    },
+    {
+      "id": "BT-03",
+      "family": "scanner",
+      "rank": 3,
+      "assumed_foothold": "Conditional compromise of MET-CONTROL-CLIENT-01 (10.20.21.20) on the engineering subnet.",
+      "candidate_nodes": [
+        "MET-CONTROL-CLIENT-01 10.20.21.20",
+        "MET-PLC-INTAKE-01 10.20.10.10",
+        "MET-SENSOR-INTAKE-01 10.20.10.20",
+        "MET-PLC-DOSING-01 10.20.11.10"
+      ],
+      "movement_summary": "Engineering-subnet TCP/502 and UDP/5683 to intake are permitted. A scan toward dosing TCP/502 has no matching baseline allow and is unknown under the declared settings.",
+      "protocols": [
+        "TCP/502",
+        "UDP/5683",
+        "other scan probes unspecified"
+      ],
+      "possible_effect": "Service and address discovery could guide a later attack; scan alone has no declared OT effect.",
+      "evidence": [
+        "testbeds/metropolis/datasets/water_treatment_v1/device_instances/initial_devices.yaml:6-13,27-34,362-369,639-656",
+        "testbeds/metropolis/datasets/water_treatment_v1/topology/firewall-policy.yaml:13-14",
+        "scripts/attacks/scenarios/v1.json:4-5",
+        "testbeds/metropolis/datasets/water_treatment_v1/topology/links.yaml:194-323,325-377,583-590"
+      ],
+      "steps": [
+        {
+          "phase": "discovery",
+          "source": "MET-CONTROL-CLIENT-01 10.20.21.20",
+          "destination": "MET-PLC-INTAKE-01 10.20.10.10",
+          "protocol_port": "TCP/502",
+          "status": "permitted",
+          "prerequisite": "Conditional control-client compromise; routing/firewall applied.",
+          "attack": [
+            {
+              "matrix": "ICS",
+              "id": "T0846.001",
+              "name": "Port Scan",
+              "url": "https://attack.mitre.org/techniques/T0846/001/"
+            }
+          ],
+          "owasp": [],
+          "evidence": [
+            "testbeds/metropolis/datasets/water_treatment_v1/device_instances/initial_devices.yaml:6-13,639-646",
+            "testbeds/metropolis/datasets/water_treatment_v1/topology/firewall-policy.yaml:13",
+            "testbeds/metropolis/datasets/water_treatment_v1/topology/links.yaml:194-204,284-293,583-590"
+          ],
+          "defensive_observable": "Unusual Modbus connection attempts from engineering subnet."
+        },
+        {
+          "phase": "discovery",
+          "source": "MET-CONTROL-CLIENT-01 10.20.21.20",
+          "destination": "MET-SENSOR-INTAKE-01 10.20.10.20",
+          "protocol_port": "UDP/5683",
+          "status": "permitted",
+          "prerequisite": "Conditional compromise; routing/firewall applied.",
+          "attack": [
+            {
+              "matrix": "ICS",
+              "id": "T0846.001",
+              "name": "Port Scan",
+              "url": "https://attack.mitre.org/techniques/T0846/001/"
+            }
+          ],
+          "owasp": [],
+          "evidence": [
+            "testbeds/metropolis/datasets/water_treatment_v1/device_instances/initial_devices.yaml:362-369,639-656",
+            "testbeds/metropolis/datasets/water_treatment_v1/topology/firewall-policy.yaml:14"
+          ],
+          "defensive_observable": "CoAP requests across engineering/intake boundary."
+        },
+        {
+          "phase": "boundary probe",
+          "source": "MET-CONTROL-CLIENT-01 10.20.21.20",
+          "destination": "MET-PLC-DOSING-01 10.20.11.10",
+          "protocol_port": "TCP/502",
+          "status": "unknown under declared settings",
+          "prerequisite": "No matching engineering-to-dosing flow; effective default action absent from selected config.",
+          "attack": [
+            {
+              "matrix": "ICS",
+              "id": "T0846.001",
+              "name": "Port Scan",
+              "url": "https://attack.mitre.org/techniques/T0846/001/"
+            }
+          ],
+          "owasp": [],
+          "evidence": [
+            "testbeds/metropolis/datasets/water_treatment_v1/device_instances/initial_devices.yaml:27-34,639-646",
+            "testbeds/metropolis/datasets/water_treatment_v1/topology/firewall-policy.yaml:1-47",
+            "testbeds/metropolis/router/backbone/router_ot_dmz.sh:2-4"
+          ],
+          "defensive_observable": "Attempted TCP/502 SYNs and any generated firewall drop logs."
+        }
+      ],
+      "limits": "Catalog identifies two scan themes but not an exact source placement, target list, or probe ports; chosen paths are conditional examples."
+    },
+    {
+      "id": "BT-04",
+      "family": "ssh",
+      "rank": 4,
+      "assumed_foothold": "Conditional compromise of MET-CONTROL-CLIENT-01 (10.20.21.20) or another attached engineering-subnet host.",
+      "candidate_nodes": [
+        "MET-CONTROL-CLIENT-01 10.20.21.20",
+        "MET-ENGINEERING-01 10.20.21.10",
+        "MET-PLC-INTAKE-01 10.20.10.10"
+      ],
+      "movement_summary": "Control client to engineering workstation is same-subnet and bypasses routed firewall. If valid SSH credentials yield control of the workstation, the engineering subnet has permitted TCP/502 to intake. No SSH listening port or successful credential attack is established.",
+      "protocols": [
+        "SSH (port unspecified)",
+        "Modbus TCP/502"
+      ],
+      "possible_effect": "A successful lateral move could expose permitted intake control traffic; an authentication attempt alone has no OT effect.",
+      "evidence": [
+        "testbeds/metropolis/datasets/water_treatment_v1/device_instances/initial_devices.yaml:591-598,639-646",
+        "testbeds/metropolis/datasets/water_treatment_v1/topology/firewall-policy.yaml:1-3,9-12",
+        "testbeds/metropolis/datasets/water_treatment_v1/topology/links.yaml:565-590",
+        "scripts/attacks/scenarios/v1.json:9"
+      ],
+      "steps": [
+        {
+          "phase": "credential access",
+          "source": "MET-CONTROL-CLIENT-01 10.20.21.20",
+          "destination": "MET-ENGINEERING-01 10.20.21.10",
+          "protocol_port": "SSH / declared port unspecified",
+          "status": "permitted",
+          "prerequisite": "Same subnet and attached segment; SSH service available and credentials guessed are separate assumptions.",
+          "attack": [
+            {
+              "matrix": "Enterprise",
+              "id": "T1110.001",
+              "name": "Password Guessing",
+              "url": "https://attack.mitre.org/techniques/T1110/001/"
+            }
+          ],
+          "owasp": [],
+          "evidence": [
+            "testbeds/metropolis/datasets/water_treatment_v1/device_instances/initial_devices.yaml:591-598,639-646",
+            "testbeds/metropolis/datasets/water_treatment_v1/topology/links.yaml:565-590",
+            "testbeds/metropolis/datasets/water_treatment_v1/topology/firewall-policy.yaml:1-3"
+          ],
+          "defensive_observable": "Failed/successful SSH authentications and source IP; local host logs."
+        },
+        {
+          "phase": "lateral access",
+          "source": "MET-CONTROL-CLIENT-01 10.20.21.20",
+          "destination": "MET-ENGINEERING-01 10.20.21.10",
+          "protocol_port": "SSH / declared port unspecified",
+          "status": "permitted",
+          "prerequisite": "Valid credentials and service acceptance are required.",
+          "attack": [
+            {
+              "matrix": "Enterprise",
+              "id": "T1021.004",
+              "name": "SSH",
+              "url": "https://attack.mitre.org/techniques/T1021/004/"
+            }
+          ],
+          "owasp": [],
+          "evidence": [
+            "testbeds/metropolis/datasets/water_treatment_v1/device_instances/initial_devices.yaml:591-598,639-646",
+            "testbeds/metropolis/datasets/water_treatment_v1/topology/links.yaml:565-590"
+          ],
+          "defensive_observable": "Interactive SSH session and command/audit logs."
+        },
+        {
+          "phase": "post-compromise reach",
+          "source": "MET-ENGINEERING-01 10.20.21.10",
+          "destination": "MET-PLC-INTAKE-01 10.20.10.10",
+          "protocol_port": "TCP/502",
+          "status": "permitted",
+          "prerequisite": "Conditional workstation control; Modbus operation authorization is not established.",
+          "attack": [],
+          "owasp": [],
+          "evidence": [
+            "testbeds/metropolis/datasets/water_treatment_v1/device_instances/initial_devices.yaml:6-13,591-598",
+            "testbeds/metropolis/datasets/water_treatment_v1/topology/firewall-policy.yaml:13"
+          ],
+          "defensive_observable": "New Modbus connections from workstation; PLC request patterns."
+        }
+      ],
+      "limits": "The SSH service is declared but its port, authentication policy and exploitability are not established by selected YAML."
+    },
+    {
+      "id": "BT-05",
+      "family": "coap",
+      "rank": 5,
+      "assumed_foothold": "Conditional compromise of MET-SENSOR-INTAKE-01 (10.20.10.20), or separate on-path control for a response-spoofing variant.",
+      "candidate_nodes": [
+        "MET-SENSOR-INTAKE-01 10.20.10.20",
+        "MET-CONTROL-CLIENT-01 10.20.21.20"
+      ],
+      "movement_summary": "Engineering-to-intake UDP/5683 requests are permitted. A compromised sensor could answer a legitimate poll; a third-party forged response needs a position or redirection that the configuration does not establish.",
+      "protocols": [
+        "CoAP UDP/5683"
+      ],
+      "possible_effect": "False intake status may mislead a reader, contingent on spoofed data being accepted and used.",
+      "evidence": [
+        "testbeds/metropolis/datasets/water_treatment_v1/device_instances/initial_devices.yaml:362-387,639-656",
+        "testbeds/metropolis/datasets/water_treatment_v1/topology/firewall-policy.yaml:14",
+        "testbeds/metropolis/datasets/water_treatment_v1/topology/links.yaml:325-377,583-590",
+        "scripts/attacks/scenarios/v1.json:11"
+      ],
+      "steps": [
+        {
+          "phase": "request path",
+          "source": "MET-CONTROL-CLIENT-01 10.20.21.20",
+          "destination": "MET-SENSOR-INTAKE-01 10.20.10.20",
+          "protocol_port": "UDP/5683",
+          "status": "permitted",
+          "prerequisite": "Normal polling or conditional client compromise; routing/firewall applied.",
+          "attack": [],
+          "owasp": [],
+          "evidence": [
+            "testbeds/metropolis/datasets/water_treatment_v1/device_instances/initial_devices.yaml:362-369,639-656",
+            "testbeds/metropolis/datasets/water_treatment_v1/topology/firewall-policy.yaml:14"
+          ],
+          "defensive_observable": "CoAP request cadence, source and destination."
+        },
+        {
+          "phase": "spoof reporting",
+          "source": "Compromised sensor 10.20.10.20",
+          "destination": "MET-CONTROL-CLIENT-01 10.20.21.20",
+          "protocol_port": "CoAP response to UDP/5683 request",
+          "status": "unknown under declared settings",
+          "prerequisite": "Sensor control and acceptance of falsified response are assumed; reverse/established-flow behavior is not stated in selected policy.",
+          "attack": [
+            {
+              "matrix": "ICS",
+              "id": "T1692.002",
+              "name": "Spoof Reporting",
+              "url": "https://attack.mitre.org/techniques/T1692/002/"
+            }
+          ],
+          "owasp": [],
+          "evidence": [
+            "testbeds/metropolis/datasets/water_treatment_v1/device_instances/initial_devices.yaml:362-387,639-656",
+            "testbeds/metropolis/datasets/water_treatment_v1/topology/firewall-policy.yaml:14"
+          ],
+          "defensive_observable": "Response payload/timing inconsistent with sensor or PLC telemetry."
+        }
+      ],
+      "limits": "A network man-in-the-middle placement or ability to spoof another host is not established."
+    },
+    {
+      "id": "BT-06",
+      "family": "hping3",
+      "rank": 6,
+      "assumed_foothold": "Conditional compromise of MET-OPS-ADMIN-01 (10.20.20.20).",
+      "candidate_nodes": [
+        "MET-OPS-ADMIN-01 10.20.20.20",
+        "MET-PLC-INTAKE-01 10.20.10.10"
+      ],
+      "movement_summary": "SCADA-subnet TCP/502 to intake is permitted, including from the operations-admin host. Arbitrary other probe protocols/ports have no matching allow and are unknown under declared settings.",
+      "protocols": [
+        "TCP/502 example; catalog leaves traffic shape/target unspecified"
+      ],
+      "possible_effect": "High-rate traffic might degrade PLC communications if endpoint or path capacity is exceeded; no capacity or actual denial is demonstrated.",
+      "evidence": [
+        "testbeds/metropolis/datasets/water_treatment_v1/device_instances/initial_devices.yaml:6-13,623-630",
+        "testbeds/metropolis/datasets/water_treatment_v1/topology/firewall-policy.yaml:7-12",
+        "scripts/attacks/scenarios/v1.json:12"
+      ],
+      "steps": [
+        {
+          "phase": "traffic generation",
+          "source": "MET-OPS-ADMIN-01 10.20.20.20",
+          "destination": "MET-PLC-INTAKE-01 10.20.10.10",
+          "protocol_port": "TCP/502",
+          "status": "permitted",
+          "prerequisite": "Conditional compromise and traffic directed to allowed port; high rate is an assumed variant.",
+          "attack": [
+            {
+              "matrix": "ICS",
+              "id": "T0814",
+              "name": "Denial of Service",
+              "url": "https://attack.mitre.org/techniques/T0814/"
+            }
+          ],
+          "owasp": [],
+          "evidence": [
+            "testbeds/metropolis/datasets/water_treatment_v1/device_instances/initial_devices.yaml:6-13,623-630",
+            "testbeds/metropolis/datasets/water_treatment_v1/topology/firewall-policy.yaml:7-12"
+          ],
+          "defensive_observable": "Connection/packet-rate surge and PLC timeout counters."
+        },
+        {
+          "phase": "other-port probe",
+          "source": "MET-OPS-ADMIN-01 10.20.20.20",
+          "destination": "MET-PLC-INTAKE-01 10.20.10.10",
+          "protocol_port": "Other transport/port unspecified",
+          "status": "unknown under declared settings",
+          "prerequisite": "No matching flow or effective default action shown.",
+          "attack": [],
+          "owasp": [],
+          "evidence": [
+            "testbeds/metropolis/datasets/water_treatment_v1/topology/firewall-policy.yaml:1-47",
+            "scripts/attacks/scenarios/v1.json:12"
+          ],
+          "defensive_observable": "Any drops, unexpected ingress traffic, host resource pressure."
+        }
+      ],
+      "limits": "The catalog does not specify a target, traffic profile, or measured packet-processing limit."
+    },
+    {
+      "id": "BT-07",
+      "family": "mirai",
+      "rank": 7,
+      "assumed_foothold": "Conditional compromised MET-SENSOR-INTAKE-01 (10.20.10.20) as a local Telnet-probe source; infection or code execution on the legacy gateway is not assumed.",
+      "candidate_nodes": [
+        "MET-SENSOR-INTAKE-01 10.20.10.20",
+        "MET-LEGACY-GATEWAY-01 10.20.10.30",
+        "MET-PLC-INTAKE-01 10.20.10.10",
+        "MET-MIRAI-CNC-01 10.99.10.10"
+      ],
+      "movement_summary": "Sensor-to-legacy gateway Telnet is same intake VLAN; an authenticated/compromised gateway could reach the intake PLC locally. Gateway-to-attack-lab C2 is unmatched and unknown; alternative outside C2 has no declared route. Bundled bot/CNC ports conflict.",
+      "protocols": [
+        "Telnet (port unspecified for gateway)",
+        "Modbus TCP/502",
+        "C2 port uncertain"
+      ],
+      "possible_effect": "A compromised local gateway might disrupt or manipulate intake services; no malware execution or OT effect is established.",
+      "evidence": [
+        "testbeds/metropolis/datasets/water_treatment_v1/device_instances/initial_devices.yaml:6-13,362-369,660-667,752-766,814-829",
+        "testbeds/metropolis/datasets/water_treatment_v1/topology/links.yaml:325-377,675-723",
+        "testbeds/metropolis/datasets/water_treatment_v1/topology/firewall-policy.yaml:1-47",
+        "scripts/attacks/scenarios/v1.json:13-14"
+      ],
+      "steps": [
+        {
+          "phase": "credential access",
+          "source": "Compromised sensor 10.20.10.20",
+          "destination": "MET-LEGACY-GATEWAY-01 10.20.10.30",
+          "protocol_port": "Telnet / declared port unspecified",
+          "status": "permitted",
+          "prerequisite": "Same-VLAN path exists; service authentication, vulnerable credentials and payload execution remain unproven.",
+          "attack": [
+            {
+              "matrix": "Enterprise",
+              "id": "T1110.001",
+              "name": "Password Guessing",
+              "url": "https://attack.mitre.org/techniques/T1110/001/"
+            },
+            {
+              "matrix": "ICS",
+              "id": "T0886",
+              "name": "Remote Services",
+              "url": "https://attack.mitre.org/techniques/T0886/"
+            }
+          ],
+          "owasp": [],
+          "evidence": [
+            "testbeds/metropolis/datasets/water_treatment_v1/device_instances/initial_devices.yaml:362-369,660-667",
+            "testbeds/metropolis/datasets/water_treatment_v1/topology/links.yaml:325-377",
+            "testbeds/metropolis/datasets/water_treatment_v1/topology/firewall-policy.yaml:1-3"
+          ],
+          "defensive_observable": "Telnet login attempts and gateway authentication logs."
+        },
+        {
+          "phase": "local movement",
+          "source": "Conditionally compromised gateway 10.20.10.30",
+          "destination": "MET-PLC-INTAKE-01 10.20.10.10",
+          "protocol_port": "TCP/502",
+          "status": "permitted",
+          "prerequisite": "Actual gateway compromise and tooling for Modbus traffic are assumed.",
+          "attack": [],
+          "owasp": [],
+          "evidence": [
+            "testbeds/metropolis/datasets/water_treatment_v1/device_instances/initial_devices.yaml:6-13,660-667",
+            "testbeds/metropolis/datasets/water_treatment_v1/topology/links.yaml:325-377",
+            "testbeds/metropolis/datasets/water_treatment_v1/topology/firewall-policy.yaml:1-3"
+          ],
+          "defensive_observable": "New PLC TCP/502 source at gateway IP; command requests."
+        },
+        {
+          "phase": "command and control",
+          "source": "Conditionally compromised gateway 10.20.10.30",
+          "destination": "MET-MIRAI-CNC-01 10.99.10.10",
+          "protocol_port": "C2/TCP; control port inconsistent",
+          "status": "unknown under declared settings",
+          "prerequisite": "No baseline intake-to-attack-lab allow, no effective default action, and declared bot/CNC port mismatch.",
+          "attack": [],
+          "owasp": [],
+          "evidence": [
+            "testbeds/metropolis/datasets/water_treatment_v1/device_instances/initial_devices.yaml:752-766,814-829",
+            "testbeds/metropolis/datasets/water_treatment_v1/topology/firewall-policy.yaml:7-47",
+            "testbeds/metropolis/datasets/water_treatment_v1/topology/links.yaml:675-723"
+          ],
+          "defensive_observable": "Attempted cross-zone connections, firewall logs if configured."
+        }
+      ],
+      "limits": "Only the legacy gateway declares Telnet in the selected inventory. The catalog is a family cue, not proof of a working Mirai infection; the actual control infrastructure could differ."
+    },
+    {
+      "id": "BT-08",
+      "family": "merlin",
+      "rank": 8,
+      "assumed_foothold": "Conditional compromised MET-MERLIN-AGENT-01 (10.99.10.21) for the declared lab control path; a real-world OT foothold would require separate evidence.",
+      "candidate_nodes": [
+        "MET-MERLIN-AGENT-01 10.99.10.21",
+        "MET-MERLIN-CNC-01 10.99.10.20",
+        "MET-RDP-DMZ-01 10.20.40.20"
+      ],
+      "movement_summary": "Agent and CNC are same attack-lab segment, so local C2 is permitted at the network layer. Attack-lab to DMZ RDP/HTTPS has no baseline allow and is unknown under declared settings. External C2 reachability is not declared.",
+      "protocols": [
+        "HTTPS TCP/8443 for lab C2",
+        "TCP/3389 or TCP/443 candidate DMZ services"
+      ],
+      "possible_effect": "Control of a lab agent alone has no demonstrated OT effect; movement toward a DMZ relay would need a permitted path and separate compromise.",
+      "evidence": [
+        "testbeds/metropolis/datasets/water_treatment_v1/device_instances/initial_devices.yaml:720-733,834-866",
+        "testbeds/metropolis/datasets/water_treatment_v1/topology/links.yaml:725-753",
+        "testbeds/metropolis/datasets/water_treatment_v1/topology/firewall-policy.yaml:7-47",
+        "scripts/attacks/scenarios/v1.json:15"
+      ],
+      "steps": [
+        {
+          "phase": "command and control",
+          "source": "MET-MERLIN-AGENT-01 10.99.10.21",
+          "destination": "MET-MERLIN-CNC-01 10.99.10.20",
+          "protocol_port": "HTTPS TCP/8443",
+          "status": "permitted",
+          "prerequisite": "Both are attached to the attack-lab switch; service behavior and successful check-in are unverified.",
+          "attack": [
+            {
+              "matrix": "Enterprise",
+              "id": "T1071.001",
+              "name": "Web Protocols",
+              "url": "https://attack.mitre.org/techniques/T1071/001/"
+            }
+          ],
+          "owasp": [],
+          "evidence": [
+            "testbeds/metropolis/datasets/water_treatment_v1/device_instances/initial_devices.yaml:834-866",
+            "testbeds/metropolis/datasets/water_treatment_v1/topology/links.yaml:725-753",
+            "testbeds/metropolis/datasets/water_treatment_v1/topology/firewall-policy.yaml:1-3"
+          ],
+          "defensive_observable": "Local lab HTTPS connections, agent/CNC service logs."
+        },
+        {
+          "phase": "movement boundary",
+          "source": "MET-MERLIN-AGENT-01 10.99.10.21",
+          "destination": "MET-RDP-DMZ-01 10.20.40.20",
+          "protocol_port": "TCP/3389 or TCP/443",
+          "status": "unknown under declared settings",
+          "prerequisite": "No attack-lab-source allow; selected files do not establish default deny. Service exploitation is not established.",
+          "attack": [],
+          "owasp": [],
+          "evidence": [
+            "testbeds/metropolis/datasets/water_treatment_v1/device_instances/initial_devices.yaml:720-733,852-866",
+            "testbeds/metropolis/datasets/water_treatment_v1/topology/firewall-policy.yaml:7-47",
+            "testbeds/metropolis/datasets/water_treatment_v1/topology/links.yaml:137-155,664-672,745-753"
+          ],
+          "defensive_observable": "Cross-boundary SYNs, firewall logs, DMZ authentication attempts."
+        },
+        {
+          "phase": "alternate infrastructure",
+          "source": "Hypothetical compromised OT host",
+          "destination": "External C2 (no declared IP)",
+          "protocol_port": "HTTPS port unknown",
+          "status": "unknown under declared settings",
+          "prerequisite": "No external destination, route or ingress/egress policy in selected configuration.",
+          "attack": [
+            {
+              "matrix": "Enterprise",
+              "id": "T1071.001",
+              "name": "Web Protocols",
+              "url": "https://attack.mitre.org/techniques/T1071/001/"
+            }
+          ],
+          "owasp": [],
+          "evidence": [
+            "testbeds/metropolis/datasets/water_treatment_v1/topology/address-plan.yaml:167-208",
+            "testbeds/metropolis/datasets/water_treatment_v1/topology/firewall-policy.yaml:7-47",
+            "scripts/attacks/scenarios/v1.json:15"
+          ],
+          "defensive_observable": "Potential egress telemetry if a live route exists; none established in this review."
+        }
+      ],
+      "limits": "Bundled Merlin nodes only show a lab control example. No initial OT foothold, internet path, transfer, or executable payload is established."
+    },
+    {
+      "id": "BT-09",
+      "family": "external",
+      "rank": 9,
+      "assumed_foothold": "Researcher-selected source is unspecified by the catalog; no compromised host is assumed as an observed fact.",
+      "candidate_nodes": [
+        "No source or destination IP specified in catalog"
+      ],
+      "movement_summary": "All network movement is unknown until source attachment, destination and transport are chosen.",
+      "protocols": [
+        "Unspecified external script/traffic"
+      ],
+      "possible_effect": "Cannot infer an OT effect from the catalog entry alone.",
+      "evidence": [
+        "scripts/attacks/scenarios/v1.json:16",
+        "testbeds/metropolis/datasets/water_treatment_v1/topology/address-plan.yaml:7-208",
+        "testbeds/metropolis/datasets/water_treatment_v1/topology/firewall-policy.yaml:7-47"
+      ],
+      "steps": [
+        {
+          "phase": "source placement",
+          "source": "Unspecified researcher-selected source",
+          "destination": "Unspecified destination",
+          "protocol_port": "Unspecified",
+          "status": "unknown under declared settings",
+          "prerequisite": "Source subnet, target and protocol are absent from catalog.",
+          "attack": [],
+          "owasp": [],
+          "evidence": [
+            "scripts/attacks/scenarios/v1.json:16"
+          ],
+          "defensive_observable": "Select capture point and confirm source IP before interpretation."
+        }
+      ],
+      "limits": "No ATT&CK/OWASP mapping is justified without method and target detail."
+    }
+  ],
+  "unresolved_configuration_gaps": [
+    "No live GNS3, routing, firewall, service or exploit validation.",
+    "Effective generated firewall default action is absent from selected configuration.",
+    "External shell catalog entry lacks source, target and transport.",
+    "Mirai bot/CNC declared control ports conflict."
+  ],
+  "live_verified": false
+}

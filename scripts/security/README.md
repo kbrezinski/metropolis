@@ -52,10 +52,11 @@ requests may finish above that estimate.
 | Authentication | Codex ChatGPT sign-in; `--auth api-key` uses environment-provided `OPENAI_API_KEY` or `CODEX_API_KEY` |
 | Model | `gpt-6-sol`; override with `--model MODEL_ID` |
 | Access program | Runner selects `daybreak_blue`; requires an approved identity/project and model access |
-| Results root | Sibling `../metropolis-security-results/`; override with `--output-root PATH` |
+| Results root | Repository `scripts/agent-blue/security-reviews/`; override with `--output-root PATH` |
 | Run folder | UTC time and Git short revision |
 
-Results must be **outside the Git worktree**. Preflight does not verify
+Results are saved in the Git worktree by default; review them before committing.
+An explicit `--output-root` may select another location. Preflight does not verify
 authentication or access entitlement. Keep keys in the environment.
 See [OpenAI's Daybreak guidance](https://learn.chatgpt.com/docs/cyber-safety)
 for current access requirements.

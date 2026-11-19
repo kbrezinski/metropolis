@@ -1,0 +1,189 @@
+{
+  "review_type": "focused static blue-team kill-chain review",
+  "selected_dataset": "testbeds/metropolis/datasets/water_treatment_v1",
+  "selected_catalog": "scripts/attacks/scenarios/v1.json",
+  "created_utc": "2026-11-19T04:08:39.732849+00:00",
+  "git_revision": "4ac86bb",
+  "git_dirty": true,
+  "reviewed_inputs": [
+    {
+      "path": "scripts/attacks/scenarios/v1.json",
+      "sha256": "df81ad5f43c1718173e424b2b9ff3f9e4e31077b71f78b23ecc672f709fd4186"
+    },
+    {
+      "path": "scripts/gns3/build_topology.py",
+      "sha256": "38ea9f57583e58411a5e93d2f0ccbe23e79eaadda8cfbbb734d9aa3f96869d19"
+    },
+    {
+      "path": "scripts/gns3/firewall_policy.py",
+      "sha256": "9a053512197f1347f05643b715ece9ae97cce3674244a48b61722a30564e0ec4"
+    },
+    {
+      "path": "scripts/gns3/mqtt_acl.py",
+      "sha256": "10bf966499fc17fabdef759e036a199708c970191338904b75304a16db651306"
+    },
+    {
+      "path": "testbeds/metropolis/datasets/water_treatment_v1/device_instances/infrastructure.yaml",
+      "sha256": "b18951a62710bfb9abc2b99a56689d8557e93a8d7cc3d959c4efc3dc6d09f150"
+    },
+    {
+      "path": "testbeds/metropolis/datasets/water_treatment_v1/device_instances/initial_devices.yaml",
+      "sha256": "3572ef4aa55114215d53ee913dd6dc2f69752cc09b7723c9501c95c659e53b57"
+    },
+    {
+      "path": "testbeds/metropolis/datasets/water_treatment_v1/protocol_profiles/modbus_actions_v1.yaml",
+      "sha256": "b858192b01e1675a9a9791becd5bfeedf9573190fa61594e2037d0493b261ed6"
+    },
+    {
+      "path": "testbeds/metropolis/datasets/water_treatment_v1/topology/address-plan.yaml",
+      "sha256": "d6267dd1c8d190feb300f3b97d7e1e857a030967c0a4f786e01d420841e85d69"
+    },
+    {
+      "path": "testbeds/metropolis/datasets/water_treatment_v1/topology/firewall-policy.yaml",
+      "sha256": "924458044c276e02657b55c23302f77c88e9de89c581b7c4b26b7932ce2f4038"
+    },
+    {
+      "path": "testbeds/metropolis/datasets/water_treatment_v1/topology/links.yaml",
+      "sha256": "5810eed1872f33b0e936bc72870737e3d6a46aef7e4419e9e17dca702d9e9d2e"
+    },
+    {
+      "path": "testbeds/metropolis/datasets/water_treatment_v1/topology/resource-baseline.yaml",
+      "sha256": "ce4e589d2b6e78384fd7c4380cb930966b546b92af781b120a0c536672af4479"
+    },
+    {
+      "path": "testbeds/metropolis/devices/controllers/plc/disinfection_controller.py",
+      "sha256": "d6d5ccbc1b34d72745ed7f690b9ca1de7edd129a163491c9dc667b1097cdb194"
+    },
+    {
+      "path": "testbeds/metropolis/devices/controllers/plc/filtration_controller.py",
+      "sha256": "f2dcc0a94a682e60181167770f9300cb2adeb1ec1b611b30573a10bb3fcf9e34"
+    },
+    {
+      "path": "testbeds/metropolis/devices/controllers/plc/modbus_controller.py",
+      "sha256": "07d08691c77879b5ce4bab6c23225c31c77265d728afd324f82ae7037b2e5f20"
+    },
+    {
+      "path": "testbeds/metropolis/devices/controllers/plc/process_model.py",
+      "sha256": "59ce6739572b9191fa0811625f332083cbf88ea2383ad7084d13036ace5777e8"
+    },
+    {
+      "path": "testbeds/metropolis/devices/controllers/plc/remote_site_controller.py",
+      "sha256": "6a51c28446b1ce601e9834696b6c8cc8f4b4b9ab0b45b322535d3a959e7b8f82"
+    },
+    {
+      "path": "testbeds/metropolis/devices/field/legacy_gateway/start_telnet.sh",
+      "sha256": "b4c8f436ef4b969b9c53cb9a7b18cb49dbfbcf8182e3b9ba9aa064a217d6d9c2"
+    },
+    {
+      "path": "testbeds/metropolis/devices/field/level_instrument/level_instrument.py",
+      "sha256": "46332bd14a266800ebe65997dc370e459594974d9b7db8a526d1d6ef6ba0a71d"
+    },
+    {
+      "path": "testbeds/metropolis/devices/operations/control_client/control_client.py",
+      "sha256": "9c6005153405d5d4eb5909d795d95e97292efbfd7317dab6cb3ba19215f426ab"
+    },
+    {
+      "path": "testbeds/metropolis/devices/operations/hmi/hmi_simulator.py",
+      "sha256": "fc6096c84ad0700c5dd50c72ad52d53b0740a332ee9dbc5254c9375ae006b5d3"
+    },
+    {
+      "path": "testbeds/metropolis/devices/operations/hmi/hmi_web.py",
+      "sha256": "28d65a69633c335a7c67dd9718051b2e03e3d9ce3de1ce44a210134a0ee5b520"
+    },
+    {
+      "path": "testbeds/metropolis/devices/operations/scada/scada_collector.py",
+      "sha256": "7baab67910e3c89dd00cf1377a511f1099e8a796dc5daa2442a78f49e6691c2a"
+    },
+    {
+      "path": "testbeds/metropolis/devices/runtime/ethernet_ip.py",
+      "sha256": "f5efb92de5c2d0bf0258dea4529f289bc814ab3efa670b93d0597f51a0b5d720"
+    },
+    {
+      "path": "testbeds/metropolis/devices/services/mqtt_broker/mosquitto.conf",
+      "sha256": "0e606f0dabb6dd3203c699f486bef33dd658b56decf1283f156052765f5a2c5a"
+    },
+    {
+      "path": "testbeds/metropolis/router/backbone/router_ot_core.sh",
+      "sha256": "191fb0ed42d66aed457085a0e58d24287cf6748d8a098de7e0da1b8a713d0393"
+    },
+    {
+      "path": "testbeds/metropolis/router/backbone/router_ot_wan.sh",
+      "sha256": "17607debafc81fcefd03379d62c560af4c78061fb45eeb43a6b2f8bc380e3698"
+    },
+    {
+      "path": "testbeds/metropolis/router/locations/router_plant.sh",
+      "sha256": "ce8a77d19e13247443cfdc97f845c56aaecedd8395cf736e1e39a7744bac4431"
+    },
+    {
+      "path": "testbeds/metropolis/router/locations/router_raw_water.sh",
+      "sha256": "3e05f9d199916fd11d2e18e64aa74c219b50c299af64aaf8394a601047ac4415"
+    }
+  ],
+  "catalog_family_coverage": {
+    "included_in_chains": [
+      "modbus",
+      "mqtt",
+      "mirai (Telnet movement only)"
+    ],
+    "screened_out": [
+      {
+        "family": "scanner",
+        "reason": "Useful discovery precursor; no standalone OT process effect in the catalog."
+      },
+      {
+        "family": "mqtt cross-cell direct publish",
+        "reason": "Compiled broker ACL grants each HMI only its own cell command topic; the selected HMI chains use the legitimate own-topic path.",
+        "evidence": [
+          "scripts/gns3/mqtt_acl.py:160-185",
+          "testbeds/metropolis/devices/services/mqtt_broker/mosquitto.conf:3-6"
+        ]
+      },
+      {
+        "family": "ssh",
+        "reason": "A credential attempt alone does not complete an OT-effect chain; stronger named paths use HMI web access or same-VLAN Telnet."
+      },
+      {
+        "family": "coap",
+        "reason": "Control client validates response framing and logs code/byte counts; it does not feed the CoAP status body into SCADA/PLC control.",
+        "evidence": [
+          "testbeds/metropolis/devices/operations/control_client/control_client.py:83-101,177-191"
+        ]
+      },
+      {
+        "family": "hping3",
+        "reason": "Reachable traffic is possible, but no measured capacity or service-loss threshold supports a process-effect claim."
+      },
+      {
+        "family": "mirai/merlin lab control",
+        "reason": "Bundled lab C2 nodes do not establish OT compromise; new attack-lab-to-OT traffic is blocked by the generated baseline.",
+        "evidence": [
+          "scripts/gns3/firewall_policy.py:701-720,783-824"
+        ]
+      },
+      {
+        "family": "external shell",
+        "reason": "Catalog gives no source, target, or transport from which to construct a defensible node-to-node path.",
+        "evidence": [
+          "scripts/attacks/scenarios/v1.json:16"
+        ]
+      }
+    ]
+  },
+  "supersedes_prior_firewall_conclusion": "scripts/agent-blue/metropolis/water_treatment_v1/20261119T034401Z_4ac86bb/scenarios.md",
+  "output_paths": {
+    "scenarios.md": "scripts/agent-blue/metropolis/water_treatment_v1/20261119T040839Z_4ac86bb/scenarios.md",
+    "scenarios.json": "scripts/agent-blue/metropolis/water_treatment_v1/20261119T040839Z_4ac86bb/scenarios.json",
+    "review-metadata.json": "scripts/agent-blue/metropolis/water_treatment_v1/20261119T040839Z_4ac86bb/review-metadata.json"
+  },
+  "status": "complete",
+  "verification_limits": [
+    "No GNS3/compute contact or live firewall readback.",
+    "No credential login or attack execution.",
+    "External ingress, active services, controller acceptance and physical process effects remain unverified."
+  ],
+  "original_output_paths": {
+    "scenarios.md": "C:\\Programming\\metropolis-security-results\\blue-team\\metropolis\\water_treatment_v1\\20261119T040839Z_4ac86bb\\scenarios.md",
+    "scenarios.json": "C:\\Programming\\metropolis-security-results\\blue-team\\metropolis\\water_treatment_v1\\20261119T040839Z_4ac86bb\\scenarios.json",
+    "review-metadata.json": "C:\\Programming\\metropolis-security-results\\blue-team\\metropolis\\water_treatment_v1\\20261119T040839Z_4ac86bb\\review-metadata.json"
+  }
+}

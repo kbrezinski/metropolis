@@ -40,7 +40,8 @@ appropriate.
 | Set shared CPU/RAM defaults and check drift | [Container resource baseline](scripts/gns3/README.md#container-resource-baseline) |
 | Find topology settings and run files | [Dataset guide](testbeds/metropolis/datasets/water_treatment_v1/README.md) |
 | Review declared network security | [Codex Security review](scripts/security/README.md) |
-| Connect the external REA tool | [REA guide](docs/rea.md) |
+| Read blue-team results | [Agent blue-team results](scripts/agent-blue/README.md) |
+| Connect the external REA tool | [REA guide](scripts/agent-red/README.md) |
 
 The sections below explain the design and workflow. The linked guides contain
 the complete commands and settings for each tool. Python installation alone
@@ -379,7 +380,7 @@ service normally looks like.
 ## Optional REA-assisted investigations
 
 To investigate software you are authorized to analyze, see the
-[REA setup and use guide](docs/rea.md). It explains how to clone the upstream
+[REA setup and use guide](scripts/agent-red/README.md). It explains how to clone the upstream
 project locally, connect its tools to Codex, and supply your own target and
 investigation question.
 

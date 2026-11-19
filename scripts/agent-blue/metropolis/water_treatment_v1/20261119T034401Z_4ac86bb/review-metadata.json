@@ -1,0 +1,95 @@
+{
+  "review_type": "declared-configuration blue-team scenario assessment",
+  "selected_dataset": "testbeds/metropolis/datasets/water_treatment_v1",
+  "selected_catalog": "scripts/attacks/scenarios/v1.json",
+  "dataset_schema_version": "1.0 address-plan/inventory/links; 2.0 firewall-policy; 1.0.0 Modbus profile",
+  "catalog_schema_version": "1.0",
+  "created_utc": "2026-11-19T03:44:01.065278+00:00",
+  "git_revision": "4ac86bb",
+  "git_dirty": true,
+  "reviewed_inputs": [
+    {
+      "path": "scripts/attacks/scenarios/v1.json",
+      "sha256": "df81ad5f43c1718173e424b2b9ff3f9e4e31077b71f78b23ecc672f709fd4186"
+    },
+    {
+      "path": "testbeds/metropolis/datasets/water_treatment_v1/device_instances/infrastructure.yaml",
+      "sha256": "b18951a62710bfb9abc2b99a56689d8557e93a8d7cc3d959c4efc3dc6d09f150"
+    },
+    {
+      "path": "testbeds/metropolis/datasets/water_treatment_v1/device_instances/initial_devices.yaml",
+      "sha256": "3572ef4aa55114215d53ee913dd6dc2f69752cc09b7723c9501c95c659e53b57"
+    },
+    {
+      "path": "testbeds/metropolis/datasets/water_treatment_v1/protocol_profiles/modbus_actions_v1.yaml",
+      "sha256": "b858192b01e1675a9a9791becd5bfeedf9573190fa61594e2037d0493b261ed6"
+    },
+    {
+      "path": "testbeds/metropolis/datasets/water_treatment_v1/topology/address-plan.yaml",
+      "sha256": "d6267dd1c8d190feb300f3b97d7e1e857a030967c0a4f786e01d420841e85d69"
+    },
+    {
+      "path": "testbeds/metropolis/datasets/water_treatment_v1/topology/firewall-policy.yaml",
+      "sha256": "924458044c276e02657b55c23302f77c88e9de89c581b7c4b26b7932ce2f4038"
+    },
+    {
+      "path": "testbeds/metropolis/datasets/water_treatment_v1/topology/links.yaml",
+      "sha256": "5810eed1872f33b0e936bc72870737e3d6a46aef7e4419e9e17dca702d9e9d2e"
+    },
+    {
+      "path": "testbeds/metropolis/datasets/water_treatment_v1/topology/resource-baseline.yaml",
+      "sha256": "ce4e589d2b6e78384fd7c4380cb930966b546b92af781b120a0c536672af4479"
+    },
+    {
+      "path": "testbeds/metropolis/router/backbone/router_ot_core.sh",
+      "sha256": "191fb0ed42d66aed457085a0e58d24287cf6748d8a098de7e0da1b8a713d0393"
+    },
+    {
+      "path": "testbeds/metropolis/router/backbone/router_ot_dmz.sh",
+      "sha256": "2891bbd81d40f661c5adbe93e68100ee6e951a7804b203e597db724c1a183d16"
+    },
+    {
+      "path": "testbeds/metropolis/router/backbone/router_ot_wan.sh",
+      "sha256": "17607debafc81fcefd03379d62c560af4c78061fb45eeb43a6b2f8bc380e3698"
+    },
+    {
+      "path": "testbeds/metropolis/router/locations/router_plant.sh",
+      "sha256": "ce8a77d19e13247443cfdc97f845c56aaecedd8395cf736e1e39a7744bac4431"
+    },
+    {
+      "path": "testbeds/metropolis/router/locations/router_raw_water.sh",
+      "sha256": "3e05f9d199916fd11d2e18e64aa74c219b50c299af64aaf8394a601047ac4415"
+    },
+    {
+      "path": "testbeds/metropolis/router/locations/router_reservoir.sh",
+      "sha256": "3f7ce7e2b8572314f5328dd29c66e824f7f42bafb8dce86f181fb06988c265b5"
+    }
+  ],
+  "catalog_families_covered": {
+    "scanner": true,
+    "mqtt": true,
+    "ssh": true,
+    "modbus": true,
+    "coap": true,
+    "hping3": true,
+    "mirai": true,
+    "merlin": true,
+    "external": true
+  },
+  "output_paths": {
+    "scenarios.md": "scripts/agent-blue/metropolis/water_treatment_v1/20261119T034401Z_4ac86bb/scenarios.md",
+    "scenarios.json": "scripts/agent-blue/metropolis/water_treatment_v1/20261119T034401Z_4ac86bb/scenarios.json",
+    "review-metadata.json": "scripts/agent-blue/metropolis/water_treatment_v1/20261119T034401Z_4ac86bb/review-metadata.json"
+  },
+  "status": "complete",
+  "limitations": [
+    "No live GNS3, routing, firewall, service or exploit validation.",
+    "Effective generated firewall default action is absent from selected configuration.",
+    "External shell catalog entry lacks source, target and transport."
+  ],
+  "original_output_paths": {
+    "scenarios.md": "C:\\Programming\\metropolis-security-results\\blue-team\\metropolis\\water_treatment_v1\\20261119T034401Z_4ac86bb\\scenarios.md",
+    "scenarios.json": "C:\\Programming\\metropolis-security-results\\blue-team\\metropolis\\water_treatment_v1\\20261119T034401Z_4ac86bb\\scenarios.json",
+    "review-metadata.json": "C:\\Programming\\metropolis-security-results\\blue-team\\metropolis\\water_treatment_v1\\20261119T034401Z_4ac86bb\\review-metadata.json"
+  }
+}

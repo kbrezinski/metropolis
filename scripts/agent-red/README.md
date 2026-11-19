@@ -48,7 +48,7 @@ malware. Follow REA's own documentation for its supported analysis workflows.
 
 If an authorized investigation produces a new executable for a Metropolis
 attack scenario, place it under the appropriate `scripts/attacks/<family>/`
-folder. Follow the [attack toolkit's contribution guidance](../scripts/attacks/README.md#adding-an-attack-artifact)
+folder. Follow the [attack toolkit's contribution guidance](../attacks/README.md#adding-an-attack-artifact)
 to give it provenance and register its scenario in the versioned catalog. The
 Codex Security review uses that catalog to recognize attack families; it does
 not inspect or execute the executable.
