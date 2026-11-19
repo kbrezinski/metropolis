@@ -115,6 +115,16 @@ DEFAULT_TASK_IDS = (
     "ot-case-11",
     "ot-case-12",
     "ot-case-13",
+    "context-diagnostic-a",
+    "context-diagnostic-b",
+    "context-restore-a",
+    "context-restore-b",
+    "context-route-a",
+    "context-route-b",
+    "context-identity-a",
+    "context-identity-b",
+    "context-dependency-a",
+    "context-dependency-b",
 )
 
 STANDALONE = "Standalone requests"
@@ -136,9 +146,9 @@ ACTION_ORDER = (
 
 _ACTION_POSITIONS = {
     ACTION_ORDER[0]: (*range(1, 7), *range(8, 12)),
-    ACTION_ORDER[1]: (12, 18, 22, 30, 31, 107),
+    ACTION_ORDER[1]: (12, 18, 22, 30, 31, 107, 116, 117),
     ACTION_ORDER[2]: (23, 24, 25),
-    ACTION_ORDER[3]: (*range(13, 18), 38, 39, 87, 91, 92, 94, 108),
+    ACTION_ORDER[3]: (*range(13, 18), 38, 39, 87, 91, 92, 94, 108, 112, 113, 120, 121),
     ACTION_ORDER[4]: (
         20,
         21,
@@ -156,6 +166,8 @@ _ACTION_POSITIONS = {
         *range(95, 105),
         110,
         111,
+        118,
+        119,
     ),
     ACTION_ORDER[5]: (
         7,
@@ -176,6 +188,8 @@ _ACTION_POSITIONS = {
         105,
         106,
         109,
+        114,
+        115,
     ),
     ACTION_ORDER[6]: (88, 89),
 }
@@ -313,6 +327,8 @@ def display_labels(task_id: str, *, suite_id: str = "default") -> tuple[str, str
         return LEGACY, LEGACY, ""
     if 56 <= position <= 60 or 95 <= position <= 104:
         return PLC, _ACTION_BY_ID[task_id], ""
+    if position >= 112:
+        return OBSERVATION, _ACTION_BY_ID[task_id], "Observation"
     if position <= 25 or 87 <= position <= 94 or position >= 107:
         return STANDALONE, _ACTION_BY_ID[task_id], ""
     if position >= 105:

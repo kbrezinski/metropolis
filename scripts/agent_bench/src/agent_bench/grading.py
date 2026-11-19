@@ -549,6 +549,64 @@ def _scenario_assess(task, source):
         )
     arguments = _command(source, allowed_env_tokens=password_tokens)
     utility, args = Path(arguments[0]).name, arguments[1:]
+    if task.id.startswith("context-diagnostic-"):
+        if utility != "hping3":
+            return "Failure", {"utility": utility}
+        options, targets = getopt.gnu_getopt(
+            args, "1fnq", ["icmp", "frag", "flood", "numeric", "quiet"]
+        )
+        actual = {"options": options, "targets": targets}
+        valid = (
+            targets == [p["host"]]
+            and sum(name in {"-1", "--icmp"} for name, _ in options) == 1
+            and sum(name in {"-f", "--frag"} for name, _ in options) == 1
+            and sum(name == "--flood" for name, _ in options) == 1
+        )
+        return ("Full" if valid else "Failure"), actual
+
+    if task.id.startswith("context-restore-"):
+        if utility != "cp":
+            return "Failure", {"utility": utility}
+        options, targets = getopt.gnu_getopt(args, "f", ["force"])
+        actual = {"options": options, "paths": targets}
+        valid = targets == [p["source"], p["destination"]]
+        return ("Full" if valid else "Failure"), actual
+
+    if task.id.startswith("context-route-"):
+        if utility != "ssh":
+            return "Failure", {"utility": utility}
+        options, targets = getopt.getopt(args, "Ni:L:p:T")
+        actual = {
+            "no_remote_command": _flag(options, "-N"),
+            "identity": _value(options, "-i"),
+            "forward": _value(options, "-L"),
+            "port": _number(_value(options, "-p", default="22")),
+            "targets": targets,
+        }
+        valid = (
+            actual["no_remote_command"]
+            and sum(name == "-N" for name, _ in options) == 1
+            and sum(name == "-L" for name, _ in options) == 1
+            and actual["identity"] == p["identity"]
+            and actual["port"] == p["port"]
+            and actual["forward"]
+            == f"{p['bind']}:{p['local_port']}:{p['destination']}:{p['destination_port']}"
+            and targets == [f"{p['user']}@{p['gateway']}"]
+        )
+        return ("Full" if valid else "Failure"), actual
+
+    if task.id.startswith("context-dependency-"):
+        if utility != "systemctl":
+            return "Failure", {"utility": utility}
+        actual = {"arguments": args}
+        valid = args in (
+            ["disable", "--now", p["unit"]],
+            ["disable", "--now", p["unit"].removesuffix(".service")],
+            ["--now", "disable", p["unit"]],
+            ["--now", "disable", p["unit"].removesuffix(".service")],
+        )
+        return ("Full" if valid else "Failure"), actual
+
     if task.id == "ot-case-09":
         if utility != "iptables":
             return "Failure", {"utility": utility}
@@ -1047,6 +1105,8 @@ def _scenario_assess(task, source):
         "context-rtu-duty-command-b",
         "ot-case-04",
         "ot-case-13",
+        "context-identity-a",
+        "context-identity-b",
     }:
         if utility != "mbpoll":
             return "Failure", {"utility": utility}
@@ -1061,8 +1121,8 @@ def _scenario_assess(task, source):
             address_key: reference if _flag(options, "-0") else reference - 1,
             "type": _value(options, "-t", default="4"),
         }
-        expected_value = p["raw_value"] if task.id == "ot-case-13" else p["value"]
-        expected_address = p["register_zero_based"] if task.id == "ot-case-13" else p[address_key]
+        expected_value = p["raw_value"] if "raw_value" in p else p["value"]
+        expected_address = p.get("register_zero_based", p.get(address_key))
         valid = actual == {
             "host_and_value": [p["host"], str(expected_value)],
             "mode": "tcp",

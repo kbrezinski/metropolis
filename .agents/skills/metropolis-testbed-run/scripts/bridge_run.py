@@ -8,6 +8,7 @@ import hashlib
 from itertools import product
 import json
 import math
+import os
 from pathlib import Path
 import shutil
 import sys
@@ -84,6 +85,58 @@ def parse_json(data):
 
 def read_json(path):
     return parse_json(read_bytes(path))
+
+
+def register_worker(output, agent_id, attempt_nonce):
+    """Publish the coordinator's attestation for the current fresh worker."""
+    active_path = output / "active.json"
+    active = read_json(active_path)
+    if (
+        active.get("status") != "needs_worker"
+        or active.get("attempt_nonce") != attempt_nonce
+    ):
+        raise ValueError("No current worker registration matches that attempt nonce")
+    participant_name = active.get("participant_name")
+    if not isinstance(agent_id, str) or agent_id.rsplit("/", 1)[-1] != participant_name:
+        raise ValueError("Agent handle does not match the current participant name")
+    mailbox = Path(active["mailbox"]).resolve()
+    registration = Path(active["registration"]).resolve()
+    instructions = Path(active["instructions_path"]).resolve()
+    if (
+        registration != mailbox / "worker.json"
+        or instructions != mailbox / "participant-instructions.txt"
+    ):
+        raise ValueError("Active registration paths do not match the current mailbox")
+    instructions_sha256 = hashlib.sha256(instructions.read_bytes()).hexdigest()
+    if instructions_sha256 != active.get("instructions_sha256"):
+        raise ValueError("Participant instructions differ from the active run")
+    challenge = read_json(mailbox / "ready-challenge.json")
+    if challenge.get("attempt_nonce") != attempt_nonce:
+        raise ValueError("Mailbox challenge does not match the current attempt")
+    current = read_json(active_path)
+    if (
+        current.get("status") != "needs_worker"
+        or current.get("attempt_nonce") != attempt_nonce
+    ):
+        raise ValueError("Worker registration became stale")
+
+    worker = {
+        "agent_id": agent_id,
+        "attempt_nonce": attempt_nonce,
+        "fork_turns": "none",
+        "dispatched_instructions_sha256": instructions_sha256,
+    }
+    temporary = mailbox / f".worker.{uuid.uuid4().hex}.tmp"
+    try:
+        with temporary.open("xb") as stream:
+            stream.write((json.dumps(worker, sort_keys=True) + "\n").encode("utf-8"))
+        if os.name == "nt":
+            temporary.rename(registration)
+        else:
+            os.link(temporary, registration)
+    finally:
+        temporary.unlink(missing_ok=True)
+    print(f"Registered {agent_id}", flush=True)
 
 
 class MailboxProvider:
@@ -223,19 +276,18 @@ class MailboxProvider:
             )
             .replace(
                 "{{WRITE_EXAMPLE}}",
-                "--content-file <draft filename>"
+                "--content '<complete solution.sh text>'"
                 if self.allow_multiline_solution
                 else "--content '<one solution.sh line>'"
                 if self.artifact_path == "solution.sh"
-                else "--path edited_program.xml --content-file <draft filename>",
+                else "--path edited_program.xml --content '<complete XML>'",
             )
             .replace(
                 "{{ARTIFACT_GUIDANCE}}",
                 (
-                    "For this request, save the complete artifact in a mailbox draft "
-                    "file and use --content-file <draft filename>. The publisher "
-                    "preserves multiline HTTP text and one-line commands as written, "
-                    "up to 64 KiB."
+                    "For this request, pass the complete artifact with --content as "
+                    "one quoted argument. Real line breaks may be included; the "
+                    "publisher preserves the text as written, up to 64 KiB."
                 )
                 if self.allow_multiline_solution
                 else (
@@ -249,11 +301,11 @@ class MailboxProvider:
                 )
                 if self.artifact_path == "solution.sh"
                 else (
-                    "For a `write`, save the complete multiline edited XML in a "
-                    "draft file inside this mailbox, then use --path "
-                    "edited_program.xml --content-file <draft filename>. The "
-                    "publisher preserves its text and rejects any path other than "
-                    "the artifact named in the current request."
+                    "For a `write`, pass the complete edited XML as one quoted "
+                    "--content argument with --path edited_program.xml. It may be "
+                    "one line or contain real line breaks. The publisher rejects "
+                    "literal PowerShell backtick+n or backslash+n markers before "
+                    "publishing, so correct that input and retry the same request."
                 ),
             )
         )
@@ -1697,7 +1749,7 @@ def run(args):
     print(f"Completed live benchmark; reports: {output / 'reports'}", flush=True)
 
 
-def main():
+def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
     running = commands.add_parser("run")
@@ -1716,6 +1768,12 @@ def main():
     running.add_argument("--seconds", type=float, default=600)
     status = commands.add_parser("status")
     status.add_argument("--output", required=True, type=Path)
+    registration = commands.add_parser(
+        "register-worker", help="Register the current fresh participant"
+    )
+    registration.add_argument("--output", required=True, type=Path)
+    registration.add_argument("--agent-id", required=True)
+    registration.add_argument("--attempt-nonce", required=True)
     scores = commands.add_parser(
         "results", help="Print persisted scores without regrading"
     )
@@ -1731,10 +1789,12 @@ def main():
         choices=("running", "idle", "completed", "failed", "unavailable"),
     )
     observation.add_argument("--detail")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     try:
         if args.command == "status":
             print(json.dumps(read_json(args.output / "active.json"), indent=2))
+        elif args.command == "register-worker":
+            register_worker(args.output, args.agent_id, args.attempt_nonce)
         elif args.command == "results":
             results(args.output.resolve())
         elif args.command == "observe-worker":

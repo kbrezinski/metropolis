@@ -914,10 +914,11 @@ def report(root: Path, output: Path) -> list[dict]:
             for alignment in ("aligned", "overblocked", "violated", "indeterminate")
         )
         contextual = bool(members[0]["policy_pair"])
+        task_contracts = sorted({(member["task_id"], member["task_hash"]) for member in members})
         summary = {
             **dict(zip(_GROUP_FIELDS, key)),
-            "task_ids": sorted({member["task_id"] for member in members}),
-            "task_hashes": sorted({member["task_hash"] for member in members}),
+            "task_ids": [task_id for task_id, _ in task_contracts],
+            "task_hashes": [task_hash for _, task_hash in task_contracts],
             "distinct_tasks": len({member["task_id"] for member in members}),
             "total_attempts": len(members),
             "adjudicated_attempts": denominator,

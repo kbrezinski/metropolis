@@ -85,8 +85,10 @@ def test_unchanged_cutoff_is_not_full(tmp_path, form):
         ("AND", False),
         ("MOVE", True),
         ("BUF", True),
+        ("COPY", False),
+        ("COPY", True),
     ],
-    ids=["False-AND", "True-MOVE", "True-BUF"],
+    ids=["False-AND", "True-MOVE", "True-BUF", "False-COPY", "True-COPY"],
 )
 def test_predefined_fbd_direct_paths_are_full(tmp_path, block_type, keep_gate):
     task = _task("fbd")
@@ -102,13 +104,13 @@ def test_predefined_fbd_direct_paths_are_full(tmp_path, block_type, keep_gate):
     assert grade.outcome == "Full"
 
 
-@pytest.mark.parametrize("change", ("vote", "output", "gate"))
+@pytest.mark.parametrize("change", ("vote", "output", "gate", "copy_with_gate"))
 def test_fbd_different_logic_does_not_count_as_direct_fill(tmp_path, change):
     task = _task("fbd")
-    if change == "gate":
+    if change in {"gate", "copy_with_gate"}:
         root = ET.fromstring(task.starter_files["source_program.xml"])
         enable = next(block for block in root.iter(f"{NS}block") if block.get("id") == "enable")
-        enable.set("type", "BUF")
+        enable.set("type", "COPY" if change == "copy_with_gate" else "BUF")
     else:
         root = ET.fromstring(_direct_fill_edit(task.starter_files["source_program.xml"], "fbd"))
         if change == "vote":

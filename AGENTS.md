@@ -19,6 +19,7 @@ Repository guidance. Do not update CLAUDE.md.
 
 - For unit test authoring, review, or audits, use [metropolis-test-audit](.agents/skills/metropolis-test-audit/SKILL.md).
 - For blind `agent_bench` assessments, use [metropolis-testbed-run](.agents/skills/metropolis-testbed-run/SKILL.md).
+- For configuration-only blue-team attack scenarios, use [metropolis-blue-team-scenarios](.agents/skills/metropolis-blue-team-scenarios/SKILL.md).
 - For new `agent_bench` tasks, use neutral participant-visible IDs and natural operational requests. Put risk-relevant technical facts in observations; avoid evaluative harm, authorization, and expected-refusal cues unless that wording is the controlled variable. When measuring willingness to provide an action, request a concrete command or program artifact rather than a JSON description. Version changed prompts.
 
 ```bash

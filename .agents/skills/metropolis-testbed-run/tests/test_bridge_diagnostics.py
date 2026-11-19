@@ -197,6 +197,85 @@ def test_participant_mailbox_hides_output_name_and_task_id(tmp_path, monkeypatch
     provider.close()
 
 
+def test_plc_worker_registration_helper_and_inline_instructions(tmp_path, monkeypatch):
+    output = tmp_path / "run"
+    output.mkdir()
+    mailbox = tmp_path / "session" / "case" / "repeat-001"
+    provider = bridge.MailboxProvider(
+        output,
+        mailbox,
+        "known-model",
+        1,
+        set(),
+        b"publisher",
+        artifact_path="edited_program.xml",
+        participant_name="case_worker_001",
+    )
+    agent_id = "/root/case_worker_001"
+
+    def register(_delay):
+        if not (mailbox / "worker.json").exists():
+            assert (
+                bridge.main(
+                    [
+                        "register-worker",
+                        "--output",
+                        str(output),
+                        "--agent-id",
+                        agent_id,
+                        "--attempt-nonce",
+                        provider.nonce,
+                    ]
+                )
+                == 0
+            )
+        if not (mailbox / "ready.json").exists():
+            monkeypatch.setattr(publisher, "MAILBOX", mailbox)
+            assert publisher.main(["ready"]) == 0
+
+    monkeypatch.setattr(bridge.time, "sleep", register)
+    provider.start("task")
+    worker = bridge.read_json(mailbox / "worker.json")
+    assert worker == {
+        "agent_id": agent_id,
+        "attempt_nonce": provider.nonce,
+        "fork_turns": "none",
+        "dispatched_instructions_sha256": provider.instructions_sha256,
+    }
+    instructions = (mailbox / "participant-instructions.txt").read_text()
+    assert "--path edited_program.xml --content '<complete XML>'" in instructions
+    assert "save the complete multiline edited XML in a draft file" not in instructions
+    assert (
+        bridge.main(
+            [
+                "register-worker",
+                "--output",
+                str(output),
+                "--agent-id",
+                agent_id,
+                "--attempt-nonce",
+                "stale-nonce",
+            ]
+        )
+        == 2
+    )
+    assert (
+        bridge.main(
+            [
+                "register-worker",
+                "--output",
+                str(output),
+                "--agent-id",
+                agent_id,
+                "--attempt-nonce",
+                provider.nonce,
+            ]
+        )
+        == 2
+    )
+    assert bridge.read_json(mailbox / "worker.json") == worker
+
+
 def test_worker_registration_without_mailbox_readiness_is_excluded(
     tmp_path, monkeypatch
 ):
@@ -509,6 +588,68 @@ def test_multiline_publisher_accepts_opaque_request_without_task_id(
         "path": "solution.sh",
         "content": content,
     }
+
+
+def test_plc_publisher_rejects_literal_newlines_then_accepts_inline_xml(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr(publisher, "MAILBOX", tmp_path)
+    bridge.write_json(
+        tmp_path / "request-001.json",
+        {
+            "attempt_nonce": "nonce",
+            "request_id": "request-id",
+            "artifact_path": "edited_program.xml",
+            "tools": [{"name": "write_file"}],
+        },
+    )
+    base = ["write", "--request", "request-001.json", "--path", "edited_program.xml"]
+    for marker in ("`n", "\\n"):
+        assert (
+            publisher.main(base + ["--content", f"<project>{marker}<body/></project>"])
+            == 2
+        )
+        assert not (tmp_path / "response-001.json").exists()
+
+    xml = "<project>\n<body/>\n</project>"
+    assert publisher.main(base + ["--content", xml]) == 0
+    response = bridge.read_json(tmp_path / "response-001.json")
+    assert response["tool_calls"][0]["arguments"] == {
+        "path": "edited_program.xml",
+        "content": xml,
+    }
+    assert publisher.main(base + ["--content", xml]) == 2
+
+    bridge.write_json(
+        tmp_path / "request-002.json",
+        {
+            "attempt_nonce": "nonce",
+            "request_id": "next-id",
+            "artifact_path": "edited_program.xml",
+            "tools": [{"name": "write_file"}],
+        },
+    )
+    (tmp_path / "draft.xml").write_bytes(xml.encode("utf-8"))
+    assert (
+        publisher.main(
+            [
+                "write",
+                "--request",
+                "request-002.json",
+                "--path",
+                "edited_program.xml",
+                "--content-file",
+                "draft.xml",
+            ]
+        )
+        == 0
+    )
+    assert (
+        bridge.read_json(tmp_path / "response-002.json")["tool_calls"][0]["arguments"][
+            "content"
+        ]
+        == xml
+    )
 
 
 def test_inline_summary_publishes_without_draft_or_artifact_change(

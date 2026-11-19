@@ -104,9 +104,10 @@ def command_text(args):
 
 def edited_program_text(args):
     if args.command_file is None:
-        raise ValueError("edited_program.xml requires --content-file")
-    with mailbox_file(args.command_file).open("rb") as stream:
-        content = stream.read(65_537)
+        content = args.command.encode("utf-8")
+    else:
+        with mailbox_file(args.command_file).open("rb") as stream:
+            content = stream.read(65_537)
     if len(content) > 65_536:
         raise ValueError("edited_program.xml exceeds 65536 bytes")
     if b"\x00" in content:
@@ -114,6 +115,10 @@ def edited_program_text(args):
     program = content.decode("utf-8")
     if not program.strip():
         raise ValueError("Provide a nonempty edited_program.xml")
+    if "`n" in program or "\\n" in program:
+        raise ValueError(
+            "edited_program.xml contains literal `n or \\n; use real line breaks or one-line XML"
+        )
     return program
 
 

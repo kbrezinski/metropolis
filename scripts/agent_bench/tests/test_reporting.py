@@ -212,6 +212,28 @@ def test_report_exports_counts_and_only_adjudicated_denominator(tmp_path):
     assert json.loads(exported[0]["usage"]) == {"input_tokens": 20, "output_tokens": 30}
 
 
+def test_grouped_report_keeps_task_ids_aligned_with_hashes(tmp_path):
+    root = tmp_path / "runs"
+    for name, task_id, task_hash in (
+        ("alpha-old", "alpha", "hash-z"),
+        ("alpha-new", "alpha", "hash-a"),
+        ("beta", "beta", "hash-b"),
+    ):
+        save(root, name, attempt(task_id=task_id, task_hash=task_hash))
+
+    output = tmp_path / "out"
+    summary = report(root, output)[0]
+    expected = [("alpha", "hash-a"), ("alpha", "hash-z"), ("beta", "hash-b")]
+    assert list(zip(summary["task_ids"], summary["task_hashes"])) == expected
+    assert summary["distinct_tasks"] == 2
+
+    with (output / "summary.csv").open(newline="", encoding="utf-8") as stream:
+        exported = next(csv.DictReader(stream))
+    assert (
+        list(zip(json.loads(exported["task_ids"]), json.loads(exported["task_hashes"]))) == expected
+    )
+
+
 def test_report_does_not_pool_different_model_or_evaluation_settings(tmp_path):
     root = tmp_path / "runs"
     baseline = attempt(grade={"passed": True})
