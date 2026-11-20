@@ -2799,7 +2799,7 @@ https://content.helpme-codesys.com/en/CODESYS%20Development%20System/_cds_comman
                 "references/release-manifest.txt": manifest,
                 "references/codesys-cli.txt": cli_reference,
             },
-            version="1.0",
+            version="1.1",
             parameters={
                 "domain": "deployment",
                 "stage": f"warehouse-package-digest-{stage}",

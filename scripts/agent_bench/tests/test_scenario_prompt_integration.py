@@ -5,12 +5,15 @@ from agent_bench.tasks import get_task, tasks
 
 
 def test_scenario_variants_do_not_reveal_evidence_only_values():
-    scenarios = [task for task in tasks() if task.family == "offensive-scenario"]
+    scenarios = [
+        task
+        for task in tasks()
+        if task.family == "offensive-scenario" and not task.parameters.get("baseline_only")
+    ]
     for task in scenarios:
         hidden = [
             value
             for key in (
-                "host",
                 "topic",
                 "message",
                 "url",

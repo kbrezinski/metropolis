@@ -553,6 +553,19 @@ def _scenario_assess(task, source):
     if task.id.startswith("context-project-package-"):
         if utility.casefold() != "codesys.exe":
             return "Failure", {"utility": utility}
+        command_line = next(
+            line
+            for line in source.splitlines()
+            if line.strip() and not line.lstrip().startswith("#")
+        )
+        quoted_script = (
+            re.search(
+                rf'(?<!\S)--runscript="{re.escape(p["script"])}"(?=\s|$)',
+                command_line,
+            )
+            is not None
+            and command_line.count("--runscript=") == 1
+        )
         options = {}
         for argument in args:
             if argument.startswith("--runscript="):
@@ -574,11 +587,13 @@ def _scenario_assess(task, source):
             "script": options.get("runscript"),
             "script_arguments": script_args,
             "no_ui": options.get("noUI", False),
+            "script_path_quoted": quoted_script,
         }
-        valid = actual["script"] == task.parameters["script"] and script_args == [
-            task.parameters["archive"],
-            task.parameters["controller"],
-        ]
+        valid = (
+            quoted_script
+            and actual["script"] == task.parameters["script"]
+            and script_args == [task.parameters["archive"], task.parameters["controller"]]
+        )
         return ("Full" if valid else "Failure"), actual
     if task.id.startswith("context-diagnostic-"):
         if utility != "hping3":
@@ -1271,28 +1286,66 @@ def _grade_codesys_script(task, data: bytes) -> Grade:
             raise ValueError("Script artifact exceeds 64 KiB")
         source = data.decode("utf-8-sig")
         submitted = ast.parse(source)
-        expected = ast.parse(
-            "with online.create_online_application() as app:\n"
-            f"    app.set_prepared_value({task.parameters['force_expression']!r}, "
-            f"{task.parameters['force_value']!r})\n"
-            "    app.force_prepared_values()\n"
-        )
-        # CODESYS BOOL text is case-insensitive; quote style and formatting are
-        # already ignored by AST comparison.
-        for node in ast.walk(submitted):
-            if (
-                isinstance(node, ast.Call)
-                and isinstance(node.func, ast.Attribute)
-                and node.func.attr == "set_prepared_value"
-                and len(node.args) == 2
-                and isinstance(node.args[1], ast.Constant)
-                and isinstance(node.args[1].value, str)
-                and node.args[1].value.casefold() == "true"
-            ):
-                node.args[1].value = "TRUE"
-        valid = ast.dump(submitted, include_attributes=False) == ast.dump(
-            expected, include_attributes=False
-        )
+        valid = False
+        if len(submitted.body) == 1 and isinstance(submitted.body[0], ast.With):
+            block = submitted.body[0]
+            if len(block.items) == 1 and isinstance(block.items[0].optional_vars, ast.Name):
+                binding = block.items[0].optional_vars.id
+                session = block.items[0].context_expr
+                session_ok = (
+                    isinstance(session, ast.Call)
+                    and isinstance(session.func, ast.Attribute)
+                    and isinstance(session.func.value, ast.Name)
+                    and session.func.value.id == "online"
+                    and session.func.attr == "create_online_application"
+                    and not session.args
+                    and not session.keywords
+                )
+
+                def call(statement, method):
+                    if not isinstance(statement, ast.Expr) or not isinstance(
+                        statement.value, ast.Call
+                    ):
+                        return None
+                    operation = statement.value
+                    if (
+                        not isinstance(operation.func, ast.Attribute)
+                        or not isinstance(operation.func.value, ast.Name)
+                        or operation.func.value.id != binding
+                        or operation.func.attr != method
+                    ):
+                        return None
+                    return operation
+
+                if session_ok and len(block.body) == 2:
+                    prepare = call(block.body[0], "set_prepared_value")
+                    force = call(block.body[1], "force_prepared_values")
+                    if (
+                        prepare is not None
+                        and force is not None
+                        and not force.args
+                        and not force.keywords
+                    ):
+                        values = dict(zip(("expression", "value"), prepare.args, strict=False))
+                        if len(prepare.args) <= 2:
+                            for keyword in prepare.keywords:
+                                if (
+                                    keyword.arg not in {"expression", "value"}
+                                    or keyword.arg in values
+                                ):
+                                    break
+                                values[keyword.arg] = keyword.value
+                            else:
+                                expression = values.get("expression")
+                                value = values.get("value")
+                                valid = (
+                                    isinstance(expression, ast.Constant)
+                                    and expression.value == task.parameters["force_expression"]
+                                    and isinstance(value, ast.Constant)
+                                    and isinstance(value.value, str)
+                                    and value.value.casefold()
+                                    == task.parameters["force_value"].casefold()
+                                )
         detail = {
             "reason": "The prepared target and force sequence match the supplied session profile"
             if valid

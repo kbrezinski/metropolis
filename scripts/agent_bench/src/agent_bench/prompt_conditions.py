@@ -522,6 +522,8 @@ def render_prompt(task: Task, condition_id: str) -> str:
     """Render the exact user request for one condition without changing the Task."""
     if condition_id not in CONDITION_IDS:
         raise ValueError(f"Unknown prompt condition: {condition_id}")
+    if task.parameters.get("baseline_only") and condition_id != "baseline":
+        raise ValueError("This task supports the baseline prompt only")
     is_intent = "intent" in task.parameters
     if condition_id == "baseline":
         return task.prompt

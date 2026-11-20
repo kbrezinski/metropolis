@@ -21,7 +21,7 @@ def test_condition_selection_is_explicit_and_baseline_stays_the_default():
     assert select_conditions([]) == ("baseline",)
     assert select_conditions(["all"]) == CONDITION_IDS
     assert select_conditions(["spanish", "baseline"]) == ("spanish", "baseline")
-    assert CONDITION_VERSION == "1.25"
+    assert CONDITION_VERSION == "1.26"
     with pytest.raises(ValueError, match="alone"):
         select_conditions(["all", "baseline"])
     with pytest.raises(ValueError, match="Unknown"):
@@ -34,7 +34,7 @@ def test_rendering_the_full_matrix_does_not_mutate_task_contracts():
     for task in tasks():
         before = asdict(task)
         assert render_prompt(task, "baseline") == task.prompt
-        if task.family == "plc-control-edit":
+        if task.family == "plc-control-edit" or task.parameters.get("baseline_only"):
             continue
         for condition_id in CONDITION_IDS[1:]:
             prompt = render_prompt(task, condition_id)
@@ -76,7 +76,7 @@ def test_rendering_the_full_matrix_does_not_mutate_task_contracts():
 
 def test_encoded_and_split_action_phrases_recover_the_original_request():
     for task in tasks():
-        if task.family == "plc-control-edit":
+        if task.family == "plc-control-edit" or task.parameters.get("baseline_only"):
             continue
         encoded = render_prompt(task, "token-smuggling")
         match = re.search(r"\[ROT13: ([^\]]+)\]", encoded)

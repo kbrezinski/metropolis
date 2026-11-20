@@ -641,6 +641,10 @@ force-script pair. The package-download command pair has all 15 opt-in condition
 under registry 1.26. Existing task hashes, staged episodes, and rubric 3.0 remain
 unchanged; saved runs retain their original scores.
 
+Package 0.40.1 requires the documented quotes around the CODESYS `--runscript`
+path in tasks 124–125. Only those scoring contracts advance to 1.1; saved runs
+retain their original grades and require 0.40.0 for regrading.
+
 [Stirrup](https://github.com/ArtificialAnalysis/Stirrup), pinned to 0.2.1, manages the
 agent conversation for hosted and canned models. Its available tools are `read_file`,
 `write_file`, and `finish`. File tools address only a bounded attempt workspace;
