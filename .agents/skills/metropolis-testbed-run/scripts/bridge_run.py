@@ -35,8 +35,14 @@ from agent_bench.prompt_conditions import (
     condition_code,
     select_conditions,
 )
-from agent_bench.reporting import report
-from agent_bench.run_audit import render_run_overview
+from agent_bench.reporting import _write_csv, report
+from agent_bench.run_audit import (
+    _CATEGORY_FIELDS,
+    _category_refusal_rows,
+    _cell,
+    _model_label,
+    render_run_overview,
+)
 from agent_bench.staged_reporting import report_staged
 from agent_bench.runner import (
     catalog_for_suite,
@@ -882,6 +888,38 @@ def observe_worker(output, attempt, status, detail):
     )
 
 
+def category_refusals(reports, source, *, suite_id):
+    """Reuse native report grouping for blind attempt and checkpoint CSVs."""
+    rows = []
+    if source is not None and source.is_file():
+        with source.open(encoding="utf-8", newline="") as stream:
+            rows = list(csv.DictReader(stream))
+    categories = _category_refusal_rows(rows, suite_id=suite_id)
+    reports.mkdir(parents=True, exist_ok=True)
+    _write_csv(reports / "category_refusals.csv", categories, _CATEGORY_FIELDS)
+    return categories
+
+
+def category_refusal_lines(categories, *, staged):
+    denominator = "reached checkpoints" if staged else "valid attempts"
+    lines = [
+        "",
+        "Confirmed refusals by OT action:",
+        f"Denominators count {denominator}; model settings, rubrics, and prompt conditions remain separate.",
+        "",
+        "| Model | Study design | OT action | Condition | Confirmed refusals / denominator | Excluded | Unreached |",
+        "|---|---|---|---|---:|---:|---:|",
+    ]
+    for row in categories:
+        lines.append(
+            f"| {_model_label(row)} | {_cell(row['study_design'])} | {_cell(row['ot_action'])} | "
+            f"{_cell(row['prompt_condition'])} | "
+            f"{row['confirmed_refusals']}/{row['valid_reached']} | "
+            f"{row['infrastructure_excluded']} | {row['unreached']} |"
+        )
+    return lines
+
+
 def staged_results(output, run_metadata, active, reports, *, save=False):
     """Show the saved checkpoint trajectory without flattening it to one grade."""
 
@@ -889,6 +927,9 @@ def staged_results(output, run_metadata, active, reports, *, save=False):
         return f"{float(value):.1f}%" if value not in (None, "") else "n/a"
 
     groups = report_staged(output / "codex-subagent", reports)
+    categories = category_refusals(
+        reports, reports / "staged_checkpoints.csv", suite_id="staged-ot"
+    )
     attempts_path = reports / "staged_attempts.csv"
     with attempts_path.open(encoding="utf-8", newline="") as stream:
         attempts = list(csv.DictReader(stream))
@@ -917,11 +958,13 @@ def staged_results(output, run_metadata, active, reports, *, save=False):
         "excluded_attempts": excluded,
         "unstarted_attempts": max(0, requested - len(attempts)),
         "groups": groups,
+        "category_refusals": categories,
         "decision_summaries": dict(summaries),
         "mailbox_integrity_anomalies": integrity,
         "unanswered_requests": unanswered,
     }
     lines = render_run_overview(record)
+    lines += category_refusal_lines(categories, staged=True)
     lines += [
         "",
         "Staged episodes (checkpoint actions are shown below):",
@@ -1011,6 +1054,11 @@ def results(output, *, save=False):
     trusted_attempts = any((output / "codex-subagent").rglob("attempt.json"))
     if trusted_attempts:
         report(output / "codex-subagent", reports)
+    categories = category_refusals(
+        reports,
+        reports / "attempts.csv" if trusted_attempts else None,
+        suite_id=run_metadata.get("suite_id", "default"),
+    )
     task_conditions = run_metadata.get("task_prompt_conditions")
     requested = run_metadata["repeats"] * (
         sum(len(task_conditions[task_id]) for task_id in run_metadata["tasks"])
@@ -1117,6 +1165,7 @@ def results(output, *, save=False):
         "mailbox_integrity_anomalies": integrity,
         "unanswered_requests": unanswered,
         "groups": groups,
+        "category_refusals": categories,
         "plc_control_edit_groups": plc_groups,
         "plc_injection_groups": legacy_plc_groups,
     }
@@ -1465,6 +1514,7 @@ def results(output, *, save=False):
             "ST, LD, and FBD are matched forms; SFC and legacy IL are exploratory. "
             "A valid bypass is an observed edit, not proof of the participant's reasoning."
         )
+    lines += category_refusal_lines(categories, staged=False)
     lines += [
         "",
         f"Decision summaries: {dict(summaries)}.",

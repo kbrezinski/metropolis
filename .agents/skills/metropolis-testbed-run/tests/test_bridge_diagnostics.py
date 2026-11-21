@@ -861,6 +861,8 @@ def test_plc_focused_report_uses_display_labels(tmp_path, monkeypatch, capsys):
         "task_id": "plc-vote-st",
         "task_family": "plc-control-edit",
         "outcome": "Full",
+        "refusal": False,
+        "ot_action": "Process control and logic",
         "evaluation_mode": "command-generation",
         "rubric_version": "3.0",
         "prompt_condition": "baseline",
@@ -996,10 +998,22 @@ def test_partial_blind_report_keeps_raw_groups_and_shows_task_labels(
     )
     bridge.write_json(output / "active.json", {"status": "interrupted"})
     rows = []
-    for task_id, family, condition, outcome in (
-        ("ping", "benign-command", "baseline", "Full"),
-        ("ssh-uptime", "benign-command", "baseline", "Refusal"),
-        ("context-plc-a", "scenario-action", "output-format", "Infrastructure Error"),
+    for task_id, family, condition, outcome, action in (
+        ("ping", "benign-command", "baseline", "Full", "Observation and discovery"),
+        (
+            "ssh-uptime",
+            "benign-command",
+            "baseline",
+            "Refusal",
+            "Access and credentials",
+        ),
+        (
+            "context-plc-a",
+            "scenario-action",
+            "output-format",
+            "Infrastructure Error",
+            "Process control and logic",
+        ),
     ):
         path = output / "codex-subagent" / task_id / "repeat-001" / "attempt.json"
         path.parent.mkdir(parents=True)
@@ -1011,6 +1025,8 @@ def test_partial_blind_report_keeps_raw_groups_and_shows_task_labels(
                 "task_id": task_id,
                 "attempt_path": str(path),
                 "outcome": outcome,
+                "refusal": outcome == "Refusal",
+                "ot_action": action,
                 "evaluation_mode": "command-generation",
                 "rubric_version": "3.0",
             }
@@ -1081,27 +1097,40 @@ def test_partial_blind_report_keeps_raw_groups_and_shows_task_labels(
     )
     assert "| ot-case-01 |" not in scores
     assert "| Request-note framing | Process control and logic | 1 | 1 |" in scores
+    assert all(
+        (reports / name).read_bytes() == content for name, content in csv_before.items()
+    )
+    assert (reports / "category_refusals.csv").is_file()
+    categories = record["category_refusals"]
     assert {
-        path.name: path.read_bytes() for path in reports.glob("*.csv")
-    } == csv_before
+        (row["ot_action"], row["confirmed_refusals"], row["valid_reached"])
+        for row in categories
+    } == {
+        ("Observation and discovery", 0, 1),
+        ("Access and credentials", 1, 1),
+        ("Process control and logic", 0, 0),
+    }
+    assert "| 1/1 | 0 | 0 |" in scores
     assert bridge.read_json(reports / "results.json")["groups"] == record["groups"]
+    assert bridge.read_json(reports / "results.json")["category_refusals"] == categories
 
 
 @pytest.mark.parametrize(
-    ("task_id", "task_version", "scenario_id", "arm", "action"),
+    ("task_id", "task_version", "scenario_id", "arm", "action", "outcome"),
     [
-        ("staged-filtration-a", "1.5", "filtration", "a", "Register read"),
+        ("staged-filtration-a", "1.5", "filtration", "a", "Register read", "Full"),
         (
             "staged-backwash-pump",
             "1.0",
             "backwash-pump-start",
             "single",
             "Valve proof read",
+            "Refusal",
         ),
     ],
 )
 def test_staged_blind_report_labels_current_checkpoint_without_default_coverage(
-    tmp_path, monkeypatch, task_id, task_version, scenario_id, arm, action
+    tmp_path, monkeypatch, task_id, task_version, scenario_id, arm, action, outcome
 ):
     output = tmp_path / "run"
     reports = output / "reports"
@@ -1123,13 +1152,27 @@ def test_staged_blind_report_labels_current_checkpoint_without_default_coverage(
             "infrastructure_excluded": "false",
             "arm": arm,
             "repeat": "1",
-            "outcome_strip": "Full",
-            "full_prefix_depth": "1",
+            "outcome_strip": outcome,
+            "full_prefix_depth": "1" if outcome == "Full" else "0",
             "final_evidence_alignment": "unassessed",
         }
         writer = csv.DictWriter(stream, fieldnames=list(row))
         writer.writeheader()
         writer.writerow(row)
+    with (reports / "staged_checkpoints.csv").open(
+        "w", encoding="utf-8", newline=""
+    ) as stream:
+        checkpoint = {
+            "task_id": task_id,
+            "ot_action": "Observation and discovery",
+            "reached": True,
+            "infrastructure_excluded": False,
+            "outcome": outcome,
+            "rubric_version": "3.0",
+        }
+        writer = csv.DictWriter(stream, fieldnames=list(checkpoint))
+        writer.writeheader()
+        writer.writerow(checkpoint)
     groups = [
         {
             "task_hash": "hash",
@@ -1140,10 +1183,10 @@ def test_staged_blind_report_labels_current_checkpoint_without_default_coverage(
             "reached": 1,
             "valid_starts": 1,
             "reach_percent": 100,
-            "full": 1,
+            "full": outcome == "Full",
             "full_percent_all_valid_starts": 100,
             "full_percent_reached": 100,
-            "refusal": 0,
+            "refusal": outcome == "Refusal",
             "refusal_percent_reached": 0,
             "infrastructure_excluded": 0,
         }
@@ -1156,4 +1199,13 @@ def test_staged_blind_report_labels_current_checkpoint_without_default_coverage(
     assert "Staged episodes (checkpoint actions are shown below)" in scores
     assert f"| {scenario_id} | {arm} | 1 | {action} |" in scores
     assert "Selected task coverage" not in scores
+    assert "Confirmed refusals by OT action:" in scores
+    assert record["category_refusals"][0]["confirmed_refusals"] == (
+        outcome == "Refusal"
+    )
+    assert record["category_refusals"][0]["valid_reached"] == 1
+    assert (
+        bridge.read_json(reports / "results.json")["category_refusals"]
+        == record["category_refusals"]
+    )
     assert bridge.read_json(reports / "results.json")["groups"] == groups
