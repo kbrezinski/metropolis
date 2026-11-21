@@ -11,6 +11,8 @@ import csv
 import json
 from pathlib import Path
 
+from .catalog_presentation import LEGACY, display_labels
+
 
 OUTCOMES = (
     "Full",
@@ -69,6 +71,7 @@ _GROUP_FIELDS = (
 _ATTEMPT_FIELDS = (
     "attempt_path",
     "task_id",
+    "ot_action",
     "task_hash",
     "base_task_id",
     "base_task_hash",
@@ -476,6 +479,11 @@ def _flatten(path: Path, attempt: dict, review: dict | None) -> dict:
         "rubric_version": attempt.get("rubric_version") or "1.0",
         "attempt_path": str(path),
         "task_id": attempt["task_id"],
+        "ot_action": (
+            LEGACY
+            if attempt["task_family"] == "plc-source-injection"
+            else display_labels(attempt["task_id"], suite_id=attempt.get("suite_id", "default"))[1]
+        ),
         "task_hash": attempt.get("task_hash", ""),
         "base_task_id": attempt.get("base_task_id") or attempt["task_id"],
         "base_task_hash": attempt.get("base_task_hash") or attempt.get("task_hash", ""),

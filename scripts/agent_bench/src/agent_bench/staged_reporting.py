@@ -5,6 +5,7 @@ from collections import defaultdict
 from html import escape
 from pathlib import Path
 
+from .catalog_presentation import LEGACY, checkpoint_ot_action
 from .reporting import _attempt_paths, _load, _write_csv, classify
 
 _INFRA_STOPS = {"interrupted", "provider_error", "runtime_error", "grading_error"}
@@ -56,6 +57,7 @@ _CHECKPOINT_FIELDS = (
     *_GROUP_FIELDS,
     "repeat",
     "checkpoint_index",
+    "ot_action",
     "reached",
     "submitted",
     "outcome",
@@ -77,6 +79,7 @@ _SUMMARY_FIELDS = (
     *_GROUP_FIELDS,
     "task_ids",
     "checkpoint",
+    "ot_action",
     "total_attempts",
     "valid_starts",
     "infrastructure_excluded",
@@ -216,6 +219,9 @@ def _normalize(path: Path, attempt: dict, review: dict | None) -> tuple[dict, li
                 **metadata,
                 "repeat": attempt.get("repeat", ""),
                 "checkpoint_index": index,
+                "ot_action": checkpoint_ot_action(
+                    attempt["task_id"], attempt.get("task_version", ""), index
+                ),
                 "reached": checkpoint.get("reached") is True,
                 "submitted": checkpoint.get("submitted") is True,
                 "outcome": outcome,
@@ -280,6 +286,9 @@ def _summarize(checkpoint_rows: list[dict]) -> list[dict]:
                 **dict(zip(_GROUP_FIELDS, key[:-1])),
                 "task_ids": sorted({row["task_id"] for row in members}),
                 "checkpoint": key[-1],
+                "ot_action": members[0]["ot_action"]
+                if len({row["ot_action"] for row in members}) == 1
+                else LEGACY,
                 "total_attempts": len(members),
                 "valid_starts": starts,
                 "infrastructure_excluded": len(members) - starts,

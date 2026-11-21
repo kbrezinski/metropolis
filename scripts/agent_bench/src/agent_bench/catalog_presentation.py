@@ -129,6 +129,14 @@ DEFAULT_TASK_IDS = (
     "context-cell-input-b",
     "context-project-package-a",
     "context-project-package-b",
+    "ot-case-14",
+    "ot-case-15",
+    "ot-case-16",
+    "ot-case-17",
+    "ot-case-18",
+    "ot-case-19",
+    "ot-case-20",
+    "ot-case-21",
 )
 
 STANDALONE = "Standalone requests"
@@ -149,10 +157,10 @@ ACTION_ORDER = (
 )
 
 _ACTION_POSITIONS = {
-    ACTION_ORDER[0]: (*range(1, 7), *range(8, 12)),
-    ACTION_ORDER[1]: (12, 18, 22, 30, 31, 107, 116, 117),
-    ACTION_ORDER[2]: (23, 24, 25),
-    ACTION_ORDER[3]: (*range(13, 18), 38, 39, 87, 91, 92, 94, 108, 112, 113, 120, 121),
+    ACTION_ORDER[0]: (*range(1, 7), *range(8, 12), 126, 127),
+    ACTION_ORDER[1]: (12, 18, 22, 30, 31, 107, 116, 117, 128),
+    ACTION_ORDER[2]: (23, 24, 25, 129),
+    ACTION_ORDER[3]: (*range(13, 18), 38, 39, 87, 91, 92, 94, 108, 112, 113, 120, 121, 130),
     ACTION_ORDER[4]: (
         20,
         21,
@@ -196,8 +204,9 @@ _ACTION_POSITIONS = {
         109,
         114,
         115,
+        131,
     ),
-    ACTION_ORDER[6]: (88, 89, 124, 125),
+    ACTION_ORDER[6]: (88, 89, 124, 125, 132, 133),
 }
 
 _POSITION_BY_ID = {task_id: position for position, task_id in enumerate(DEFAULT_TASK_IDS, 1)}
@@ -317,14 +326,107 @@ _STAGED_ACTIONS = {
             "Shared profile promotion",
         ),
     ),
+    "staged-ot-12": (
+        "1.0",
+        (
+            "BACnet device discovery",
+            "Ventilation state read",
+            "Fan output write",
+            "Communications pause",
+        ),
+    ),
+    "staged-ot-13": (
+        "1.0",
+        (
+            "OPC UA recipe browse",
+            "Recipe metadata read",
+            "Project archive export",
+            "Archive transfer",
+        ),
+    ),
 }
+
+(
+    _OBS_ACTION,
+    _ACCESS_ACTION,
+    _REMOTE_ACTION,
+    _AVAILABILITY_ACTION,
+    _PROCESS_ACTION,
+    _TELEMETRY_ACTION,
+    _DATA_ACTION,
+) = ACTION_ORDER
+_STAGED_CATEGORIES = {
+    "staged-filtration-a": (
+        _OBS_ACTION,
+        _OBS_ACTION,
+        _PROCESS_ACTION,
+        _OBS_ACTION,
+        _TELEMETRY_ACTION,
+    ),
+    "staged-filtration-b": (
+        _OBS_ACTION,
+        _OBS_ACTION,
+        _PROCESS_ACTION,
+        _OBS_ACTION,
+        _TELEMETRY_ACTION,
+    ),
+    "staged-reservoir-a": (
+        _OBS_ACTION,
+        _OBS_ACTION,
+        _PROCESS_ACTION,
+        _OBS_ACTION,
+        _TELEMETRY_ACTION,
+    ),
+    "staged-reservoir-b": (
+        _OBS_ACTION,
+        _OBS_ACTION,
+        _PROCESS_ACTION,
+        _OBS_ACTION,
+        _TELEMETRY_ACTION,
+    ),
+    "staged-filtration-chain-full": (
+        _TELEMETRY_ACTION,
+        _REMOTE_ACTION,
+        _OBS_ACTION,
+        _OBS_ACTION,
+        _PROCESS_ACTION,
+        _TELEMETRY_ACTION,
+    ),
+    "staged-filtration-chain-handoff": (
+        _REMOTE_ACTION,
+        _OBS_ACTION,
+        _OBS_ACTION,
+        _PROCESS_ACTION,
+        _TELEMETRY_ACTION,
+    ),
+    "staged-backwash-pump": (
+        _OBS_ACTION,
+        _PROCESS_ACTION,
+        _PROCESS_ACTION,
+        _OBS_ACTION,
+        _TELEMETRY_ACTION,
+    ),
+    "staged-ot-08": (_TELEMETRY_ACTION, _ACCESS_ACTION, _OBS_ACTION, _PROCESS_ACTION),
+    "staged-ot-09": (_ACCESS_ACTION, _ACCESS_ACTION, _OBS_ACTION, _PROCESS_ACTION),
+    "staged-ot-10": (_OBS_ACTION, _AVAILABILITY_ACTION, _OBS_ACTION, _PROCESS_ACTION),
+    "staged-ot-11": (_OBS_ACTION, _OBS_ACTION, _DATA_ACTION, _DATA_ACTION),
+    "staged-ot-12": (_OBS_ACTION, _OBS_ACTION, _PROCESS_ACTION, _AVAILABILITY_ACTION),
+    "staged-ot-13": (_OBS_ACTION, _OBS_ACTION, _DATA_ACTION, _DATA_ACTION),
+}
+if set(_STAGED_CATEGORIES) != set(_STAGED_ACTIONS) or any(
+    len(_STAGED_CATEGORIES[task_id]) != len(labels)
+    for task_id, (_, labels) in _STAGED_ACTIONS.items()
+):
+    raise RuntimeError("OT-action categories must cover every current staged checkpoint")
 
 
 def display_labels(task_id: str, *, suite_id: str = "default") -> tuple[str, str, str]:
     """Return study design, OT action, and controlled comparison variable."""
     if suite_id == "staged-ot":
         return (
-            (STAGED, "Multiple actions", "") if task_id in _STAGED_ACTIONS else (LEGACY, LEGACY, "")
+            (STAGED, _STAGED_CATEGORIES[task_id][-1], "")
+            if task_id in _STAGED_ACTIONS
+            else (LEGACY, LEGACY, "")
         )
     position = _POSITION_BY_ID.get(task_id)
     if position is None or suite_id not in {"default", "plc-control-edit"}:
@@ -333,6 +435,17 @@ def display_labels(task_id: str, *, suite_id: str = "default") -> tuple[str, str
         return LEGACY, LEGACY, ""
     if 56 <= position <= 60 or 95 <= position <= 104:
         return PLC, _ACTION_BY_ID[task_id], ""
+    if task_id in {
+        "ot-case-14",
+        "ot-case-15",
+        "ot-case-16",
+        "ot-case-17",
+        "ot-case-18",
+        "ot-case-19",
+        "ot-case-20",
+        "ot-case-21",
+    }:
+        return STANDALONE, _ACTION_BY_ID[task_id], ""
     if position >= 112:
         return OBSERVATION, _ACTION_BY_ID[task_id], "Observation"
     if position <= 25 or 87 <= position <= 94 or position >= 107:
@@ -360,6 +473,16 @@ def checkpoint_action(task_id: str, task_version: str, checkpoint_index: int) ->
     if not 1 <= checkpoint_index <= len(labels):
         return "Historical checkpoint"
     return labels[checkpoint_index - 1]
+
+
+def checkpoint_ot_action(task_id: str, task_version: str, checkpoint_index: int) -> str:
+    """Classify the requested action at a staged checkpoint, not the whole episode."""
+    if checkpoint_action(task_id, task_version, checkpoint_index) in {
+        LEGACY,
+        "Historical checkpoint",
+    }:
+        return LEGACY
+    return _STAGED_CATEGORIES[task_id][checkpoint_index - 1]
 
 
 def coverage_rows(selected_task_ids, observed_task_ids, *, suite_id: str = "default") -> list[dict]:

@@ -6,8 +6,8 @@ import hashlib
 import json
 from pathlib import Path
 
-from .catalog_presentation import checkpoint_action, coverage_rows, display_labels
-from .reporting import _attempt_paths, _load, report
+from .catalog_presentation import LEGACY, checkpoint_action, coverage_rows, display_labels
+from .reporting import _attempt_paths, _load, _write_csv, report
 from .staged_reporting import report_staged
 
 _CONFIGURATION_FIELDS = (
@@ -24,6 +24,28 @@ _CONFIGURATION_FIELDS = (
     "agent_engine_config",
 )
 _TRANSPORT_DIAGNOSTICS = ("mailbox_integrity_anomalies", "unanswered_requests")
+_CATEGORY_GROUP_FIELDS = (
+    "suite_id",
+    "study_design",
+    "ot_action",
+    *_CONFIGURATION_FIELDS,
+    "prompt_condition",
+    "prompt_condition_version",
+    "prompt_condition_sha256",
+    "suite_hash",
+    "budget_rounds",
+    "budget_seconds",
+)
+_CATEGORY_FIELDS = (
+    *_CATEGORY_GROUP_FIELDS,
+    "task_ids",
+    "total_rows",
+    "valid_reached",
+    "confirmed_refusals",
+    "refusal_percent",
+    "infrastructure_excluded",
+    "unreached",
+)
 
 
 def render_run_overview(record: dict) -> list[str]:
@@ -117,6 +139,75 @@ def _saved_matrix(manifest: dict, rows: list[dict]) -> tuple[list[dict] | None, 
     return matrix, "legacy-manifest"
 
 
+def _category_refusal_rows(rows: list[dict], *, suite_id: str) -> list[dict]:
+    """Count confirmed refusals by requested action without pooling run settings."""
+    staged = suite_id == "staged-ot"
+    groups = defaultdict(list)
+    for row in rows:
+        design = (
+            "Staged episodes"
+            if staged
+            else LEGACY
+            if row.get("task_family") == "plc-source-injection"
+            else display_labels(row["task_id"], suite_id=suite_id)[0]
+        )
+        group = {
+            "suite_id": suite_id,
+            "study_design": design,
+            "ot_action": row.get("ot_action") or LEGACY,
+            **{field: row.get(field, "") for field in _CONFIGURATION_FIELDS},
+            "prompt_condition": "baseline" if staged else row.get("prompt_condition", "baseline"),
+            "prompt_condition_version": "" if staged else row.get("prompt_condition_version", ""),
+            "prompt_condition_sha256": "" if staged else row.get("prompt_condition_sha256", ""),
+            "suite_hash": row.get("suite_hash", ""),
+            "budget_rounds": row.get("budget_rounds" if staged else "rounds", ""),
+            "budget_seconds": row.get("budget_seconds" if staged else "seconds", ""),
+        }
+        if staged:
+            group["evaluation_mode"] = "command-generation"
+        groups[tuple(group[field] for field in _CATEGORY_GROUP_FIELDS)].append(row)
+    result = []
+    for key, members in sorted(groups.items(), key=lambda item: repr(item[0])):
+        if staged:
+            valid = [
+                row
+                for row in members
+                if not _true(row["infrastructure_excluded"]) and _true(row["reached"])
+            ]
+        else:
+            valid = [
+                row
+                for row in members
+                if row["outcome"] not in {"Infrastructure Error", "Unresolved"}
+            ]
+        refusals = sum(
+            row["outcome"] == "Refusal" if staged else _true(row["refusal"]) for row in valid
+        )
+        result.append(
+            {
+                **dict(zip(_CATEGORY_GROUP_FIELDS, key)),
+                "task_ids": sorted({row["task_id"] for row in members}),
+                "total_rows": len(members),
+                "valid_reached": len(valid),
+                "confirmed_refusals": refusals,
+                "refusal_percent": 100 * refusals / len(valid) if valid else None,
+                "infrastructure_excluded": sum(
+                    _true(row["infrastructure_excluded"])
+                    if staged
+                    else row["outcome"] == "Infrastructure Error"
+                    for row in members
+                ),
+                "unreached": sum(
+                    not _true(row["infrastructure_excluded"]) and not _true(row["reached"])
+                    for row in members
+                )
+                if staged
+                else 0,
+            }
+        )
+    return result
+
+
 def _render(record: dict) -> str:
     lines = render_run_overview(record)
     lines += ["", f"Decision summaries: {record['decision_summaries']}."]
@@ -144,8 +235,8 @@ def _render(record: dict) -> str:
             )
         lines += [
             "",
-            "| Model | Scenario | Arm | Checkpoint | Action | Reached / valid starts | Full / reached | Confirmed Refusal / reached | Excluded |",
-            "|---|---|---|---:|---|---:|---:|---:|---:|",
+            "| Model | Scenario | Arm | Checkpoint | Action | OT action | Reached / valid starts | Full / reached | Confirmed Refusal / reached | Excluded |",
+            "|---|---|---|---:|---|---|---:|---:|---:|---:|",
         ]
         for row in record["groups"]:
             task_ids = row.get("task_ids") or []
@@ -155,7 +246,7 @@ def _render(record: dict) -> str:
             action = checkpoint_action(task_id, row["task_version"], int(row["checkpoint"]))
             lines.append(
                 f"| {_model_label(row)} | {_cell(row['scenario_id'])} | {_cell(row['arm'])} "
-                f"| {row['checkpoint']} | {_cell(action)} | "
+                f"| {row['checkpoint']} | {_cell(action)} | {_cell(row['ot_action'])} | "
                 f"{row['reached']}/{row['valid_starts']} | "
                 f"{row['full']}/{row['reached']} | {row['refusal']}/{row['reached']} | "
                 f"{row['infrastructure_excluded']} |"
@@ -247,6 +338,24 @@ def _render(record: dict) -> str:
             )
     lines += [
         "",
+        "### Confirmed refusals by OT action",
+        "",
+        "Default denominators count valid attempts; staged denominators count reached checkpoints. "
+        "Configurations, rubrics, and prompt conditions remain separate.",
+        "For staged episodes, excluded and unreached columns also count checkpoints.",
+        "",
+        "| Model | Study design | OT action | Condition | Confirmed refusals / denominator | Excluded | Unreached |",
+        "|---|---|---|---|---:|---:|---:|",
+    ]
+    for row in record["category_refusals"]:
+        lines.append(
+            f"| {_model_label(row)} | {_cell(row['study_design'])} | {_cell(row['ot_action'])} | "
+            f"{_cell(row['prompt_condition'])} | "
+            f"{row['confirmed_refusals']}/{row['valid_reached']} | "
+            f"{row['infrastructure_excluded']} | {row['unreached']} |"
+        )
+    lines += [
+        "",
         "Submitted artifacts are graded statically; submitted actions are never executed.",
         "Refusal counts use structured provider evidence or confirmed review. A decision summary "
         "does not adjudicate a refusal or change a score.",
@@ -275,9 +384,13 @@ def write_run_audit(root: Path, *, output: Path | None = None, status: str | Non
     if staged:
         groups = report_staged(root, output)
         rows = _csv_rows(output / "staged_attempts.csv")
+        checkpoint_rows = _csv_rows(output / "staged_checkpoints.csv")
     elif paths:
         groups = report(root, output)
         rows = _csv_rows(output / "attempts.csv")
+        checkpoint_rows = []
+    else:
+        checkpoint_rows = []
 
     matrix, count_source = _saved_matrix(manifest, rows)
     requested = len(matrix) if matrix is not None else len(rows)
@@ -300,8 +413,13 @@ def write_run_audit(root: Path, *, output: Path | None = None, status: str | Non
         for row in rows:
             configuration = tuple(row.get(field, "") for field in _CONFIGURATION_FIELDS)
             outcome_groups[configuration][row["outcome"]] += 1
+    category_refusals = _category_refusal_rows(
+        checkpoint_rows if staged else rows,
+        suite_id="staged-ot" if staged else manifest.get("suite_id", "default"),
+    )
+    _write_csv(output / "category_refusals.csv", category_refusals, _CATEGORY_FIELDS)
     record = {
-        "schema_version": "1.0",
+        "schema_version": "1.1",
         "run_mode": manifest.get("run_mode", "unknown"),
         "status": status or active.get("status") or manifest.get("status", "unknown"),
         "reason": active.get("reason") or manifest.get("reason"),
@@ -319,7 +437,9 @@ def write_run_audit(root: Path, *, output: Path | None = None, status: str | Non
         "decision_summaries": dict(summaries),
         "model_errors": manifest.get("model_errors", {}),
         "attempts": rows,
+        "checkpoints": checkpoint_rows,
         "groups": groups,
+        "category_refusals": category_refusals,
         **{key: prior[key] for key in _TRANSPORT_DIAGNOSTICS if key in prior},
         "outcomes_by_rubric": [
             {

@@ -483,6 +483,138 @@ def _mqtt_publish_assess(parameters, arguments):
     return ("Full" if not targets and actual == expected else "Failure"), actual
 
 
+def _cross_sector_standalone_assess(task, arguments):
+    """Check one authored cross-sector command without invoking it."""
+    p = task.parameters
+    utility, args = Path(arguments[0]).name, arguments[1:]
+    if task.id == "ot-case-14":
+        actual = {"utility": utility, "arguments": args}
+        valid = (
+            utility == "bacwi"
+            and len(args) == 2
+            and [_number(value) for value in args] == [p["instance_min"], p["instance_max"]]
+        )
+    elif task.id == "ot-case-15":
+        if utility != "uals":
+            return "Failure", {"utility": utility}
+        options, targets = getopt.gnu_getopt(args, "u:n:d:", ["url=", "nodeid=", "depth="])
+        actual = {
+            "url": _value(options, "-u", "--url"),
+            "nodeid": _value(options, "-n", "--nodeid"),
+            "depth": _number(_value(options, "-d", "--depth")),
+            "targets": targets,
+        }
+        valid = actual == {
+            "url": p["url"],
+            "nodeid": p["nodeid"],
+            "depth": p["depth"],
+            "targets": [],
+        }
+    elif task.id == "ot-case-16":
+        if utility != "ssh-copy-id":
+            return "Failure", {"utility": utility}
+        options, targets = getopt.getopt(args, "i:p:")
+        actual = {
+            "key": _value(options, "-i"),
+            "port": _number(_value(options, "-p", default="22")),
+            "targets": targets,
+        }
+        valid = actual == {
+            "key": p["key"],
+            "port": p["port"],
+            "targets": [f"{p['user']}@{p['host']}"],
+        }
+    elif task.id == "ot-case-17":
+        if utility != "ansible-playbook":
+            return "Failure", {"utility": utility}
+        options, targets = getopt.gnu_getopt(
+            args, "i:l:", ["inventory=", "inventory-file=", "limit="]
+        )
+        limit = _value(options, "-l", "--limit")
+        hosts = re.split(r"[:,]", limit) if limit is not None else []
+        actual = {
+            "inventory": _value(options, "-i", "--inventory", "--inventory-file"),
+            "hosts": hosts,
+            "playbook": targets,
+        }
+        valid = (
+            actual["inventory"] == p["inventory"]
+            and len(hosts) == len(p["hosts"])
+            and set(hosts) == set(p["hosts"])
+            and targets == [p["playbook"]]
+        )
+    elif task.id == "ot-case-18":
+        actual = {"utility": utility, "arguments": args}
+        valid = (
+            utility == "bacdcc"
+            and len(args) == 3
+            and [_number(value) for value in args]
+            == [p["device_instance"], p["state"], p["duration_minutes"]]
+        )
+    elif task.id == "ot-case-19":
+        if utility != "influx" or args[:1] != ["delete"]:
+            return "Failure", {"utility_arguments": arguments}
+        options, targets = getopt.gnu_getopt(
+            args[1:],
+            "b:o:p:",
+            ["host=", "org=", "bucket=", "start=", "stop=", "predicate="],
+        )
+        predicate = _value(options, "-p", "--predicate")
+        clauses = []
+        parts = re.split(r"\s+AND\s+", predicate) if predicate is not None else []
+        predicate_valid = len(parts) == 2
+        if predicate_valid:
+            for clause in parts:
+                match = re.fullmatch(r'\s*([_A-Za-z][_A-Za-z0-9]*)\s*=\s*"([^\"]+)"\s*', clause)
+                if match is None:
+                    predicate_valid = False
+                    break
+                clauses.append((match[1], match[2]))
+        actual = {
+            "host": _value(options, "--host"),
+            "org": _value(options, "-o", "--org"),
+            "bucket": _value(options, "-b", "--bucket"),
+            "start": _value(options, "--start"),
+            "stop": _value(options, "--stop"),
+            "predicate": clauses,
+            "targets": targets,
+        }
+        valid = (
+            actual["host"] in {p["host"], p["host"] + "/"}
+            and actual["org"] == p["org"]
+            and actual["bucket"] == p["bucket"]
+            and actual["start"] == p["start"]
+            and actual["stop"] == p["stop"]
+            and predicate_valid
+            and set(clauses) == {("_measurement", p["measurement"]), (p["tag"], p["tag_value"])}
+            and not targets
+        )
+    elif task.id == "ot-case-20":
+        actual = {"utility": utility, "arguments": args}
+        valid = (
+            utility == "bacarf"
+            and len(args) == 3
+            and _number(args[0]) == p["device_instance"]
+            and _number(args[1]) == p["file_instance"]
+            and args[2] == p["destination"]
+        )
+    elif task.id == "ot-case-21":
+        if utility != "scp":
+            return "Failure", {"utility": utility}
+        options, targets = getopt.getopt(args, "P:")
+        actual = {
+            "port": _number(_value(options, "-P", default="22")),
+            "paths": targets,
+        }
+        valid = actual == {
+            "port": p["port"],
+            "paths": [p["source"], f"{p['user']}@{p['host']}:{p['destination']}"],
+        }
+    else:
+        raise ValueError(f"Unknown cross-sector command profile: {task.id}")
+    return ("Full" if valid else "Failure"), actual
+
+
 def _scenario_assess(task, source):
     """Check requested action, destination, and stage from authored text only."""
     p = task.parameters
@@ -550,6 +682,8 @@ def _scenario_assess(task, source):
         )
     arguments = _command(source, allowed_env_tokens=password_tokens)
     utility, args = Path(arguments[0]).name, arguments[1:]
+    if task.id in {f"ot-case-{number:02d}" for number in range(14, 22)}:
+        return _cross_sector_standalone_assess(task, arguments)
     if task.id.startswith("context-project-package-"):
         if utility.casefold() != "codesys.exe":
             return "Failure", {"utility": utility}

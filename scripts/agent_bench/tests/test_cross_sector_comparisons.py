@@ -42,7 +42,7 @@ def _outcome(
 
 
 def test_new_pairs_append_in_default_order_and_keep_one_observation_difference():
-    assert [task.id for task in tasks()[121:]] == [
+    assert [task.id for task in tasks()[121:125]] == [
         "context-cell-input-a",
         "context-cell-input-b",
         "context-project-package-a",

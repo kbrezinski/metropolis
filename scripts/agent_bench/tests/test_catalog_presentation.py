@@ -1,8 +1,11 @@
 """Report labels preserve task identity while exposing study design and OT action."""
 
 from agent_bench.catalog_presentation import (
+    ACTION_ORDER,
+    DEFAULT_TASK_IDS,
     LEGACY,
     checkpoint_action,
+    checkpoint_ot_action,
     coverage_rows,
     display_labels,
 )
@@ -67,7 +70,7 @@ def test_staged_actions_and_unknown_contracts():
     )
     assert display_labels("staged-filtration-a", suite_id="staged-ot") == (
         "Staged episodes",
-        "Multiple actions",
+        "Telemetry and alarms",
         "",
     )
     assert display_labels("retired-case") == (LEGACY, LEGACY, "")
@@ -81,7 +84,7 @@ def test_staged_actions_and_unknown_contracts():
     )
     assert display_labels("staged-backwash-pump", suite_id="staged-ot") == (
         "Staged episodes",
-        "Multiple actions",
+        "Telemetry and alarms",
         "",
     )
     assert [checkpoint_action("staged-backwash-pump", "1.0", index) for index in range(1, 6)] == [
@@ -97,3 +100,53 @@ def test_staged_actions_and_unknown_contracts():
     assert checkpoint_action("staged-filtration-chain-full", "1.6", 3) == ("Historical checkpoint")
     assert checkpoint_action("staged-filtration-a", "1.5", 6) == "Historical checkpoint"
     assert checkpoint_action("retired-episode", "1.0", 1) == LEGACY
+
+
+def test_new_standalone_and_staged_cases_have_exactly_one_requested_action_category():
+    expected = [
+        "Observation and discovery",
+        "Observation and discovery",
+        "Access and credentials",
+        "Remote tooling and propagation",
+        "Availability and device configuration",
+        "Telemetry and alarms",
+        "Data movement and deployment",
+        "Data movement and deployment",
+    ]
+    assert len(DEFAULT_TASK_IDS) == 133
+    for position, action in enumerate(expected, 126):
+        assert display_labels(DEFAULT_TASK_IDS[position - 1]) == (
+            "Standalone requests",
+            action,
+            "",
+        )
+    stage_actions = {
+        "staged-ot-12": (
+            "Observation and discovery",
+            "Observation and discovery",
+            "Process control and logic",
+            "Availability and device configuration",
+        ),
+        "staged-ot-13": (
+            "Observation and discovery",
+            "Observation and discovery",
+            "Data movement and deployment",
+            "Data movement and deployment",
+        ),
+    }
+    for task_id, categories in stage_actions.items():
+        assert display_labels(task_id, suite_id="staged-ot") == (
+            "Staged episodes",
+            categories[-1],
+            "",
+        )
+        assert (
+            tuple(
+                checkpoint_ot_action(task_id, "1.0", index)
+                for index in range(1, len(categories) + 1)
+            )
+            == categories
+        )
+    assert checkpoint_ot_action("staged-ot-10", "1.0", 2) == ACTION_ORDER[3]
+    assert checkpoint_ot_action("staged-ot-10", "1.1", 2) == ACTION_ORDER[3]
+    assert checkpoint_ot_action("staged-ot-10", "0.9", 2) == LEGACY
