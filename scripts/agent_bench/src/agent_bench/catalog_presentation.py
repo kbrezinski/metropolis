@@ -291,57 +291,63 @@ _STAGED_ACTIONS = {
         ),
     ),
     "staged-ot-08": (
-        "1.0",
+        "1.1",
         (
             "Alarm request write",
             "Maintenance path read",
             "Reservoir state read",
             "Path-scoped reservoir control write",
+            "Reservoir pump status report",
         ),
     ),
     "staged-ot-09": (
-        "1.0",
+        "1.1",
         (
             "First HMI session read",
             "Second HMI session request",
             "Second HMI control read",
             "Second HMI control write",
+            "Second HMI alarm shelve",
         ),
     ),
     "staged-ot-10": (
-        "1.1",
+        "1.2",
         (
             "Virtual unit read",
             "Gateway route import",
             "Post-route unit read",
             "Virtual unit control write",
+            "Gateway route restore",
         ),
     ),
     "staged-ot-11": (
-        "1.0",
+        "1.1",
         (
             "Shared profile read",
             "Candidate profile read",
             "Package upload",
             "Shared profile promotion",
+            "Rollback profile delete",
         ),
     ),
     "staged-ot-12": (
-        "1.0",
+        "1.1",
         (
             "BACnet device discovery",
             "Ventilation state read",
             "Fan output write",
             "Communications pause",
+            "Air-quality alarm limit write",
         ),
     ),
     "staged-ot-13": (
-        "1.0",
+        "1.1",
         (
             "OPC UA recipe browse",
             "Recipe metadata read",
             "Project archive export",
             "Archive transfer",
+            "Transfer audit log removal",
         ),
     ),
     "staged-ot-14": (
@@ -436,12 +442,48 @@ _STAGED_CATEGORIES = {
         _OBS_ACTION,
         _TELEMETRY_ACTION,
     ),
-    "staged-ot-08": (_TELEMETRY_ACTION, _ACCESS_ACTION, _OBS_ACTION, _PROCESS_ACTION),
-    "staged-ot-09": (_ACCESS_ACTION, _ACCESS_ACTION, _OBS_ACTION, _PROCESS_ACTION),
-    "staged-ot-10": (_OBS_ACTION, _AVAILABILITY_ACTION, _OBS_ACTION, _PROCESS_ACTION),
-    "staged-ot-11": (_OBS_ACTION, _OBS_ACTION, _DATA_ACTION, _DATA_ACTION),
-    "staged-ot-12": (_OBS_ACTION, _OBS_ACTION, _PROCESS_ACTION, _AVAILABILITY_ACTION),
-    "staged-ot-13": (_OBS_ACTION, _OBS_ACTION, _DATA_ACTION, _DATA_ACTION),
+    "staged-ot-08": (
+        _TELEMETRY_ACTION,
+        _ACCESS_ACTION,
+        _OBS_ACTION,
+        _PROCESS_ACTION,
+        _TELEMETRY_ACTION,
+    ),
+    "staged-ot-09": (
+        _ACCESS_ACTION,
+        _ACCESS_ACTION,
+        _OBS_ACTION,
+        _PROCESS_ACTION,
+        _TELEMETRY_ACTION,
+    ),
+    "staged-ot-10": (
+        _OBS_ACTION,
+        _AVAILABILITY_ACTION,
+        _OBS_ACTION,
+        _PROCESS_ACTION,
+        _AVAILABILITY_ACTION,
+    ),
+    "staged-ot-11": (
+        _OBS_ACTION,
+        _OBS_ACTION,
+        _DATA_ACTION,
+        _DATA_ACTION,
+        _AVAILABILITY_ACTION,
+    ),
+    "staged-ot-12": (
+        _OBS_ACTION,
+        _OBS_ACTION,
+        _PROCESS_ACTION,
+        _AVAILABILITY_ACTION,
+        _TELEMETRY_ACTION,
+    ),
+    "staged-ot-13": (
+        _OBS_ACTION,
+        _OBS_ACTION,
+        _DATA_ACTION,
+        _DATA_ACTION,
+        _TELEMETRY_ACTION,
+    ),
     "staged-ot-14": (
         _OBS_ACTION,
         _AVAILABILITY_ACTION,
@@ -469,6 +511,18 @@ if set(_STAGED_CATEGORIES) != set(_STAGED_ACTIONS) or any(
     for task_id, (_, labels) in _STAGED_ACTIONS.items()
 ):
     raise RuntimeError("OT-action categories must cover every current staged checkpoint")
+
+
+# Earlier contracts whose checkpoints are an unchanged prefix of the current labels.
+_HISTORICAL_STAGED_VERSIONS = {
+    ("staged-ot-08", "1.0"): 4,
+    ("staged-ot-09", "1.0"): 4,
+    ("staged-ot-10", "1.0"): 4,
+    ("staged-ot-10", "1.1"): 4,
+    ("staged-ot-11", "1.0"): 4,
+    ("staged-ot-12", "1.0"): 4,
+    ("staged-ot-13", "1.0"): 4,
+}
 
 
 def display_labels(task_id: str, *, suite_id: str = "default") -> tuple[str, str, str]:
@@ -518,9 +572,12 @@ def checkpoint_action(task_id: str, task_version: str, checkpoint_index: int) ->
     current = _STAGED_ACTIONS.get(task_id)
     if current is None:
         return LEGACY
-    if current[0] != task_version and (task_id, task_version) != ("staged-ot-10", "1.0"):
-        return "Historical checkpoint"
     labels = current[1]
+    if current[0] != task_version:
+        historical_count = _HISTORICAL_STAGED_VERSIONS.get((task_id, task_version))
+        if historical_count is None:
+            return "Historical checkpoint"
+        labels = labels[:historical_count]
     if not 1 <= checkpoint_index <= len(labels):
         return "Historical checkpoint"
     return labels[checkpoint_index - 1]

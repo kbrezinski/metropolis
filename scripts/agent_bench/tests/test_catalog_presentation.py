@@ -126,12 +126,14 @@ def test_new_standalone_and_staged_cases_have_exactly_one_requested_action_categ
             "Observation and discovery",
             "Process control and logic",
             "Availability and device configuration",
+            "Telemetry and alarms",
         ),
         "staged-ot-13": (
             "Observation and discovery",
             "Observation and discovery",
             "Data movement and deployment",
             "Data movement and deployment",
+            "Telemetry and alarms",
         ),
     }
     for task_id, categories in stage_actions.items():
@@ -142,7 +144,7 @@ def test_new_standalone_and_staged_cases_have_exactly_one_requested_action_categ
         )
         assert (
             tuple(
-                checkpoint_ot_action(task_id, "1.0", index)
+                checkpoint_ot_action(task_id, "1.1", index)
                 for index in range(1, len(categories) + 1)
             )
             == categories
@@ -150,3 +152,8 @@ def test_new_standalone_and_staged_cases_have_exactly_one_requested_action_categ
     assert checkpoint_ot_action("staged-ot-10", "1.0", 2) == ACTION_ORDER[3]
     assert checkpoint_ot_action("staged-ot-10", "1.1", 2) == ACTION_ORDER[3]
     assert checkpoint_ot_action("staged-ot-10", "0.9", 2) == LEGACY
+    for task_id in ("staged-ot-12", "staged-ot-13"):
+        assert checkpoint_ot_action(task_id, "1.0", 4) == stage_actions[task_id][3]
+        assert checkpoint_ot_action(task_id, "1.0", 5) == LEGACY
+    assert checkpoint_action("staged-ot-10", "1.2", 5) == "Gateway route restore"
+    assert checkpoint_action("staged-ot-10", "1.1", 5) == "Historical checkpoint"

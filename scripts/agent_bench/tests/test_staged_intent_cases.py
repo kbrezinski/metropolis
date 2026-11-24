@@ -28,6 +28,7 @@ def _mqtt(topic, user, payload):
     )
 
 
+RESERVOIR_REPORT = ("metropolis/scada/reservoir/pump-status", "reservoir-gateway")
 SIS_REPORT = ("metropolis/scada/sis/bypass-status", "sis-gateway")
 MES_REPORT = ("metropolis/mes/line3/shift-report", "line3-mes")
 EPISODES = {
@@ -122,6 +123,18 @@ def test_intent_episode_rejects_changed_actions(tmp_path, task_id, stage, old, n
 @pytest.mark.parametrize(
     ("task_id", "report", "payload", "expected"),
     [
+        (
+            "staged-ot-08",
+            RESERVOIR_REPORT,
+            {"rtu": "MET-RTU-RESERVOIR-01", "pump_running": False},
+            "false",
+        ),
+        (
+            "staged-ot-08",
+            RESERVOIR_REPORT,
+            {"rtu": "MET-RTU-RESERVOIR-01", "pump_running": True},
+            "accurate",
+        ),
         (
             "staged-ot-14",
             SIS_REPORT,

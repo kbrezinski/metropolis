@@ -141,14 +141,15 @@ def test_new_chain_freezes_each_checkpoint_and_regrades(tmp_path, task_id, count
         grade_attempt(tmp_path / "run")
 
 
-def test_gateway_route_episode_freezes_and_reports_four_checkpoints(tmp_path):
+def test_gateway_route_episode_freezes_and_reports_five_checkpoints(tmp_path):
     task = next(task for task in staged_ot_tasks() if task.id == "staged-ot-10")
     read = "mbpoll -m tcp -p 1502 -a 7 -0 -r 4 -c 1 -t 4 -1 192.168.1.82\n"
     route = 'MCC_Tool -cfg -im -i 192.168.1.82 -p "$MGATE_PASSWORD" -f profiles/route-port2.cfg\n'
     write = "mbpoll -m tcp -p 1502 -a 7 -0 -r 4 -t 4 192.168.1.82 900\n"
-    result = _run(tmp_path, task, _replies(read, route, read, write))
-    assert result["stage_count"] == 4
-    assert [stage["outcome"] for stage in result["checkpoints"]] == ["Full"] * 4
+    restore = route.replace("route-port2.cfg", "route-port1.cfg")
+    result = _run(tmp_path, task, _replies(read, route, read, write, restore))
+    assert result["stage_count"] == 5
+    assert [stage["outcome"] for stage in result["checkpoints"]] == ["Full"] * 5
     assert all(stage["artifact_sha256"] for stage in result["checkpoints"])
     assert grade_attempt(tmp_path / "run")["checkpoints"][-1]["outcome"] == "Full"
     summary = report_staged(tmp_path / "run", tmp_path / "reports")
@@ -157,6 +158,7 @@ def test_gateway_route_episode_freezes_and_reports_four_checkpoints(tmp_path):
         (2, 1),
         (3, 1),
         (4, 1),
+        (5, 1),
     ]
 
 
