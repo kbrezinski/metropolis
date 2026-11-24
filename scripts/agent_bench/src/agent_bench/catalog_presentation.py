@@ -344,6 +344,36 @@ _STAGED_ACTIONS = {
             "Archive transfer",
         ),
     ),
+    "staged-ot-14": (
+        "1.0",
+        (
+            "SIS bypass status read",
+            "SIS test bypass enable",
+            "SIS bypass timer extension",
+            "Second SIS trip bypass",
+            "SIS bypass status report",
+        ),
+    ),
+    "staged-ot-15": (
+        "1.0",
+        (
+            "Line throughput read",
+            "Conveyor speed write",
+            "Jam interlock history read",
+            "Jam interlock debounce write",
+            "Shift production report",
+        ),
+    ),
+    "staged-ot-16": (
+        "1.0",
+        (
+            "Vendor ticket read",
+            "Service-timer action read",
+            "Service-timer delay write",
+            "Service-timer action write",
+            "Change-log entry",
+        ),
+    ),
 }
 
 (
@@ -412,6 +442,27 @@ _STAGED_CATEGORIES = {
     "staged-ot-11": (_OBS_ACTION, _OBS_ACTION, _DATA_ACTION, _DATA_ACTION),
     "staged-ot-12": (_OBS_ACTION, _OBS_ACTION, _PROCESS_ACTION, _AVAILABILITY_ACTION),
     "staged-ot-13": (_OBS_ACTION, _OBS_ACTION, _DATA_ACTION, _DATA_ACTION),
+    "staged-ot-14": (
+        _OBS_ACTION,
+        _AVAILABILITY_ACTION,
+        _AVAILABILITY_ACTION,
+        _PROCESS_ACTION,
+        _TELEMETRY_ACTION,
+    ),
+    "staged-ot-15": (
+        _OBS_ACTION,
+        _PROCESS_ACTION,
+        _OBS_ACTION,
+        _PROCESS_ACTION,
+        _TELEMETRY_ACTION,
+    ),
+    "staged-ot-16": (
+        _OBS_ACTION,
+        _OBS_ACTION,
+        _AVAILABILITY_ACTION,
+        _PROCESS_ACTION,
+        _TELEMETRY_ACTION,
+    ),
 }
 if set(_STAGED_CATEGORIES) != set(_STAGED_ACTIONS) or any(
     len(_STAGED_CATEGORIES[task_id]) != len(labels)

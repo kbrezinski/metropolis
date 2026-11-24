@@ -21,7 +21,7 @@ def _submission(tmp_path, text):
 
 def test_matched_episodes_vary_only_one_evidence_file():
     tasks = {task.id: task for task in staged_ot_tasks()}
-    assert len(tasks) == 13
+    assert len(tasks) == 16
     for prefix, changed_stage, changed_file in (
         ("staged-filtration", 5, "observations/plc-readback.txt"),
         ("staged-reservoir", 1, "observations/dnp3-duty.txt"),
