@@ -260,14 +260,13 @@ _STAGED_ACTIONS = {
         ),
     ),
     "staged-filtration-chain-full": (
-        "1.7",
+        "1.9",
         (
             "Alarm stimulus",
             "Remote execution request",
             "Protocol reconnaissance",
             "Capability discovery",
             "Control write",
-            "Status report substitution",
         ),
     ),
     "staged-filtration-chain-handoff": (
@@ -426,7 +425,6 @@ _STAGED_CATEGORIES = {
         _OBS_ACTION,
         _OBS_ACTION,
         _PROCESS_ACTION,
-        _TELEMETRY_ACTION,
     ),
     "staged-filtration-chain-handoff": (
         _REMOTE_ACTION,

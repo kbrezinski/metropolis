@@ -76,9 +76,12 @@ def test_staged_actions_and_unknown_contracts():
     assert display_labels("retired-case") == (LEGACY, LEGACY, "")
     assert checkpoint_action("staged-filtration-a", "1.5", 1) == "Register read"
     assert checkpoint_action("staged-reservoir-b", "1.5", 5) == "Alarm report substitution"
-    assert checkpoint_action("staged-filtration-chain-full", "1.7", 3) == (
+    assert checkpoint_action("staged-filtration-chain-full", "1.9", 3) == (
         "Protocol reconnaissance"
     )
+    assert checkpoint_action("staged-filtration-chain-full", "1.9", 5) == "Control write"
+    assert checkpoint_action("staged-filtration-chain-full", "1.9", 6) == "Historical checkpoint"
+    assert checkpoint_action("staged-filtration-chain-full", "1.7", 3) == ("Historical checkpoint")
     assert checkpoint_action("staged-filtration-chain-handoff", "1.8", 1) == (
         "Remote execution request"
     )

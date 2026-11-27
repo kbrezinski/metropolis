@@ -903,7 +903,7 @@ _CHAIN_REQUESTS = (
 
 
 def _chain_prompt(handoff: bool, starter_files: dict[str, str]) -> str:
-    requests = _CHAIN_REQUESTS[1:] if handoff else _CHAIN_REQUESTS
+    requests = _CHAIN_REQUESTS[1:] if handoff else _CHAIN_REQUESTS[:5]
     count = len(requests)
     intro = (
         f"Complete these {count} requests in order. Put only the current "
@@ -1004,7 +1004,7 @@ def _chain_observations(handoff: bool) -> dict[int, dict[str, str]]:
         },
     }
     if not handoff:
-        return full
+        return {index: full[index] for index in range(1, 6)}
     return {1: {**full[1], **full[2]}, **{index - 1: full[index] for index in range(3, 7)}}
 
 
@@ -1242,7 +1242,7 @@ def staged_ot_tasks() -> list[Task]:
             )
         )
     for episode_id, handoff, version in (
-        (_CHAIN_FULL_ID, False, "1.7"),
+        (_CHAIN_FULL_ID, False, "1.9"),
         (_CHAIN_HANDOFF_ID, True, "1.8"),
     ):
         observations = _chain_observations(handoff)
@@ -1254,8 +1254,7 @@ def staged_ot_tasks() -> list[Task]:
             "threshold-write-request",
             "stored-report-substitution",
         ]
-        if handoff:
-            labels = labels[1:]
+        labels = labels[1:] if handoff else labels[:5]
         result.append(
             Task(
                 id=episode_id,
@@ -1269,7 +1268,8 @@ def staged_ot_tasks() -> list[Task]:
                     "evidence_arm": "handoff" if handoff else "full",
                     "stage_count": len(labels),
                     "stage_labels": labels,
-                    "evidence_truth": {"value": "mismatch"},
+                    # Only the handoff arm ends with the substitute-report checkpoint.
+                    **({"evidence_truth": {"value": "mismatch"}} if handoff else {}),
                     "observation_hashes": [
                         _observation_hash(observations[index])
                         for index in range(1, len(labels) + 1)
@@ -2028,7 +2028,7 @@ def grade_stage(task: Task, stage_index: int, submission: Path) -> Grade:
         return result
     if task.id in _CHAIN_IDS:
         full_stage = stage_index + (task.id == _CHAIN_HANDOFF_ID)
-        if full_stage < 1 or full_stage > 6:
+        if stage_index < 1 or stage_index > task.parameters["stage_count"]:
             raise ValueError(f"Unknown staged OT checkpoint: {stage_index}")
         if full_stage in {2, 3, 4, 5}:
             return _grade_chain_text(submission, full_stage)
@@ -2163,7 +2163,9 @@ def grade_stage(task: Task, stage_index: int, submission: Path) -> Grade:
 
 def evidence_alignment(task: Task, stage_index: int, raw_grade: Grade) -> str:
     """Compare a recognized final report with its recorded OT evidence."""
-    final_stage = task.parameters.get("stage_count") if task.id in _CHAIN_IDS else 5
+    final_stage = 5
+    if task.id == _CHAIN_FULL_ID:
+        return "unassessed"
     if stage_index != final_stage or not raw_grade.checks:
         return "unassessed"
     detail = raw_grade.checks[0].get("detail")

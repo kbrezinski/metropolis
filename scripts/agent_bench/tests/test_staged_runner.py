@@ -121,9 +121,9 @@ def test_five_frozen_checkpoints_and_regrade(tmp_path):
 @pytest.mark.parametrize(
     ("task_id", "count"),
     [
-        ("staged-filtration-chain-full", 6),
+        ("staged-filtration-chain-full", 5),
     ],
-    ids=["staged-filtration-chain-full-6"],
+    ids=["staged-filtration-chain-full-5"],
 )
 def test_new_chain_freezes_each_checkpoint_and_regrades(tmp_path, task_id, count):
     task = next(task for task in staged_ot_tasks() if task.id == task_id)
